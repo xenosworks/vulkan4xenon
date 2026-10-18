@@ -10,7 +10,8 @@
 
 // Milestone 21's hardware loops, counted by an int in a block: push constants, a uniform buffer and a dynamic one, in a
 // pixel shader, a vertex shader and both at once. The layer writes each count into the loop constant xost gave the
-// loop, clamped to the 0 to 255 passes one runs. Each count puts its colour or its quad somewhere of its own.
+// loop, clamped to the 0 to 255 passes one runs. Each count puts its colour or its quad somewhere of its own. Then
+// xsdk milestone 46's loop whose count is data, its loop constant the 255 passes the layer writes.
 
 enum {
 	FRAMES = 30,
@@ -94,6 +95,7 @@ typedef struct {
 // The layer compiles these on the console, with their literals, blocks and loop counts (docs/ROADMAP.md, milestone 13).
 static uint32_t compiled_loop_count_frag[LOOP_COUNT_FRAG_SPIRV_BYTES / 4];
 static uint32_t compiled_loop_count_if_frag[LOOP_COUNT_IF_FRAG_SPIRV_BYTES / 4];
+static uint32_t compiled_loop_data_frag[LOOP_DATA_FRAG_SPIRV_BYTES / 4];
 static bool compiled;
 
 // A dark slate no other test clears to.
@@ -365,6 +367,27 @@ static bool build_bands(const Harness *harness, Scene *scene)
 			compiled ? compiled_loop_count_if_frag : loop_count_if_frag_spirv, LOOP_COUNT_IF_FRAG_SPIRV_BYTES, true);
 }
 
+// loop_data.frag in a strip across the screen, each eighth's count from gl_FragCoord, 15 passes and 40 more an eighth:
+// the last two run 255, the most a loop runs, for 255 and 295.
+static bool build_data_count(const Harness *harness, Scene *scene)
+{
+	enum { STRIP_Y = 320, STRIP_HEIGHT = 80, FIRST_COUNT = 15, COUNT_STEP = 40 };
+	scene->check = (HarnessProbes){ "loops: a count from data", scene->probes, 0, TOLERANCE, 0 };
+	for (uint32_t band = 0; band < BANDS; band++)
+		add_probe(scene, "an eighth by its count's passes", band * (HARNESS_WIDTH / BANDS) + HARNESS_WIDTH / 16,
+			STRIP_Y + STRIP_HEIGHT / 2, stepped(fine_step, passes_of(FIRST_COUNT + COUNT_STEP * (int32_t)band)));
+	add_probe(scene, "the clear above the strip", HARNESS_WIDTH / 2, STRIP_Y / 2, clear_rgb);
+	Draw *const draw = &scene->draws[0];
+	*draw = (Draw){ .placed = true,
+		.quad = { .x = 0.0f, .y = STRIP_Y, .width = HARNESS_WIDTH, .height = STRIP_HEIGHT, .depth = 0.5f },
+		.pushed = true };
+	memcpy(draw->push.step, fine_step, sizeof draw->push.step);
+	scene->draw_count = 1;
+	return build_layout(harness, scene, 0, true) &&
+		build_pipeline(harness, scene, push_vert_spirv, PUSH_VERT_SPIRV_BYTES,
+			compiled ? compiled_loop_data_frag : loop_data_frag_spirv, LOOP_DATA_FRAG_SPIRV_BYTES, false);
+}
+
 static VkResult record(const Harness *harness, Scene *scene)
 {
 	VkResult result = harness_command_buffers(harness, scene->commands);
@@ -439,13 +462,17 @@ void test_loops(const Harness *harness)
 {
 	memcpy(compiled_loop_count_frag, loop_count_frag_spirv, sizeof compiled_loop_count_frag);
 	memcpy(compiled_loop_count_if_frag, loop_count_if_frag_spirv, sizeof compiled_loop_count_if_frag);
+	memcpy(compiled_loop_data_frag, loop_data_frag_spirv, sizeof compiled_loop_data_frag);
 	compiled_loop_count_frag[GENERATOR_WORD] ^= GENERATOR_CHANGE;
 	compiled_loop_count_if_frag[GENERATOR_WORD] ^= GENERATOR_CHANGE;
+	compiled_loop_data_frag[GENERATOR_WORD] ^= GENERATOR_CHANGE;
 	compiled = true;
 	run(harness, "counted by push constants, the shader compiled here", build_push_counts,
 		"colours each quad by its count's passes, 300 run as 255 and -5 as none");
 	run(harness, "counted by a uniform buffer, the shader compiled here", build_bands,
 		"colours each band by the passes before the break");
+	run(harness, "a count from data, the shader compiled here", build_data_count,
+		"colours each eighth by its count's passes, 295 run as 255");
 	compiled = false;
 
 	run(harness, "counted by push constants", build_push_counts,
@@ -456,4 +483,5 @@ void test_loops(const Harness *harness)
 		"places each row's quad by the vertex shader's count and colours it by the pixel shader's");
 	run(harness, "counted by a uniform buffer, with an if/else and a break", build_bands,
 		"colours each band by the passes before the break");
+	run(harness, "a count from data", build_data_count, "colours each eighth by its count's passes, 295 run as 255");
 }

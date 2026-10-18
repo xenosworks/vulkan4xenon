@@ -28,7 +28,7 @@ from pathlib import Path
 RESOURCE_KINDS = {"push": "V4X_RESOURCE_PUSH_CONSTANTS", "uniform": "V4X_RESOURCE_UNIFORM_BUFFER",
                   "sampler": "V4X_RESOURCE_SAMPLER", "push_loop": "V4X_RESOURCE_PUSH_LOOP",
                   "uniform_loop": "V4X_RESOURCE_UNIFORM_LOOP", "comparison": "V4X_RESOURCE_COMPARISON",
-                  "instance": "V4X_RESOURCE_INSTANCE_INDEX"}
+                  "instance": "V4X_RESOURCE_INSTANCE_INDEX", "fixed_loop": "V4X_RESOURCE_FIXED_LOOP"}
 DEFAULT_BUNDLE = "v4x_shader_bundle"
 FNV_OFFSET_BASIS = 0xCBF29CE484222325
 FNV_PRIME = 0x100000001B3
@@ -72,6 +72,10 @@ def lower(xost, spirv_bytes, source, optimize=False):
         if entry[0] == "block_loop":
             _, loop, kind, dset, binding, offset = entry
             resources.append((f"{kind}_loop", dset, binding, offset, loop))
+        # Loops whose count is data: their loop constant and the passes it runs, 255.
+        elif entry[0] == "fixed_loop":
+            _, loop, passes = entry
+            resources.append(("fixed_loop", 0, 0, passes, loop))
         elif entry[0] == "clip":
             clip_planes.append((entry[2], entry[1]))
         elif len(entry) != 2:

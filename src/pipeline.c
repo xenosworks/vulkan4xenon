@@ -169,13 +169,15 @@ static VkResult gather_resources(const PipelineLayout *layout, const V4xShader *
 			pipeline->instance_index_constant = resource->first;
 			continue;
 		}
-		if (!layout_has(layout, resource, stage)) {
+		const bool fixed = resource->kind == V4X_RESOURCE_FIXED_LOOP;
+		if (!fixed && !layout_has(layout, resource, stage)) {
 			xsdk_log_write("vulkan4xenon: the pipeline layout lacks set %u binding %u, kind %u, for the %s shader",
 				(unsigned)resource->set, (unsigned)resource->binding, (unsigned)resource->kind,
 				vertex ? "vertex" : "fragment");
 			return VK_ERROR_INITIALIZATION_FAILED;
 		}
-		const bool loop = resource->kind == V4X_RESOURCE_PUSH_LOOP || resource->kind == V4X_RESOURCE_UNIFORM_LOOP;
+		const bool loop =
+			fixed || resource->kind == V4X_RESOURCE_PUSH_LOOP || resource->kind == V4X_RESOURCE_UNIFORM_LOOP;
 		const bool block =
 			resource->kind == V4X_RESOURCE_PUSH_CONSTANTS || resource->kind == V4X_RESOURCE_UNIFORM_BUFFER;
 		if (resource->kind == V4X_RESOURCE_SAMPLER && resource->first >= V4X_MAX_SAMPLERS)
@@ -184,9 +186,10 @@ static VkResult gather_resources(const PipelineLayout *layout, const V4xShader *
 			return v4x_host_unsupported(
 				"a shader's constants past its stage's: 256 a vertex shader's, 252 a fragment's");
 		if (loop &&
-			(resource->count >= XSDK_LOOP_CONSTANTS ||
+			(resource->count >= XSDK_LOOP_CONSTANTS || (fixed && resource->first > V4X_MAX_LOOP_PASSES) ||
 				(resource->kind == V4X_RESOURCE_PUSH_LOOP && resource->first + 4u > V4X_MAX_PUSH_CONSTANT_BYTES)))
-			return v4x_host_unsupported("a loop counted past the push constants or the loop constants");
+			return v4x_host_unsupported(
+				"a loop counted past the push constants or the loop constants, or past 255 passes");
 		pipeline->loop_count += loop;
 		pipeline->resources[pipeline->resource_count++] = (StageResource){ .resource = *resource, .vertex = vertex };
 	}

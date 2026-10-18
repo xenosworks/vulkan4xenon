@@ -125,8 +125,10 @@ static bool layer_takes(const XsdkXscShader *compiled)
 		const bool loop = need->kind == XSDK_XSC_BLOCK_LOOP && need->block != XSDK_XSC_SAMPLER &&
 			need->set <= MAX_RESOURCE_INDEX && need->binding <= MAX_RESOURCE_INDEX &&
 			need->offset_bytes <= MAX_RESOURCE_REGISTER && need->reg < XSDK_LOOP_CONSTANTS;
+		const bool fixed =
+			need->kind == XSDK_XSC_FIXED_LOOP && need->regs <= V4X_MAX_LOOP_PASSES && need->reg < XSDK_LOOP_CONSTANTS;
 		const bool plane = need->kind == XSDK_XSC_CLIP_PLANE && need->reg <= MAX_RESOURCE_REGISTER;
-		if (need->kind != XSDK_XSC_LITERAL && !loop && !plane)
+		if (need->kind != XSDK_XSC_LITERAL && !loop && !fixed && !plane)
 			return false;
 	}
 	for (size_t i = 0; i < compiled->resource_count; i++) {
@@ -199,7 +201,8 @@ static V4xShader *shader_from(
 {
 	const CacheHeader sizes = { CACHE_MAGIC, CACHE_LAYOUT, hash, size_bytes, (uint32_t)compiled->container_bytes,
 		needs_of(compiled, XSDK_XSC_LITERAL),
-		(uint32_t)compiled->resource_count + needs_of(compiled, XSDK_XSC_BLOCK_LOOP),
+		(uint32_t)compiled->resource_count + needs_of(compiled, XSDK_XSC_BLOCK_LOOP) +
+			needs_of(compiled, XSDK_XSC_FIXED_LOOP),
 		needs_of(compiled, XSDK_XSC_CLIP_PLANE) };
 	ShaderParts parts;
 	V4xShader *const shader = new_shader(allocator, &sizes, &parts);
@@ -221,6 +224,11 @@ static V4xShader *shader_from(
 				need->block == XSDK_XSC_PUSH_CONSTANTS ? V4X_RESOURCE_PUSH_LOOP : V4X_RESOURCE_UNIFORM_LOOP;
 			parts.resources[resource++] = (V4xShaderResource){ kind, (uint8_t)need->set, (uint8_t)need->binding,
 				(uint16_t)need->offset_bytes, (uint16_t)need->reg };
+			continue;
+		}
+		if (need->kind == XSDK_XSC_FIXED_LOOP) {
+			parts.resources[resource++] =
+				(V4xShaderResource){ V4X_RESOURCE_FIXED_LOOP, 0, 0, (uint16_t)need->regs, (uint16_t)need->reg };
 			continue;
 		}
 		if (need->kind == XSDK_XSC_CLIP_PLANE) {

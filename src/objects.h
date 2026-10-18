@@ -42,7 +42,7 @@ enum {
 	// A stage's samplers, Vulkan's minimum; both stages' together share the fetch constants the streams leave
 	// (pipeline.c).
 	V4X_MAX_SAMPLERS = 16,
-	// Hardware loops a stage's shader has, each its own loop constant (xost:docs/xsc.md, "Loops a block counts"), and
+	// Hardware loops' counts a stage's shader has, a loop constant each (xost:docs/xsc.md, "Loops a block counts"), and
 	// the passes a loop constant runs at most (xenia:src/xenia/gpu/xenos.h:1089).
 	V4X_MAX_LOOPS = 16,
 	V4X_MAX_LOOP_PASSES = 255,

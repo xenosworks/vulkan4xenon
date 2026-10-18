@@ -287,7 +287,8 @@ static void write_loops(VkQueue queue, const uint32_t *values)
 	queue->loops_written = true;
 }
 
-// The loop constants a pipeline's hardware loops read, each from its count.
+// The loop constants a pipeline's hardware loops read, each from its count, or its fixed passes for loops whose count
+// is data.
 static void apply_loops(const Pipeline *pipeline, const Replay *replay)
 {
 	uint32_t values[XSDK_LOOP_CONSTANTS];
@@ -296,6 +297,8 @@ static void apply_loops(const Pipeline *pipeline, const Replay *replay)
 		const V4xShaderResource *const resource = &pipeline->resources[i].resource;
 		if (resource->kind == V4X_RESOURCE_PUSH_LOOP || resource->kind == V4X_RESOURCE_UNIFORM_LOOP)
 			values[resource->count] = xsdk_gpu_loop_constant(loop_count(replay, resource), 0, 1);
+		else if (resource->kind == V4X_RESOURCE_FIXED_LOOP)
+			values[resource->count] = xsdk_gpu_loop_constant(resource->first, 0, 1);
 	}
 	write_loops(replay->queue, values);
 }
@@ -311,7 +314,8 @@ static void apply_resources(const Pipeline *pipeline, Replay *replay)
 			write_constants(vertex, resource->first, replay->push, resource->count);
 			continue;
 		}
-		if (resource->kind == V4X_RESOURCE_PUSH_LOOP || resource->kind == V4X_RESOURCE_UNIFORM_LOOP)
+		if (resource->kind == V4X_RESOURCE_PUSH_LOOP || resource->kind == V4X_RESOURCE_UNIFORM_LOOP ||
+			resource->kind == V4X_RESOURCE_FIXED_LOOP)
 			continue;
 		if (!replay->sets[resource->set])
 			continue;
