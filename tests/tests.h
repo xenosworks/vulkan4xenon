@@ -31,6 +31,9 @@ void test_subpasses(const Harness *harness);
 void test_targets(const Harness *harness);
 // Render passes whose area is smaller than the framebuffer, each clearing, loading and storing it alone (milestone 27).
 void test_render_areas(const Harness *harness);
+// Render passes past eDRAM drawn a band of rows at a time: four attachments with depth at 1280x720 loaded and stored, a
+// 2048x2048 shadow map stored, loaded and sampled, and what such a pass refuses (milestone 17).
+void test_tiles(const Harness *harness);
 // Blits drawn on the GPU into rectangles of an image, and the replay's time with one and with a blit on the CPU
 // (milestone 27).
 void test_gpu_blits(const Harness *harness);

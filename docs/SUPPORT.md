@@ -270,11 +270,36 @@ Some are there to refuse, as the features they need aren't reported. Each logs w
 - Up to 8 subpasses over up to 8 attachments. Each subpass has one to four colour attachments, of the formats that
   are colour attachments (Formats), one sample, and optionally a depth attachment, `VK_FORMAT_D24_UNORM_S8_UINT`;
   none, unused colour attachments, and input and resolve attachments return `VK_ERROR_FEATURE_NOT_PRESENT`.
-- **A subpass's attachments fit eDRAM together:** its colour targets and depth must fit eDRAM's 2048 tiles at the
-  framebuffer's size, a 64-bit target taking twice a 32-bit one's tiles (`xsdk_gpu_color_target_tiles`); otherwise
-  `vkCreateFramebuffer` logs the tiles they'd take and returns `VK_ERROR_FEATURE_NOT_PRESENT`. At 1280x720 that's
-  one 32-bit colour attachment and depth, or one 64-bit one without, or two 32-bit ones without. **Deviation:** more
-  needs predicated tiling, milestone 17's.
+- **A subpass past eDRAM is a tiled pass** (milestone 17's first part): one whose colour targets and depth pass eDRAM's
+  2048 tiles at the framebuffer's size, a 64-bit target taking twice a 32-bit one's tiles
+  (`xsdk_gpu_color_target_tiles`), is drawn as xsdk's tiled pass (xsdk:include/xsdk/gpu.h, `xsdk_gpu_begin_tiles`). At
+  1280x720 one 32-bit colour attachment and depth fit, or one 64-bit one without, or two 32-bit ones without; more
+  tiles. Past eDRAM, at one sample:
+  - **Its commands are replayed once,** at `vkQueueSubmit`, into a recording that each band of rows runs, as few bands
+    as fit, each moved to eDRAM's top (xsdk:docs/HARDWARE.md, "Tiled passes at one sample, milestone 44 step 2").
+  - **Stores:** each colour attachment is resolved a band at a time into its image, whatever its store op, which clears
+    it to its clear value for the next band.
+  - **Loads:** each load op's image is drawn back at the recording's start, so each band draws its own rows, into its
+    target alone by the write masks, as a band's targets can't be set one at a time. The resolve that clears band 0
+    before the first band leaves those images alone (`XsdkTileResolve`'s `drawn_back`). A clear needs nothing more.
+  - **Depth stays whole** in eDRAM, ending at its top, wherever it fits beside a band of colour, so it lasts between
+    passes as an untiled pass keeps it, tiled and untiled passes taking it from each other (`XsdkTiling`'s
+    `depth_top`). Every subpass up to 1280x720 fits. Resolves don't clear it, so a pass that clears it draws its clear
+    first, unless eDRAM holds that clear already; one left to be read is resolved into its texture a band at a time.
+  - **Otherwise depth is in bands:** each band's is cleared with it and, if the pass stores depth, resolved into the
+    depth image's texture a band at a time. A pass that loads it draws that texture's depth back first, through the
+    pixel shader, which takes a depth image made with `VK_IMAGE_USAGE_SAMPLED_BIT`: with any other,
+    `vkCreateFramebuffer` returns `VK_ERROR_FEATURE_NOT_PRESENT`. The texture holds what the last pass that stored the
+    depth in bands, or left it to be read, put there. **Deviation:** stencil doesn't come back, as Xenos exports none
+    from a pixel shader, and the layer logs that once; the depth comes back through a texture fetch, which xsdk_test
+    finds within 2 in 2^24 of what was stored (xsdk:tests/test_tiles.c, `DEPTH_24_TOLERANCE`).
+  - **Refused inside it:** queries and time stamps, as each band would run them; `vkEndCommandBuffer` returns
+    `VK_ERROR_FEATURE_NOT_PRESENT`, and one in a secondary command buffer is dropped at replay and logged. A render area
+    smaller than the framebuffer fails the command buffer the same way, as each band resolves all its rows.
+  - **Shortcut:** each subpass past eDRAM records into 1 MB of packets its framebuffer holds, some thousands of the
+    layer's draws; a pass that outgrows it draws nothing, and the layer logs it. A pass waits for the GPU to finish the
+    last one its framebuffer's subpass recorded, so a framebuffer used twice in a submission costs a wait.
+  - Up to 4096x4096, any subpass fits xsdk's 64 bands.
 - **Subpasses, each a pass of its own** (milestone 19): `vkCmdBeginRenderPass` and `vkCmdNextSubpass` begin each
   subpass as the replay begins a render pass, and `vkCmdNextSubpass` and `vkCmdEndRenderPass` end it. An attachment
   takes its own load op in the first subpass that uses it and its store op in the last; the subpasses between load and
@@ -300,7 +325,7 @@ Some are there to refuse, as the features they need aren't reported. Each logs w
 - A barrier moving a sampled depth image from `VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL` to one of those
   layouts fails the command buffer: `vkEndCommandBuffer` returns `VK_ERROR_FEATURE_NOT_PRESENT`, as only a pass's end
   resolves depth. Depth images can't be copied.
-- Framebuffers: the render pass's attachments, their full size, up to 1280x720, one layer. Colour attachments are
+- Framebuffers: the render pass's attachments, their full size, up to 4096x4096, one layer. Colour attachments are
   swapchain images or images made with `VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT`.
 - **Render areas** (milestone 27): a pass clears, loads and stores its render area alone, as Vulkan says, by resolving
   that part of the target (`xsdk_gpu_resolve_texture_rect`). A resolve copies and clears 8 by 8 pixels at a time
@@ -322,7 +347,7 @@ Some are there to refuse, as the features they need aren't reported. Each logs w
     when the two areas are the same, as eDRAM holds a depth image's depth around an area.
   - Clearing part of the depth leaves hierarchical depth off till a pass clears all of it (xsdk:include/xsdk/gpu.h),
     so the draws after it skip no hidden pixels early.
-- How it maps (docs/ROADMAP.md, milestones 4, 25 and 27):
+- How an untiled pass maps (docs/ROADMAP.md, milestones 4, 25 and 27):
   - the pass draws into eDRAM, each colour attachment a colour target of its own in its format, one after another
     from tile 0 (`xsdk_gpu_set_targets`), and depth where eDRAM holds its image's, or the clear it wants at its size;
     a depth eDRAM doesn't hold goes ending at tile 2048, or just under a depth image eDRAM holds there when that stays
@@ -340,7 +365,10 @@ Some are there to refuse, as the features they need aren't reported. Each logs w
     shaders, into that target alone where the subpass has several;
   - a pass's resolve clears a colour target as the next pass in the command buffer clears the target at its tile, in
     its format and at its size, and keeps it otherwise; depth the same. The last pass in a command buffer clears to its
-    own values, so the next frame's usually finds them.
+    own values, so the next frame's usually finds them;
+  - a tiled pass's bands reach every tile but a whole depth's at the top, so after one eDRAM holds its last band,
+    cleared by its resolves, which no untiled pass takes, and its whole depth: the layer keeps that depth and forgets
+    the other colour targets and depths.
 
 ## Images
 
@@ -742,7 +770,7 @@ hasn't been measured (xsdk:TODO.md).
 | `maxSamplerAnisotropy` | 16 |
 | `minMemoryMapAlignment` | 65536 |
 | `minTexelBufferOffsetAlignment`, `minUniformBufferOffsetAlignment`, `minStorageBufferOffsetAlignment` | 256 |
-| `maxFramebufferWidth`, `maxFramebufferHeight` | 1280, 720 |
+| `maxFramebufferWidth`, `maxFramebufferHeight` | 4096 |
 | `maxFramebufferLayers` | 1 |
 | `framebufferColorSampleCounts`, `framebufferDepthSampleCounts`, `framebufferStencilSampleCounts`, `sampledImageColorSampleCounts` | 1 |
 | `discreteQueuePriorities` | 2 |
@@ -761,7 +789,6 @@ Set limits below Vulkan 1.0's minimum:
 | Limit | Why |
 |---|---|
 | `maxVertexInputAttributeOffset` 1016, `maxVertexInputBindingStride` 1020 (2047, 2048) | A fetch's stride is 8 bits of dwords (xsdk:src/shader.c). |
-| `maxFramebufferWidth`, `maxFramebufferHeight` 1280, 720 (4096) | A 1280x720 colour and depth target fills eDRAM (xsdk:SCOPE.md 3.4). |
 | `maxFramebufferLayers` 1 (256) | No layered rendering. |
 | `maxImageArrayLayers` 6 (256) | A cube's six layers; arrays of images aren't built yet. |
 | `maxUniformBufferRange` 4096 (16384) | A block is copied into a stage's 256 float constants of 16 bytes. |

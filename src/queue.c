@@ -82,6 +82,8 @@ typedef struct {
 	// draws go to now, from 0 (begin_query).
 	uint32_t query_address;
 	uint32_t visibility_id;
+	// In a tiled pass, whose commands go into its recording (begin_tiled_pass).
+	bool tiling;
 } Replay;
 
 // A block's registers on their way into the constants; the queue is externally synchronized, so one copy will do.
@@ -594,7 +596,7 @@ static void draw_back(VkQueue queue, const Replay *replay, EdramPart *colors)
 		if (render_pass->color_count > 1)
 			set_one_target(replay, i);
 		v4x_blit_draw(&queue->blit, &framebuffer->attachments[i]->texture, framebuffer->width, framebuffer->height,
-			&replay->area);
+			&replay->area, 0, 1);
 		framebuffer->attachments[i]->used_serial = replay->serial;
 		colors[i] = holding_color(framebuffer, i, replay->area);
 		drawn = true;
@@ -751,6 +753,165 @@ static void end_render_pass(
 	}
 }
 
+// Where a tiled pass keeps a whole depth: ending at eDRAM's top (render_pass.c, tile_targets).
+static uint32_t top_depth_tile(const Framebuffer *framebuffer)
+{
+	return XSDK_EDRAM_TILES - xsdk_gpu_target_tiles(framebuffer->width, framebuffer->height);
+}
+
+// A tiled pass's bands reach every tile but its whole depth's, so eDRAM keeps the depth part holding the pass's own
+// depth there, or the clear it wants, as part 0, and loses every other part and the colour targets.
+static void keep_tiled_depth(VkQueue queue, Replay *replay)
+{
+	const Framebuffer *const framebuffer = replay->framebuffer;
+	const uint32_t tile = top_depth_tile(framebuffer);
+	EdramPart kept = { .contents = EDRAM_UNKNOWN };
+	for (uint32_t i = 0; i < V4X_EDRAM_DEPTHS && framebuffer->tiling.depth_whole; i++) {
+		const EdramPart *const depth = &queue->depths[i];
+		if (depth->tile == tile &&
+			((depth->contents == EDRAM_IMAGE && depth->image == framebuffer->depth) ||
+				(replay->clears_depth && depth_ready(depth, replay))))
+			kept = *depth;
+	}
+	for (uint32_t i = 0; i < V4X_EDRAM_DEPTHS; i++)
+		queue->depths[i] = i ? (EdramPart){ .contents = EDRAM_UNKNOWN } : kept;
+	for (uint32_t i = 0; i < V4X_MAX_COLOR_ATTACHMENTS; i++)
+		queue->colors[i] = (EdramPart){ .contents = EDRAM_UNKNOWN };
+	replay->depth_part = 0;
+	replay->depth_tile = tile;
+}
+
+// Whether the depth image's texture takes the pass's depth a band at a time: in bands, stored and sampled; whole, left
+// to be read, as an untiled pass leaves it.
+static bool resolves_depth(const RenderPass *render_pass, const Framebuffer *framebuffer)
+{
+	if (!render_pass->has_depth || !framebuffer->depth->is_sampled_depth)
+		return false;
+	return framebuffer->tiling.depth_whole ? render_pass->leaves_depth_to_read : render_pass->stores_depth;
+}
+
+// Depth in bands that loads comes back from its image's texture, which the last pass to store it filled.
+static bool draws_depth_back(const Replay *replay)
+{
+	const RenderPass *const render_pass = replay->render_pass;
+	return render_pass->has_depth && !replay->framebuffer->tiling.depth_whole && render_pass->loads_depth &&
+		!replay->clears_depth;
+}
+
+// Resolves never clear a whole depth, so one eDRAM doesn't hold cleared is drawn; one in bands is cleared with band 0's
+// clear by the last resolve that isn't drawn back, or drawn if every resolve is.
+static bool draws_depth_clear(const Replay *replay)
+{
+	const RenderPass *const render_pass = replay->render_pass;
+	const Framebuffer *const framebuffer = replay->framebuffer;
+	if (!render_pass->has_depth || !replay->clears_depth)
+		return false;
+	if (framebuffer->tiling.depth_whole)
+		return !depth_ready(&replay->queue->depths[0], replay);
+	bool resolved = resolves_depth(render_pass, framebuffer);
+	for (uint32_t i = 0; i < render_pass->color_count; i++)
+		resolved = resolved || render_pass->load_ops[i] != VK_ATTACHMENT_LOAD_OP_LOAD;
+	return !resolved;
+}
+
+// Into the recording first, so each band draws its own rows: the depth clear no resolve makes, depth drawn back, and
+// each colour attachment that loads, drawn into its target alone by the write masks.
+static void load_tiles(VkQueue queue, const Replay *replay)
+{
+	static bool stencil_logged;
+	const RenderPass *const render_pass = replay->render_pass;
+	const Framebuffer *const framebuffer = replay->framebuffer;
+	const uint32_t count = render_pass->color_count;
+	if (draws_depth_clear(replay)) {
+		const ClearRect clear = { .rect = whole(framebuffer),
+			.depth = replay->clear_depth,
+			.stencil = replay->clear_stencil,
+			.clears_depth = true,
+			.clears_stencil = true };
+		v4x_blit_clear(&queue->blit, &clear, count, framebuffer->width, framebuffer->height);
+	}
+	if (draws_depth_back(replay)) {
+		if (!stencil_logged)
+			xsdk_log_write("vulkan4xenon: depth past eDRAM in bands comes back without its stencil");
+		stencil_logged = true;
+		v4x_blit_draw_depth(&queue->blit, &framebuffer->depth->texture, framebuffer->width, framebuffer->height, count);
+		framebuffer->depth->used_serial = replay->serial;
+	} else if (render_pass->has_depth && render_pass->loads_depth && !replay->clears_depth) {
+		check_depth_kept(queue, replay);
+	}
+	for (uint32_t i = 0; i < count; i++) {
+		if (render_pass->load_ops[i] != VK_ATTACHMENT_LOAD_OP_LOAD)
+			continue;
+		v4x_blit_draw(&queue->blit, &framebuffer->attachments[i]->texture, framebuffer->width, framebuffer->height,
+			&replay->area, i, count);
+		framebuffer->attachments[i]->used_serial = replay->serial;
+	}
+}
+
+// A subpass past eDRAM's tiles is a tiled pass (xsdk:include/xsdk/gpu.h): its commands are replayed once into a
+// recording that each band of rows runs.
+static void begin_tiled_pass(VkQueue queue, Replay *replay)
+{
+	const Framebuffer *const framebuffer = replay->framebuffer;
+	TileRecording *const recording = framebuffer->recording;
+	// The GPU may still be running what the subpass recorded last.
+	const NTSTATUS waited = recording->fence ? xsdk_gpu_wait(recording->fence, IDLE_TIMEOUT_MS) : STATUS_SUCCESS;
+	if (!NT_SUCCESS(waited))
+		xsdk_log_write("vulkan4xenon: a pass past eDRAM's last recording didn't finish: 0x%08X", (unsigned)waited);
+	keep_tiled_depth(queue, replay);
+	// Resolves clear depth in bands to it, and the hierarchical buffer takes it as each band's.
+	if (replay->clears_depth && !framebuffer->tiling.depth_whole)
+		set_depth_clear(queue, replay->clear_depth, replay->clear_stencil);
+	const NTSTATUS status = xsdk_gpu_begin_tiles(&framebuffer->tiling, &recording->buffer);
+	if (!NT_SUCCESS(status))
+		xsdk_log_write("vulkan4xenon: xsdk_gpu_begin_tiles failed: 0x%08X", (unsigned)status);
+	replay->tiling = true;
+	load_tiles(queue, replay);
+	replay->pipeline_dirty = true;
+	replay->clip_planes_on = false;
+	memset(replay->pointed_streams, 0, sizeof replay->pointed_streams);
+	memset(replay->pointed_textures, 0, sizeof replay->pointed_textures);
+	// A band begins with the loop constants the last band left, so the recording writes its own.
+	queue->loops_written = false;
+}
+
+// Each colour attachment is resolved a band at a time, which clears it to its clear for the next band, one drawn back
+// left out of band 0's clear; so is depth, as resolves_depth says. eDRAM then holds the last band, which no untiled
+// pass uses, and a whole depth at the top.
+static void end_tiled_pass(VkQueue queue, Replay *replay)
+{
+	const RenderPass *const render_pass = replay->render_pass;
+	const Framebuffer *const framebuffer = replay->framebuffer;
+	XsdkTileResolve resolves[V4X_MAX_COLOR_ATTACHMENTS + 1];
+	uint32_t count = 0;
+	for (uint32_t i = 0; i < render_pass->color_count; i++) {
+		Image *const image = framebuffer->attachments[i];
+		resolves[count] = (XsdkTileResolve){ .target = i,
+			.texture = &image->texture,
+			.drawn_back = render_pass->load_ops[i] == VK_ATTACHMENT_LOAD_OP_LOAD };
+		memcpy(resolves[count++].clear_rgba, replay->clears->colors[i], sizeof resolves[0].clear_rgba);
+		image->used_serial = replay->serial;
+	}
+	Image *const depth = framebuffer->depth;
+	if (resolves_depth(render_pass, framebuffer)) {
+		resolves[count++] = (XsdkTileResolve){
+			.target = XSDK_TILE_DEPTH, .texture = &depth->texture, .drawn_back = draws_depth_back(replay)
+		};
+		depth->used_serial = replay->serial;
+	}
+	replay->tiling = false;
+	if (!NT_SUCCESS(xsdk_gpu_end_tiles(resolves, count)))
+		(void)v4x_host_unsupported("a pass past eDRAM whose commands outgrow its recording's 1 MB");
+	framebuffer->recording->fence = xsdk_gpu_fence();
+	queue->depths[0] = render_pass->has_depth && framebuffer->tiling.depth_whole
+		? holding(depth, replay->depth_tile, whole(framebuffer))
+		: (EdramPart){ .contents = EDRAM_UNKNOWN };
+	replay->pipeline_dirty = true;
+	replay->clip_planes_on = false;
+	memset(replay->pointed_streams, 0, sizeof replay->pointed_streams);
+	memset(replay->pointed_textures, 0, sizeof replay->pointed_textures);
+}
+
 // The next render pass in the command buffer after this command, if there is one.
 static const Command *next_render_pass(VkCommandBuffer buffer, uint32_t after)
 {
@@ -806,6 +967,10 @@ static const VkRect2D *area_of(VkCommandBuffer buffer, const Command *begin)
 // The pass ends before the next one in the command buffer begins, which its resolves clear for.
 static void end_pass_command(VkQueue queue, VkCommandBuffer buffer, Replay *replay, uint32_t index)
 {
+	if (replay->framebuffer->tiled) {
+		end_tiled_pass(queue, replay);
+		return;
+	}
 	const Command *const next = next_render_pass(buffer, index);
 	const PassClears *const next_clears = next ? (const PassClears *)(buffer->data + next->begin.clears_at) : NULL;
 	end_render_pass(queue, replay, next, next_clears, next ? area_of(buffer, next) : NULL);
@@ -988,7 +1153,10 @@ static void begin_command(VkQueue queue, VkCommandBuffer buffer, Replay *replay,
 	}
 	if (depth)
 		depth->clear_pending = false;
-	begin_render_pass(queue, replay);
+	if (replay->framebuffer->tiled)
+		begin_tiled_pass(queue, replay);
+	else
+		begin_render_pass(queue, replay);
 }
 
 // A depth image's depth lives in eDRAM, so its clear waits for the next pass to load it; a sampled one's texture
@@ -1036,8 +1204,19 @@ static void wait_events(VkCommandBuffer buffer, const Command *command)
 	xsdk_gpu_invalidate(0, ALL_MEMORY_BYTES);
 }
 
+// A tiled pass refuses queries and time stamps as they're recorded (command_buffer.c), but a secondary command buffer
+// doesn't know its pass, so its are refused as they're replayed.
+static bool refused_in_tiles(const Replay *replay, const char *what)
+{
+	if (replay->tiling)
+		(void)v4x_host_unsupported(what);
+	return replay->tiling;
+}
+
 static void write_timestamp(const Replay *replay, const Command *command)
 {
+	if (refused_in_tiles(replay, "time stamps in a render pass past eDRAM"))
+		return;
 	QueryPool *const pool = command->timestamp.pool;
 	const uint32_t slot_bytes = V4X_QUERY_SLOT_WORDS * sizeof(uint32_t);
 	xsdk_gpu_write_clock(pool->address + command->timestamp.query * slot_bytes, command->timestamp.after_work);
@@ -1050,6 +1229,8 @@ static void write_timestamp(const Replay *replay, const Command *command)
 // any number of queries, a wait for the GPU each.
 static void begin_query(Replay *replay, const Command *command)
 {
+	if (refused_in_tiles(replay, "queries in a render pass past eDRAM"))
+		return;
 	QueryPool *const pool = command->queries.pool;
 	replay->query_address = pool->address + command->queries.first * V4X_QUERY_SLOT_WORDS * sizeof(uint32_t);
 	replay->visibility_id = 0;

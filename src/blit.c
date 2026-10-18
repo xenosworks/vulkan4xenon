@@ -31,10 +31,13 @@ static const float rectangle[RECTANGLE_VERTICES][VERTEX_FLOATS] = {
 	{ -1.0f, 1.0f, 0.0f, 1.0f, 0.0f, 1.0f },
 };
 
-// The layer's shaders, as the bundle has them: the image drawn back, the clears, and the drawn blit's vertex shader.
+// The layer's shaders, as the bundle has them: the image drawn back, into one target or four and as depth, the clears,
+// and the drawn blit's vertex shader.
 typedef struct {
 	const V4xShader *vertex;
 	const V4xShader *pixel;
+	const V4xShader *pixel_four;
+	const V4xShader *depth;
 	const V4xShader *clear;
 	const V4xShader *clear_four;
 	const V4xShader *region;
@@ -50,6 +53,10 @@ static VkResult load_shaders(Blit *blit, const Shaders *shaders)
 	NTSTATUS status = load_shader(&blit->vertex, shaders->vertex);
 	if (NT_SUCCESS(status))
 		status = load_shader(&blit->pixel, shaders->pixel);
+	if (NT_SUCCESS(status))
+		status = load_shader(&blit->pixel_four, shaders->pixel_four);
+	if (NT_SUCCESS(status))
+		status = load_shader(&blit->depth, shaders->depth);
 	if (NT_SUCCESS(status))
 		status = load_shader(&blit->clear, shaders->clear);
 	if (NT_SUCCESS(status))
@@ -74,6 +81,7 @@ static VkResult load_shaders(Blit *blit, const Shaders *shaders)
 		xsdk_log_write("vulkan4xenon: xsdk_shader_set_vertex_layout failed for the blit: 0x%08X", (unsigned)status);
 		return VK_ERROR_INITIALIZATION_FAILED;
 	}
+	// Each samples its one image at the slot xost gives a fragment shader's first sampler.
 	blit->texture_slot = shaders->pixel->resources[0].first;
 	blit->clear_constant = shaders->clear->resources[0].first;
 	blit->clear_four_constant = shaders->clear_four->resources[0].first;
@@ -123,6 +131,10 @@ static void make_state(Blit *blit)
 	xsdk_gpu_raster_state(&blit->raster, &raster);
 	const XsdkDepthStencil depth_stencil = { .depth_compare = XSDK_COMPARE_ALWAYS };
 	xsdk_gpu_depth_stencil_state(&blit->depth_stencil, &depth_stencil);
+	const XsdkDepthStencil depth_write = {
+		.depth_test = true, .depth_write = true, .depth_compare = XSDK_COMPARE_ALWAYS
+	};
+	xsdk_gpu_depth_stencil_state(&blit->depth_write, &depth_write);
 }
 
 VkResult v4x_blit_create(Blit *blit)
@@ -131,11 +143,14 @@ VkResult v4x_blit_create(Blit *blit)
 	const Shaders shaders = {
 		.vertex = v4x_shader_find(&v4x_blit_bundle, v4x_blit_vert_spirv, V4X_BLIT_VERT_SPIRV_BYTES),
 		.pixel = v4x_shader_find(&v4x_blit_bundle, v4x_blit_frag_spirv, V4X_BLIT_FRAG_SPIRV_BYTES),
+		.pixel_four = v4x_shader_find(&v4x_blit_bundle, v4x_blit_four_frag_spirv, V4X_BLIT_FOUR_FRAG_SPIRV_BYTES),
+		.depth = v4x_shader_find(&v4x_blit_bundle, v4x_depth_back_frag_spirv, V4X_DEPTH_BACK_FRAG_SPIRV_BYTES),
 		.clear = v4x_shader_find(&v4x_blit_bundle, v4x_clear_frag_spirv, V4X_CLEAR_FRAG_SPIRV_BYTES),
 		.clear_four = v4x_shader_find(&v4x_blit_bundle, v4x_clear_four_frag_spirv, V4X_CLEAR_FOUR_FRAG_SPIRV_BYTES),
 		.region = v4x_shader_find(&v4x_blit_bundle, v4x_blit_region_vert_spirv, V4X_BLIT_REGION_VERT_SPIRV_BYTES),
 	};
-	if (!shaders.vertex || !shaders.pixel || !shaders.clear || !shaders.clear_four || !shaders.region)
+	if (!shaders.vertex || !shaders.pixel || !shaders.pixel_four || !shaders.depth || !shaders.clear ||
+		!shaders.clear_four || !shaders.region)
 		return VK_ERROR_INITIALIZATION_FAILED;
 	VkResult result = load_shaders(blit, &shaders);
 	if (result == VK_SUCCESS)
@@ -154,23 +169,56 @@ void v4x_blit_destroy(Blit *blit)
 	xsdk_shader_free(&blit->region);
 	xsdk_shader_free(&blit->clear_four);
 	xsdk_shader_free(&blit->clear);
+	xsdk_shader_free(&blit->depth);
+	xsdk_shader_free(&blit->pixel_four);
 	xsdk_shader_free(&blit->pixel);
 	xsdk_shader_free(&blit->vertex);
 	*blit = (Blit){ .vertices = NULL };
 }
 
-// The viewport as the replay sets one over the whole target (src/queue.c, apply_viewport), the scissor at the area.
-void v4x_blit_draw(const Blit *blit, const XsdkTexture *texture, uint32_t width, uint32_t height, const VkRect2D *area)
+// Each of count colour targets blends nothing, and only target `target` is written, or none for target count.
+static void masked_blends(const Blit *blit, uint32_t target, uint32_t count, XsdkBlendState *blends)
 {
-	xsdk_gpu_set_shaders(&blit->vertex, &blit->pixel);
+	for (uint32_t i = 0; i < count; i++) {
+		blends[i] = blit->blend;
+		if (i != target)
+			blends[i].color_mask = 0;
+	}
+}
+
+// The texture over the area, texel for texel: the viewport as the replay sets one over the whole target (src/queue.c,
+// apply_viewport), the scissor at the area.
+static void draw_texture(const Blit *blit, const XsdkTexture *texture, uint32_t width, uint32_t height,
+	const VkRect2D *area, const XsdkBlendState *blends, uint32_t count)
+{
 	xsdk_gpu_set_viewport(-0.5f, (float)height - 0.5f, (float)width, -(float)height, 0.0f, 1.0f);
 	xsdk_gpu_set_scissor((uint32_t)area->offset.x, (uint32_t)area->offset.y, area->extent.width, area->extent.height);
-	xsdk_gpu_set_blend(&blit->blend);
+	xsdk_gpu_set_blends(blends, count);
 	xsdk_gpu_set_raster(&blit->raster);
-	xsdk_gpu_set_depth_stencil(&blit->depth_stencil);
 	xsdk_gpu_set_vertices(0, blit->vertices_address, RECTANGLE_BYTES);
 	xsdk_gpu_set_texture(blit->texture_slot, texture, &blit->sampler);
 	xsdk_gpu_draw(XSDK_PRIMITIVE_TRIANGLE_LIST, RECTANGLE_VERTICES);
+}
+
+void v4x_blit_draw(const Blit *blit, const XsdkTexture *texture, uint32_t width, uint32_t height, const VkRect2D *area,
+	uint32_t target, uint32_t count)
+{
+	XsdkBlendState blends[V4X_MAX_COLOR_ATTACHMENTS];
+	masked_blends(blit, target, count, blends);
+	xsdk_gpu_set_shaders(&blit->vertex, count > 1 ? &blit->pixel_four : &blit->pixel);
+	xsdk_gpu_set_depth_stencil(&blit->depth_stencil);
+	draw_texture(blit, texture, width, height, area, blends, count);
+}
+
+// Xenos exports no stencil, so depth alone comes back, through the pixel shader (xost:docs/xsc.md, gl_FragDepth).
+void v4x_blit_draw_depth(const Blit *blit, const XsdkTexture *texture, uint32_t width, uint32_t height, uint32_t count)
+{
+	XsdkBlendState blends[V4X_MAX_COLOR_ATTACHMENTS];
+	masked_blends(blit, count, count, blends);
+	const VkRect2D whole = { { 0, 0 }, { width, height } };
+	xsdk_gpu_set_shaders(&blit->vertex, &blit->depth);
+	xsdk_gpu_set_depth_stencil(&blit->depth_write);
+	draw_texture(blit, texture, width, height, &whole, blends, count);
 }
 
 // The viewport over the destination's rectangle, as the replay sets one (src/queue.c, apply_viewport), and the scissor

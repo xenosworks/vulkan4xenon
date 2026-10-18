@@ -764,77 +764,6 @@ static void check_limits(const Harness *harness)
 			features.independentBlend && formats_hold);
 }
 
-// A 64-bit target the display's size takes 1440 tiles alone and 2160 with depth, past eDRAM's 2048.
-static bool past_edram_refused(const Harness *harness)
-{
-	VkImage image = VK_NULL_HANDLE;
-	VkDeviceMemory memory = VK_NULL_HANDLE;
-	VkImageView view = VK_NULL_HANDLE;
-	VkImage depth = VK_NULL_HANDLE;
-	VkDeviceMemory depth_memory = VK_NULL_HANDLE;
-	VkImageView depth_view = VK_NULL_HANDLE;
-	VkRenderPass alone = VK_NULL_HANDLE;
-	VkRenderPass with_depth = VK_NULL_HANDLE;
-	const VkAttachmentDescription described[2] = {
-		attachment_of(VK_FORMAT_R16G16B16A16_SFLOAT, VK_ATTACHMENT_LOAD_OP_CLEAR),
-		{ .format = VK_FORMAT_D24_UNORM_S8_UINT,
-			.samples = VK_SAMPLE_COUNT_1_BIT,
-			.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-			.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-			.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-			.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-			.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL },
-	};
-	const VkAttachmentReference color = { 0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL };
-	const VkAttachmentReference depth_reference = { 1, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL };
-	const VkSubpassDescription subpass = {
-		.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
-		.colorAttachmentCount = 1,
-		.pColorAttachments = &color,
-		.pDepthStencilAttachment = &depth_reference,
-	};
-	const VkRenderPassCreateInfo info = {
-		.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
-		.attachmentCount = 2,
-		.pAttachments = described,
-		.subpassCount = 1,
-		.pSubpasses = &subpass,
-	};
-	bool ok = harness_ok("display-sized half-float image",
-				  harness_image(harness, VK_FORMAT_R16G16B16A16_SFLOAT, HARNESS_WIDTH, HARNESS_HEIGHT,
-					  VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, &image, &memory, &view)) &&
-		harness_ok("depth image", harness_depth_image(harness, &depth, &depth_memory, &depth_view)) &&
-		harness_ok("render pass", vkCreateRenderPass(harness->device, &info, NULL, &with_depth)) &&
-		harness_ok("render pass", make_pass(harness, described, 1, &alone));
-	const VkImageView views[2] = { view, depth_view };
-	VkFramebufferCreateInfo framebuffer = {
-		.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
-		.renderPass = with_depth,
-		.attachmentCount = 2,
-		.pAttachments = views,
-		.width = HARNESS_WIDTH,
-		.height = HARNESS_HEIGHT,
-		.layers = 1,
-	};
-	VkFramebuffer refused = VK_NULL_HANDLE;
-	VkFramebuffer made = VK_NULL_HANDLE;
-	ok = ok && vkCreateFramebuffer(harness->device, &framebuffer, NULL, &refused) == VK_ERROR_FEATURE_NOT_PRESENT;
-	framebuffer.renderPass = alone;
-	framebuffer.attachmentCount = 1;
-	ok = ok && harness_ok("the target alone", vkCreateFramebuffer(harness->device, &framebuffer, NULL, &made));
-	vkDestroyFramebuffer(harness->device, refused, NULL);
-	vkDestroyFramebuffer(harness->device, made, NULL);
-	vkDestroyRenderPass(harness->device, alone, NULL);
-	vkDestroyRenderPass(harness->device, with_depth, NULL);
-	vkDestroyImageView(harness->device, depth_view, NULL);
-	vkDestroyImage(harness->device, depth, NULL);
-	vkFreeMemory(harness->device, depth_memory, NULL);
-	vkDestroyImageView(harness->device, view, NULL);
-	vkDestroyImage(harness->device, image, NULL);
-	vkFreeMemory(harness->device, memory, NULL);
-	return ok;
-}
-
 // A pipeline blending into the half-float attachment, which reports no blending, and five colour attachments.
 static bool others_refused(const Harness *harness, const Scene *scene)
 {
@@ -914,7 +843,7 @@ void test_targets(const Harness *harness)
 	if (recorded)
 		check_images(harness, &scene);
 	check_limits(harness);
-	check("targets: a subpass past eDRAM, blending into a float attachment and five colour attachments are refused",
-		built && past_edram_refused(harness) && others_refused(harness, &scene));
+	check("targets: blending into a float attachment and five colour attachments are refused",
+		built && others_refused(harness, &scene));
 	destroy(harness, &scene);
 }

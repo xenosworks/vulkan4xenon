@@ -1587,6 +1587,23 @@ the frame has to be drawn in tiles, as Xenos's predicated tiling does (xsdk:SCOP
 
 **Agreed with the user (2026-10-14)** as a milestone after 14 and 15; its scope is settled when it starts.
 
+**Scope (agreed 2026-10-17):** xsdk:docs/scope/44-tiling-and-msaa.md, its vulkan4xenon part, in two: render passes past
+eDRAM at one sample once xsdk milestone 44's step 2 is done, then multisampling after its steps 3 and 4.
+
+**The first part, render passes past eDRAM at one sample** (built 2026-10-18; not yet run on the console):
+- A subpass past eDRAM's tiles is xsdk's tiled pass: its commands are replayed once into a recording each band runs,
+  its loads drawn back at the recording's start, its stores each band's resolves, its depth whole at eDRAM's top where
+  it fits, else in bands, stored into a sampled depth image's texture and drawn back through the pixel shader, its
+  stencil lost (docs/SUPPORT.md, Render passes). Framebuffers go to 4096x4096. Queries, time stamps and render areas
+  smaller than the framebuffer are refused in such a pass.
+- xsdk takes three additions for it (xsdk:include/xsdk/gpu.h, tiled passes): a resolve the recording draws back is left
+  out of band 0's clear (`drawn_back`); depth whole sits at eDRAM's top, where the layer's untiled passes keep it
+  (`depth_top`); and band 0's clear is skipped only where the last pass cleared each target to the same.
+- **New test:** tests/test_tiles.c. **Broken on purpose:** `results/2026-10-18-milestone-17-part-1/breaks.py` names
+  each break and the checks it should fail, and `builds.sh` builds them.
+- **Not in it:** multisampled images, resolve attachments, alpha to coverage, Aurora and Dusklight, the second part;
+  subpasses without colour attachments, still refused.
+
 ### Milestone 18: every GX pipeline in GLSL
 
 **Why.** The backend draws a GX pipeline only once the GLSL generator (aurora-melee:lib/vulkan4xenon/glsl.cpp) has

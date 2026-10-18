@@ -16,7 +16,7 @@ enum {
 	MAP_ALIGNMENT = 64 << 10,
 	// The CPU's cache line.
 	CACHE_LINE_BYTES = 128,
-	VIEWPORT_MAX = 4096,
+	VIEWPORT_MAX = V4X_MAX_FRAMEBUFFER_SIDE,
 	// Every register of a stage's constants (xsdk:include/xsdk/gpu.h).
 	MAX_UNIFORM_BUFFER_BYTES = V4X_FLOAT_CONSTANTS * 16,
 	// Vulkan 1.0's minimums, which descriptor sets in host memory meet.
@@ -101,8 +101,8 @@ VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceProperties(
 			.minTexelBufferOffsetAlignment = 256,
 			.minUniformBufferOffsetAlignment = 256,
 			.minStorageBufferOffsetAlignment = 256,
-			.maxFramebufferWidth = V4X_DISPLAY_WIDTH,
-			.maxFramebufferHeight = V4X_DISPLAY_HEIGHT,
+			.maxFramebufferWidth = V4X_MAX_FRAMEBUFFER_SIDE,
+			.maxFramebufferHeight = V4X_MAX_FRAMEBUFFER_SIDE,
 			.maxFramebufferLayers = 1,
 			.framebufferColorSampleCounts = VK_SAMPLE_COUNT_1_BIT,
 			.framebufferDepthSampleCounts = VK_SAMPLE_COUNT_1_BIT,
@@ -223,7 +223,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkGetPhysicalDeviceImageFormatProperties(VkPhysic
 	if (format == VK_FORMAT_D24_UNORM_S8_UINT && type == VK_IMAGE_TYPE_2D && tiling == VK_IMAGE_TILING_OPTIMAL &&
 		!(usage & ~(VkImageUsageFlags)V4X_DEPTH_IMAGE_USAGE) && !flags) {
 		*pImageFormatProperties = (VkImageFormatProperties){
-			.maxExtent = { V4X_DISPLAY_WIDTH, V4X_DISPLAY_HEIGHT, 1 },
+			.maxExtent = { V4X_MAX_FRAMEBUFFER_SIDE, V4X_MAX_FRAMEBUFFER_SIDE, 1 },
 			.maxMipLevels = 1,
 			.maxArrayLayers = 1,
 			.sampleCounts = VK_SAMPLE_COUNT_1_BIT,

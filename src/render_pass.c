@@ -8,7 +8,8 @@
 
 // Each subpass draws into one to four colour attachments, and a depth attachment if it has one, and is replayed as a
 // render pass of its own. They live in eDRAM during it, each colour a target of its own; the colours are resolved at
-// its end, and depth stays (docs/ROADMAP.md, milestones 4, 19 and 25).
+// its end, and depth stays (docs/ROADMAP.md, milestones 4, 19 and 25). Past eDRAM's tiles, the subpass is a tiled pass,
+// drawn a band of rows at a time (milestone 17).
 
 // The subpasses an attachment is first and last used in, so the ones between keep it.
 typedef struct {
@@ -127,6 +128,7 @@ static RenderPass subpass_pass(const VkRenderPassCreateInfo *info, uint32_t inde
 	const bool stores = !last || stencil->storeOp == VK_ATTACHMENT_STORE_OP_STORE ||
 		stencil->stencilStoreOp == VK_ATTACHMENT_STORE_OP_STORE;
 	pass.leaves_depth_to_read = last && stores && v4x_read_layout(stencil->finalLayout);
+	pass.stores_depth = stores;
 	return pass;
 }
 
@@ -192,8 +194,38 @@ static VkResult subpass_images(const RenderPass *pass, const VkFramebufferCreate
 	return VK_SUCCESS;
 }
 
-// The colour targets one after another from tile 0, and depth after them; past eDRAM's tiles they'd need predicated
-// tiling, which is milestone 17's.
+// Past eDRAM's tiles, a tiled pass of the same targets: depth whole at eDRAM's top where it fits beside a band of
+// colour, so it stays between passes where an untiled pass keeps it, else in bands; the colour from tile 0 either way
+// (xsdk:include/xsdk/gpu.h, tiled passes).
+static VkResult tile_targets(const RenderPass *pass, Framebuffer *images)
+{
+	XsdkTiling *const tiling = &images->tiling;
+	*tiling = (XsdkTiling){ .width = images->width,
+		.height = images->height,
+		.samples = 1,
+		.count = pass->color_count,
+		.depth = pass->has_depth,
+		.depth_whole = pass->has_depth,
+		.depth_top = pass->has_depth };
+	for (uint32_t i = 0; i < pass->color_count; i++)
+		tiling->targets[i].format = pass->targets[i];
+	if (!xsdk_gpu_tiling_bands(tiling))
+		tiling->depth_whole = tiling->depth_top = false;
+	if (!xsdk_gpu_tiling_bands(tiling)) {
+		xsdk_log_write(
+			"vulkan4xenon: not supported: a subpass's %u colour attachments%s at %ux%u, which can't be tiled",
+			(unsigned)pass->color_count, pass->has_depth ? " and depth" : "", (unsigned)images->width,
+			(unsigned)images->height);
+		return VK_ERROR_FEATURE_NOT_PRESENT;
+	}
+	// Depth in bands comes back from its image's texture, which only a sampled depth image has.
+	if (pass->has_depth && !tiling->depth_whole && pass->loads_depth && !images->depth->is_sampled_depth)
+		return v4x_host_unsupported("a subpass past eDRAM loading depth that doesn't fit whole, its image not sampled");
+	images->tiled = true;
+	return VK_SUCCESS;
+}
+
+// The colour targets one after another from tile 0, and depth after them; past eDRAM's tiles, a tiled pass.
 static VkResult place_targets(const RenderPass *pass, Framebuffer *images)
 {
 	uint32_t tile = 0;
@@ -203,11 +235,33 @@ static VkResult place_targets(const RenderPass *pass, Framebuffer *images)
 	}
 	images->color_tiles = tile;
 	const uint32_t depth_tiles = pass->has_depth ? xsdk_gpu_target_tiles(images->width, images->height) : 0;
-	if (tile + depth_tiles <= XSDK_EDRAM_TILES)
-		return VK_SUCCESS;
-	xsdk_log_write("vulkan4xenon: not supported: a subpass's colour and depth at %ux%u in %u tiles, past eDRAM's %u",
-		(unsigned)images->width, (unsigned)images->height, (unsigned)(tile + depth_tiles), (unsigned)XSDK_EDRAM_TILES);
-	return VK_ERROR_FEATURE_NOT_PRESENT;
+	return tile + depth_tiles <= XSDK_EDRAM_TILES ? VK_SUCCESS : tile_targets(pass, images);
+}
+
+// A tiled pass's recording, made with its framebuffer, as recording into it at a submit would be the hot path's.
+static VkResult make_recordings(FramebufferSubpasses *framebuffer, uint32_t subpass_count)
+{
+	for (uint32_t s = 0; s < subpass_count; s++) {
+		framebuffer->subpasses[s].recording = &framebuffer->recordings[s];
+		if (!framebuffer->subpasses[s].tiled)
+			continue;
+		const NTSTATUS status =
+			xsdk_gpu_command_buffer_create(&framebuffer->recordings[s].buffer, V4X_TILE_RECORDING_DWORDS);
+		if (!NT_SUCCESS(status)) {
+			xsdk_log_write("vulkan4xenon: xsdk_gpu_command_buffer_create failed: 0x%08X", (unsigned)status);
+			return VK_ERROR_OUT_OF_DEVICE_MEMORY;
+		}
+	}
+	return VK_SUCCESS;
+}
+
+static void free_framebuffer(const VkAllocationCallbacks *allocator, FramebufferSubpasses *framebuffer)
+{
+	for (uint32_t s = 0; framebuffer && s < V4X_MAX_SUBPASSES; s++) {
+		if (framebuffer->recordings[s].buffer.dwords)
+			xsdk_gpu_command_buffer_free(&framebuffer->recordings[s].buffer);
+	}
+	v4x_host_free(allocator, framebuffer);
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL vkCreateFramebuffer(VkDevice device, const VkFramebufferCreateInfo *pCreateInfo,
@@ -216,9 +270,8 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateFramebuffer(VkDevice device, const VkFram
 	const RenderPassSubpasses *const render_pass = v4x_object(pCreateInfo->renderPass);
 	if (pCreateInfo->attachmentCount != render_pass->attachment_count || pCreateInfo->layers != 1)
 		return v4x_host_unsupported("framebuffers other than the render pass's attachments and one layer");
-	// Colour and depth at the display's size fill 1440 of eDRAM's tiles (xsdk:SCOPE.md 3.4).
-	if (pCreateInfo->width > V4X_DISPLAY_WIDTH || pCreateInfo->height > V4X_DISPLAY_HEIGHT)
-		return v4x_host_unsupported("framebuffers larger than 1280x720");
+	if (pCreateInfo->width > V4X_MAX_FRAMEBUFFER_SIDE || pCreateInfo->height > V4X_MAX_FRAMEBUFFER_SIDE)
+		return v4x_host_unsupported("framebuffers larger than 4096 a side");
 	FramebufferSubpasses images = { .width = pCreateInfo->width, .height = pCreateInfo->height };
 	for (uint32_t s = 0; s < render_pass->subpass_count; s++) {
 		VkResult result = subpass_images(&render_pass->subpasses[s], pCreateInfo, &images.subpasses[s]);
@@ -227,11 +280,17 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateFramebuffer(VkDevice device, const VkFram
 		if (result != VK_SUCCESS)
 			return result;
 	}
-	FramebufferSubpasses *const framebuffer = v4x_host_alloc(
-		v4x_host_device_allocator(device, pAllocator), sizeof *framebuffer, VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
+	const VkAllocationCallbacks *const allocator = v4x_host_device_allocator(device, pAllocator);
+	FramebufferSubpasses *const framebuffer =
+		v4x_host_alloc(allocator, sizeof *framebuffer, VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
 	if (!framebuffer)
 		return VK_ERROR_OUT_OF_HOST_MEMORY;
 	*framebuffer = images;
+	const VkResult result = make_recordings(framebuffer, render_pass->subpass_count);
+	if (result != VK_SUCCESS) {
+		free_framebuffer(allocator, framebuffer);
+		return result;
+	}
 	*pFramebuffer = v4x_handle(framebuffer);
 	return VK_SUCCESS;
 }
@@ -239,5 +298,5 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateFramebuffer(VkDevice device, const VkFram
 VKAPI_ATTR void VKAPI_CALL vkDestroyFramebuffer(
 	VkDevice device, VkFramebuffer framebuffer, const VkAllocationCallbacks *pAllocator)
 {
-	v4x_host_free(v4x_host_device_allocator(device, pAllocator), v4x_object(framebuffer));
+	free_framebuffer(v4x_host_device_allocator(device, pAllocator), v4x_object(framebuffer));
 }

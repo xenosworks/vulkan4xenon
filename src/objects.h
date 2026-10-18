@@ -56,6 +56,11 @@ enum {
 	V4X_MAX_ATTACHMENTS = 8,
 	// A subpass's colour attachments, Xenos's colour targets (xsdk:include/xsdk/gpu.h, XSDK_COLOR_TARGETS).
 	V4X_MAX_COLOR_ATTACHMENTS = XSDK_COLOR_TARGETS,
+	// Vulkan 1.0's least maxFramebufferWidth and Height, and the viewport's; past eDRAM a subpass is a tiled pass.
+	V4X_MAX_FRAMEBUFFER_SIDE = 4096,
+	// shortcut: a tiled pass's commands fit 1 MB of packets, some thousand of the layer's draws; grow it when a port's
+	// pass outgrows it.
+	V4X_TILE_RECORDING_DWORDS = 1 << 18,
 };
 
 struct VkPhysicalDevice_T {
@@ -97,6 +102,10 @@ typedef struct {
 typedef struct {
 	XsdkShader vertex;
 	XsdkShader pixel;
+	// For a tiled pass, which can't set one colour target alone, the image's colour to all four targets, the write
+	// masks keeping all but one; and depth drawn back from a depth image's texture.
+	XsdkShader pixel_four;
+	XsdkShader depth;
 	// The clear's pixel shader, and the float constant its colour goes in; and the one for several colour attachments,
 	// which writes four colours from four constants.
 	XsdkShader clear;
@@ -115,6 +124,8 @@ typedef struct {
 	XsdkBlendState blend;
 	XsdkRasterState raster;
 	XsdkDepthStencilState depth_stencil;
+	// Depth always written, for the depth drawn back.
+	XsdkDepthStencilState depth_write;
 } Blit;
 
 // What vkCmdClearAttachments clears in one rectangle, kept in the command buffer's data: a colour for each colour
@@ -365,6 +376,8 @@ typedef struct {
 	// It stores depth or stencil and leaves the attachment in a layout to sample it in, so a sampled depth image is
 	// resolved into its texture at its end; one kept as an attachment stays in eDRAM alone.
 	bool leaves_depth_to_read;
+	// It stores depth or stencil, or a later subpass uses them: a tiled pass whose depth is in bands resolves it.
+	bool stores_depth;
 } RenderPass;
 
 // A VkRenderPass: its subpasses in order.
@@ -374,8 +387,14 @@ typedef struct {
 	uint32_t attachment_count;
 } RenderPassSubpasses;
 
+// A tiled pass's recording, which each band runs; the GPU may run it until fence lands.
+typedef struct {
+	XsdkCommandBuffer buffer;
+	uint32_t fence;
+} TileRecording;
+
 // One subpass's attachments' images, and the colour targets they draw into, one after another in eDRAM from tile 0,
-// with the tiles they take all together.
+// with the tiles they take all together; or past eDRAM's tiles, the tiled pass they draw in and its recording.
 typedef struct {
 	Image *attachments[V4X_MAX_COLOR_ATTACHMENTS];
 	Image *depth;
@@ -383,6 +402,9 @@ typedef struct {
 	uint32_t height;
 	XsdkColorTarget targets[V4X_MAX_COLOR_ATTACHMENTS];
 	uint32_t color_tiles;
+	bool tiled;
+	XsdkTiling tiling;
+	TileRecording *recording;
 } Framebuffer;
 
 // A VkFramebuffer: each subpass's images, as the render pass it was made with places its attachments; a compatible pass
@@ -391,6 +413,7 @@ typedef struct {
 	Framebuffer subpasses[V4X_MAX_SUBPASSES];
 	uint32_t width;
 	uint32_t height;
+	TileRecording recordings[V4X_MAX_SUBPASSES];
 } FramebufferSubpasses;
 
 // A copy between a buffer and the whole of an image's level, in some of its layers or 3D slices, kept in the command

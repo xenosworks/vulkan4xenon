@@ -244,13 +244,34 @@ static bool on_grid(int32_t first, uint32_t size, uint32_t edge)
 		(end % XSDK_RESOLVE_ALIGNMENT == 0 || end == edge);
 }
 
+static bool whole_framebuffer(const FramebufferSubpasses *framebuffer, const VkRect2D *area)
+{
+	return !area->offset.x && !area->offset.y && area->extent.width == framebuffer->width &&
+		area->extent.height == framebuffer->height;
+}
+
+// A tiled pass's bands resolve every row of the framebuffer (xsdk:include/xsdk/gpu.h, tiled passes).
+static bool tiles(const RenderPassSubpasses *render_pass, const FramebufferSubpasses *framebuffer)
+{
+	for (uint32_t i = 0; i < render_pass->subpass_count; i++) {
+		if (framebuffer->subpasses[i].tiled)
+			return true;
+	}
+	return false;
+}
+
+// Whether the subpass being recorded is a tiled pass.
+static bool in_tiled_pass(VkCommandBuffer commandBuffer)
+{
+	return commandBuffer->render_pass && commandBuffer->framebuffer->subpasses[commandBuffer->subpass].tiled;
+}
+
 // xsdk resolves a rectangle of target 0 alone, in 8_8_8_8 (xsdk:include/xsdk/gpu.h, xsdk_gpu_resolve_texture_rect), so
 // an area smaller than the framebuffer needs each subpass to draw one colour attachment of 8 bits a channel.
 static bool area_resolvable(
 	const RenderPassSubpasses *render_pass, const FramebufferSubpasses *framebuffer, const VkRect2D *area)
 {
-	if (!area->offset.x && !area->offset.y && area->extent.width == framebuffer->width &&
-		area->extent.height == framebuffer->height)
+	if (whole_framebuffer(framebuffer, area))
 		return true;
 	for (uint32_t i = 0; i < render_pass->subpass_count; i++) {
 		const RenderPass *const subpass = &render_pass->subpasses[i];
@@ -271,6 +292,10 @@ VKAPI_ATTR void VKAPI_CALL vkCmdBeginRenderPass(
 	if (!on_grid(area->offset.x, area->extent.width, framebuffer->width) ||
 		!on_grid(area->offset.y, area->extent.height, framebuffer->height)) {
 		commandBuffer->result = v4x_host_unsupported("render areas off the 8-pixel grid inside the framebuffer");
+		return;
+	}
+	if (!whole_framebuffer(framebuffer, area) && tiles(render_pass, framebuffer)) {
+		commandBuffer->result = v4x_host_unsupported("render areas smaller than the framebuffer past eDRAM");
 		return;
 	}
 	if (!area_resolvable(render_pass, framebuffer, area)) {
@@ -891,6 +916,11 @@ VKAPI_ATTR void VKAPI_CALL vkCmdBeginQuery(
 		commandBuffer->result = v4x_host_unsupported("occlusion queries begun outside a render pass");
 		return;
 	}
+	// A tiled pass's recording runs once a band, and its last band would decide (xsdk:include/xsdk/gpu.h).
+	if (in_tiled_pass(commandBuffer)) {
+		commandBuffer->result = v4x_host_unsupported("queries in a render pass past eDRAM");
+		return;
+	}
 	record_queries(commandBuffer, COMMAND_BEGIN_QUERY, queryPool, query, 1);
 }
 
@@ -904,6 +934,10 @@ VKAPI_ATTR void VKAPI_CALL vkCmdEndQuery(VkCommandBuffer commandBuffer, VkQueryP
 VKAPI_ATTR void VKAPI_CALL vkCmdWriteTimestamp(
 	VkCommandBuffer commandBuffer, VkPipelineStageFlagBits pipelineStage, VkQueryPool queryPool, uint32_t query)
 {
+	if (in_tiled_pass(commandBuffer)) {
+		commandBuffer->result = v4x_host_unsupported("time stamps in a render pass past eDRAM");
+		return;
+	}
 	Command *const command = record(commandBuffer, COMMAND_WRITE_TIMESTAMP);
 	if (!command)
 		return;
