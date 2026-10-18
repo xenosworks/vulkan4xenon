@@ -223,7 +223,7 @@ typedef struct {
 	VkDeviceMemory quads_memory;
 	VkBuffer readback;
 	VkDeviceMemory readback_memory;
-	const uint8_t *read;
+	uint8_t *read;
 	VkCommandBuffer four_commands[HARNESS_MAX_IMAGES];
 	VkCommandBuffer big_commands[HARNESS_MAX_IMAGES];
 	VkCommandBuffer work;
@@ -847,13 +847,16 @@ static uint32_t difference(uint32_t a, uint32_t b)
 	return a > b ? a - b : b - a;
 }
 
-// Every texel of the shadow map's memory: its depth above stencil 0 (xsdk:docs/HARDWARE.md, "Depth resolves").
+// Every texel of the shadow map's memory: its depth above stencil 0 (xsdk:docs/HARDWARE.md, "Depth resolves"). Copied
+// whole into the cached buffer first, as reading write-combined memory a word at a time costs the CPU a trip each.
 static uint32_t count_wrong_depth(const Harness *harness, const Scene *s)
 {
 	void *mapped = NULL;
 	if (!harness_ok("vkMapMemory", vkMapMemory(harness->device, s->big_depth_memory, 0, VK_WHOLE_SIZE, 0, &mapped)))
 		return BIG * BIG;
-	volatile const uint32_t *const words = mapped;
+	memcpy(s->read, mapped, READBACK_BYTES);
+	vkUnmapMemory(harness->device, s->big_depth_memory);
+	const uint32_t *const words = (const uint32_t *)s->read;
 	uint32_t wrong = 0;
 	for (uint32_t y = 0; y < BIG; y++) {
 		for (uint32_t x = 0; x < BIG; x++) {
@@ -866,7 +869,6 @@ static uint32_t count_wrong_depth(const Harness *harness, const Scene *s)
 					(unsigned)word, (unsigned)want);
 		}
 	}
-	vkUnmapMemory(harness->device, s->big_depth_memory);
 	return wrong;
 }
 
