@@ -1,0 +1,49 @@
+log: game:\probe_tiles.log
+log: named after \Device\Harddisk0\Partition1\xsdk\m44\probe_tiles.xex
+sbrk: the heap may grow to 474 MB from 0x00070000, the title's free memory
+open: NtCreateFile(game:\tiles_case.txt) failed: 0xC0000034
+tiles probe: cases 1 to 4 and 11 (game:\tiles_case.txt names the case to start from); break build: none
+tiles probe: case 1 offset: each row of a 256x128 target drawn under a window offset of (0,-64) and a 256x64 screen scissor
+tiles probe: case 1 offset, window offset (0,-64), screen scissor 256x64, the window scissor over the whole target: rows 64-127 belong at eDRAM rows 0-63, the sentinel elsewhere; found rows 64-127 at eDRAM rows 0-63; 32768 right, 0 missing, 0 stray, 0 misplaced, 0 other; PASS
+tiles probe: case 1 offset, window offset (0,-64), screen scissor 256x64, the window scissor at target rows 32-95: rows 64-95 belong at eDRAM rows 0-31, the sentinel elsewhere; found rows 64-95 at eDRAM rows 0-31; 32768 right, 0 missing, 0 stray, 0 misplaced, 0 other; PASS
+tiles probe: case 1 offset, window offset (0,-64), screen scissor 256x64, the window scissor at rows 32-95 with window_offset_disable: rows 96-127 belong at eDRAM rows 32-63, the sentinel elsewhere; found rows 96-127 at eDRAM rows 32-63; 32768 right, 0 missing, 0 stray, 0 misplaced, 0 other; PASS
+tiles probe: case 2 position: the pixel parameters' xy drawn as colour under the same window offset
+tiles probe: case 2 position, window offset (0,-64): of 16384 pixels in eDRAM rows 0-63, 16384 hold their row in the band (0-63), 0 their row in the target (64-127), 0 neither; 0 stray below them; gl_FragCoord.y reads the row in the band; PASS
+tiles probe: case 3 resolve: 32-row bands resolved with RB_COPY_DEST_BASE moved to rows 32, 64 and 96
+tiles probe: case 3 resolve, a 256x32 band resolved with RB_COPY_DEST_BASE 32768 bytes into a 256x160 tiled texture: rows 32-63 belong at texture rows 32-63, the sentinel elsewhere; found rows 32-63 at texture rows 32-63; 40960 right, 0 missing, 0 stray, 0 misplaced, 0 other; PASS
+tiles probe: case 3 resolve, a 256x32 band resolved with RB_COPY_DEST_BASE 65536 bytes into a 256x160 tiled texture: rows 32-95 belong at texture rows 32-95, the sentinel elsewhere; found rows 32-95 at texture rows 32-95; 40960 right, 0 missing, 0 stray, 0 misplaced, 0 other; PASS
+tiles probe: case 3 resolve, a 256x32 band resolved with RB_COPY_DEST_BASE 98304 bytes into a 256x160 tiled texture: rows 32-127 belong at texture rows 32-127, the sentinel elsewhere; found rows 32-127 at texture rows 32-127; 40960 right, 0 missing, 0 stray, 0 misplaced, 0 other; PASS
+tiles probe: case 4 depth: depth whole across four 32-row bands, its base moved per band, then hierarchical depth timed
+tiles probe: case 4 depth whole, pass 1: a fill at 0.875 written always, then the near quad at 0.25 less-than: band 0, rows 0-31, depth at RB_DEPTH_INFO 2036, tiles 2036-2043: 0 of 8192 pixels wrong
+tiles probe: case 4 depth whole, pass 1: a fill at 0.875 written always, then the near quad at 0.25 less-than: band 1, rows 32-63, depth at RB_DEPTH_INFO 2044, tiles 2044-2047 and 0-3: 0 of 8192 pixels wrong
+tiles probe: case 4 depth whole, pass 1: a fill at 0.875 written always, then the near quad at 0.25 less-than: band 2, rows 64-95, depth at RB_DEPTH_INFO 4, tiles 4-11: 0 of 8192 pixels wrong
+tiles probe: case 4 depth whole, pass 1: a fill at 0.875 written always, then the near quad at 0.25 less-than: band 3, rows 96-127, depth at RB_DEPTH_INFO 12, tiles 12-19: 0 of 8192 pixels wrong
+tiles probe: case 4 depth whole, pass 1: a fill at 0.875 written always, then the near quad at 0.25 less-than: 0 pixels wrong in all; PASS
+tiles probe: case 4 depth whole, pass 2: the far quad at 0.5 less-than, hidden where pass 1's near quad is: band 0, rows 0-31, depth at RB_DEPTH_INFO 2036, tiles 2036-2043: 0 of 8192 pixels wrong
+tiles probe: case 4 depth whole, pass 2: the far quad at 0.5 less-than, hidden where pass 1's near quad is: band 1, rows 32-63, depth at RB_DEPTH_INFO 2044, tiles 2044-2047 and 0-3: 0 of 8192 pixels wrong
+tiles probe: case 4 depth whole, pass 2: the far quad at 0.5 less-than, hidden where pass 1's near quad is: band 2, rows 64-95, depth at RB_DEPTH_INFO 4, tiles 4-11: 0 of 8192 pixels wrong
+tiles probe: case 4 depth whole, pass 2: the far quad at 0.5 less-than, hidden where pass 1's near quad is: band 3, rows 96-127, depth at RB_DEPTH_INFO 12, tiles 12-19: 0 of 8192 pixels wrong
+tiles probe: case 4 depth whole, pass 2: the far quad at 0.5 less-than, hidden where pass 1's near quad is: 0 pixels wrong in all; PASS
+tiles probe: case 4 depth, hierarchical depth, bits 18-26 not moved: band 0, depth at tile 1024, the bits at 0: 8 hidden full-band quads took 1925 clocks, 3 us; 0 of 8192 pixels wrong
+tiles probe: case 4 depth, hierarchical depth, bits 18-26 not moved: band 1, depth at tile 1032, the bits at 0: 8 drawn full-band quads took 1921 clocks, 3 us; 8192 of 8192 pixels wrong, the first at (0,32) holding 202020FF for 4040E0FF
+tiles probe: case 4 depth, hierarchical depth, bits 18-26 not moved: band 2, depth at tile 1040, the bits at 0: 8 drawn full-band quads took 1923 clocks, 3 us; 8192 of 8192 pixels wrong, the first at (0,64) holding 202020FF for 4040E0FF
+tiles probe: case 4 depth, hierarchical depth, bits 18-26 not moved: band 3, depth at tile 1048, the bits at 0: 8 drawn full-band quads took 1921 clocks, 3 us; 8192 of 8192 pixels wrong, the first at (0,96) holding 202020FF for 4040E0FF
+tiles probe: case 4 depth, hierarchical depth, bits 18-26 not moved: 24576 pixels wrong in all
+tiles probe: case 4 depth, hierarchical depth, bits 18-26 moved by the band's eDRAM tiles: band 0, depth at tile 1024, the bits at 0: 8 hidden full-band quads took 1919 clocks, 3 us; 0 of 8192 pixels wrong
+tiles probe: case 4 depth, hierarchical depth, bits 18-26 moved by the band's eDRAM tiles: band 1, depth at tile 1032, the bits at 8: 8 drawn full-band quads took 81399 clocks, 163 us; 1024 of 8192 pixels wrong, the first at (0,32) holding 202020FF for 4040E0FF
+tiles probe: case 4 depth, hierarchical depth, bits 18-26 moved by the band's eDRAM tiles: band 2, depth at tile 1040, the bits at 16: 8 drawn full-band quads took 92419 clocks, 185 us; 0 of 8192 pixels wrong
+tiles probe: case 4 depth, hierarchical depth, bits 18-26 moved by the band's eDRAM tiles: band 3, depth at tile 1048, the bits at 24: 8 drawn full-band quads took 92421 clocks, 185 us; 0 of 8192 pixels wrong
+tiles probe: case 4 depth, hierarchical depth, bits 18-26 moved by the band's eDRAM tiles: 1024 pixels wrong in all
+tiles probe: case 4 depth, hierarchical depth, bits 18-26 moved by the band's pixels in 512s: band 0, depth at tile 1024, the bits at 0: 8 hidden full-band quads took 1925 clocks, 3 us; 0 of 8192 pixels wrong
+tiles probe: case 4 depth, hierarchical depth, bits 18-26 moved by the band's pixels in 512s: band 1, depth at tile 1032, the bits at 20: 8 drawn full-band quads took 92399 clocks, 185 us; 0 of 8192 pixels wrong
+tiles probe: case 4 depth, hierarchical depth, bits 18-26 moved by the band's pixels in 512s: band 2, depth at tile 1040, the bits at 40: 8 drawn full-band quads took 92399 clocks, 185 us; 0 of 8192 pixels wrong
+tiles probe: case 4 depth, hierarchical depth, bits 18-26 moved by the band's pixels in 512s: band 3, depth at tile 1048, the bits at 60: 8 drawn full-band quads took 92401 clocks, 185 us; 0 of 8192 pixels wrong
+tiles probe: case 4 depth, hierarchical depth, bits 18-26 moved by the band's pixels in 512s: 0 pixels wrong in all
+tiles probe: case 11 cost: xsdk's tiled passes timed by the GPU's clock at 1280x720 in 1, 2 and 3 bands
+tiles probe: case 11 cost, fill-bound, 4 full-screen quads through the long shader: untiled 10331 us, 1 band 10336 us, 2 bands 10342 us, 3 bands 10349 us
+tiles probe: case 11 cost, vertex-bound, 16 draws of 65532 degenerate triangles' vertices: untiled 2403 us, 1 band 2407 us, 2 bands 4514 us, 3 bands 6621 us
+tiles probe: case 11 cost, one pixel: untiled 301 us, 1 band 306 us, 2 bands 311 us, 3 bands 318 us
+tiles probe: case 11 cost, a band's fixed cost: (318 - 306) / 2 = 6 us; under 50 us: PASS
+tiles probe: case 11 cost, the vertex-bound draws in band 1 of 2: predicated outside it 0 us, drawn 2103 us; under a fifth: PASS
+tiles probe: done, 11 PASS, 0 DIFFERS; xsdk_gpu_close 0x00000000
+exit: status 0
