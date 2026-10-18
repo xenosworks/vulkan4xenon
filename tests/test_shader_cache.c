@@ -15,9 +15,9 @@
 enum {
 	PATH_BYTES = 128,
 	FOLDER_MODE = 0777,
-	// The triangle's two shaders, test_run_time_index's two, test_branches' two and test_loops' three, which the
+	// The triangle's two shaders, test_run_time_index's two, test_branches' two and test_loops' four, which the
 	// bundle doesn't hold.
-	COMPILED_SHADERS = 9,
+	COMPILED_SHADERS = 10,
 	TRIANGLE_SHADERS = 2,
 	// Stale files emptied from the folder before the run; more means something else writes there.
 	MAX_STALE_FILES = 64,

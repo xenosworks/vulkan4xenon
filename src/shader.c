@@ -29,9 +29,10 @@ enum {
 	NANOSECONDS_PER_MICROSECOND = 1000,
 	MICROSECONDS_PER_SECOND = 1000000,
 	CACHE_PATH_BYTES = 256,
-	// "V4XS", and the layout of what follows it, which changes as V4xShader's parts do: 2 since clip planes.
+	// "V4XS", and the layout of what follows it, which changes as V4xShader's parts do: 2 since clip planes, 3 since a
+	// block loop's start and step.
 	CACHE_MAGIC = 0x56345853,
-	CACHE_LAYOUT = 2,
+	CACHE_LAYOUT = 3,
 	// No container xost writes is near this; a file that says so is damaged.
 	MAX_CACHED_BYTES = 1024 * 1024,
 	FOLDER_MODE = 0777,
@@ -212,7 +213,7 @@ static V4xShader *shader_from(
 	for (size_t i = 0; i < compiled->resource_count; i++) {
 		const XsdkXscResource *const r = &compiled->resources[i];
 		parts.resources[i] = (V4xShaderResource){ resource_kind(r->kind), (uint8_t)r->set, (uint8_t)r->binding,
-			(uint16_t)r->reg, (uint16_t)r->regs };
+			(uint16_t)r->reg, (uint16_t)r->regs, 0, 0 };
 	}
 	uint32_t literal = 0;
 	uint32_t resource = (uint32_t)compiled->resource_count;
@@ -223,12 +224,12 @@ static V4xShader *shader_from(
 			const uint8_t kind =
 				need->block == XSDK_XSC_PUSH_CONSTANTS ? V4X_RESOURCE_PUSH_LOOP : V4X_RESOURCE_UNIFORM_LOOP;
 			parts.resources[resource++] = (V4xShaderResource){ kind, (uint8_t)need->set, (uint8_t)need->binding,
-				(uint16_t)need->offset_bytes, (uint16_t)need->reg };
+				(uint16_t)need->offset_bytes, (uint16_t)need->reg, need->start, need->step };
 			continue;
 		}
 		if (need->kind == XSDK_XSC_FIXED_LOOP) {
 			parts.resources[resource++] =
-				(V4xShaderResource){ V4X_RESOURCE_FIXED_LOOP, 0, 0, (uint16_t)need->regs, (uint16_t)need->reg };
+				(V4xShaderResource){ V4X_RESOURCE_FIXED_LOOP, 0, 0, (uint16_t)need->regs, (uint16_t)need->reg, 0, 0 };
 			continue;
 		}
 		if (need->kind == XSDK_XSC_CLIP_PLANE) {

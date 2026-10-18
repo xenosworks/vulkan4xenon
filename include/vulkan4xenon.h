@@ -22,7 +22,7 @@ enum {
 	V4X_RESOURCE_UNIFORM_BUFFER,
 	V4X_RESOURCE_SAMPLER,
 	// A hardware loop's count, the int at byte first of the push constants or of the uniform buffer, for loop constant
-	// count (xost:docs/xsc.md, "Loops a block counts").
+	// count, its i from start by step (xost:docs/xsc.md, "Loops a block counts").
 	V4X_RESOURCE_PUSH_LOOP,
 	V4X_RESOURCE_UNIFORM_LOOP,
 	// A sampler2DShadow's comparison: the float constant its sampler's compare op is written to.
@@ -46,6 +46,10 @@ typedef struct {
 	uint16_t first;
 	// Registers the block fills; 1 for a sampler and the index; a loop's loop constant.
 	uint16_t count;
+	// A block loop's i: where it starts and what each pass adds, 1 or more, which the layer works its passes out from
+	// (xsdk:include/xsdk/xsc.h, xsdk_xsc_loop_passes); 0 for the other kinds.
+	int32_t start;
+	int32_t step;
 } V4xShaderResource;
 
 // A user clip plane a vertex shader's gl_ClipDistance[plane] reads from its float constant register reg, in a block

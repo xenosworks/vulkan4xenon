@@ -65,17 +65,20 @@ def lower(xost, spirv_bytes, source, optimize=False):
                                                               XSDK_REGISTERS.vertex, optimize)
     except native.CompileError as error:
         sys.exit(f"{source}: xost didn't compile it: {error}")
+    # Each resource as include/vulkan4xenon.h's V4xShaderResource, a start and step of 0 but for a block loop.
+    resources = [resource + (0, 0) for resource in resources]
     literals = []
     clip_planes = []
     for entry in manifest:
-        # A hardware loop's count, which the layer reads from the block for each draw: a resource of its own.
+        # A hardware loop's count, which the layer reads from the block for each draw, and its i's start and step,
+        # which the layer works its passes out from: a resource of its own.
         if entry[0] == "block_loop":
-            _, loop, kind, dset, binding, offset = entry
-            resources.append((f"{kind}_loop", dset, binding, offset, loop))
+            _, loop, kind, dset, binding, offset, start, step = entry
+            resources.append((f"{kind}_loop", dset, binding, offset, loop, start, step))
         # Loops whose count is data: their loop constant and the passes it runs, 255.
         elif entry[0] == "fixed_loop":
             _, loop, passes = entry
-            resources.append(("fixed_loop", 0, 0, passes, loop))
+            resources.append(("fixed_loop", 0, 0, passes, loop, 0, 0))
         elif entry[0] == "clip":
             clip_planes.append((entry[2], entry[1]))
         elif len(entry) != 2:
@@ -130,8 +133,8 @@ def write_outputs(output, shaders, sources, bundle):
         if shader["resources"]:
             resources = f"{name}_resources"
             source.append(f"static const V4xShaderResource {resources}[] = {{")
-            for kind, dset, binding, first, count in shader["resources"]:
-                source.append(f"\t{{ {RESOURCE_KINDS[kind]}, {dset}, {binding}, {first}, {count} }},")
+            for kind, dset, binding, first, count, start, step in shader["resources"]:
+                source.append(f"\t{{ {RESOURCE_KINDS[kind]}, {dset}, {binding}, {first}, {count}, {start}, {step} }},")
             source += ["};", ""]
         clip_planes = "NULL"
         if shader["clip_planes"]:

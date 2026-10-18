@@ -14,6 +14,7 @@
 #include "xsdk/gpu.h"
 #include "xsdk/log.h"
 #include "xsdk/texture.h"
+#include "xsdk/xsc.h"
 
 enum {
 	IDLE_TIMEOUT_MS = 10000,
@@ -256,24 +257,25 @@ static void point_texture(Replay *replay, uint32_t slot, const Descriptor *descr
 	*pointed = (PointedTexture){ .texture = descriptor->texture, .sampler = descriptor->sampler };
 }
 
-// A loop's count as the draw has its block: the int at the resource's byte offset, none where the block isn't bound or
-// its range doesn't reach it. A loop constant runs 0 to 255 passes (xenia:src/xenia/gpu/xenos.h:1086-1097).
+// A loop's passes as the draw has its block: from the loop's start to the int at the resource's byte offset by its
+// step, as xsdk works them out, 0 to 255; none where the block isn't bound or its range doesn't reach it.
 static uint32_t loop_count(const Replay *replay, const V4xShaderResource *resource)
 {
 	int32_t count = 0;
 	if (resource->kind == V4X_RESOURCE_PUSH_LOOP) {
 		memcpy(&count, (const uint8_t *)replay->push + resource->first, sizeof count);
-	} else if (replay->sets[resource->set]) {
+	} else {
 		const DescriptorSet *const set = replay->sets[resource->set];
-		const Descriptor *const descriptor = &set->descriptors[resource->binding];
+		const Descriptor *const descriptor = set ? &set->descriptors[resource->binding] : NULL;
+		if (!descriptor || resource->first + sizeof count > descriptor->range_bytes)
+			return 0;
 		const LayoutBinding *const binding = &set->layout->bindings[resource->binding];
 		uint32_t offset = resource->first;
 		if (binding->type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC)
 			offset += replay->dynamic_offsets[resource->set][binding->dynamic_index];
-		if (resource->first + sizeof count <= descriptor->range_bytes)
-			count = (int32_t)descriptor->buffer[offset / 4];
+		count = (int32_t)descriptor->buffer[offset / 4];
 	}
-	return count < 0 ? 0 : count > V4X_MAX_LOOP_PASSES ? V4X_MAX_LOOP_PASSES : (uint32_t)count;
+	return xsdk_xsc_loop_passes(resource->start, resource->step, count);
 }
 
 // xsdk rewrites every boolean and loop word together (xsdk:include/xsdk/gpu.h), so they're written only when one of

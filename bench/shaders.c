@@ -54,8 +54,8 @@ static const uint32_t mesh_frag_container[] = {
 };
 
 static const V4xShaderResource mesh_frag_resources[] = {
-	{ V4X_RESOURCE_PUSH_CONSTANTS, 0, 0, 0, 5 },
-	{ V4X_RESOURCE_SAMPLER, 0, 0, 0, 1 },
+	{ V4X_RESOURCE_PUSH_CONSTANTS, 0, 0, 0, 5, 0, 0 },
+	{ V4X_RESOURCE_SAMPLER, 0, 0, 0, 1, 0, 0 },
 };
 
 const uint32_t mesh_vert_spirv[] = {
@@ -138,7 +138,7 @@ static const V4xShaderLiteral mesh_vert_literals[] = {
 };
 
 static const V4xShaderResource mesh_vert_resources[] = {
-	{ V4X_RESOURCE_PUSH_CONSTANTS, 0, 0, 0, 4 },
+	{ V4X_RESOURCE_PUSH_CONSTANTS, 0, 0, 0, 4, 0, 0 },
 };
 
 const uint32_t mesh_gray_frag_spirv[] = {
@@ -215,8 +215,8 @@ static const V4xShaderLiteral mesh_gray_frag_literals[] = {
 };
 
 static const V4xShaderResource mesh_gray_frag_resources[] = {
-	{ V4X_RESOURCE_PUSH_CONSTANTS, 0, 0, 0, 5 },
-	{ V4X_RESOURCE_SAMPLER, 0, 0, 0, 1 },
+	{ V4X_RESOURCE_PUSH_CONSTANTS, 0, 0, 0, 5, 0, 0 },
+	{ V4X_RESOURCE_SAMPLER, 0, 0, 0, 1, 0, 0 },
 };
 
 const uint32_t mesh_uniform_frag_spirv[] = {
@@ -272,8 +272,8 @@ static const uint32_t mesh_uniform_frag_container[] = {
 };
 
 static const V4xShaderResource mesh_uniform_frag_resources[] = {
-	{ V4X_RESOURCE_UNIFORM_BUFFER, 1, 1, 0, 1 },
-	{ V4X_RESOURCE_SAMPLER, 0, 0, 0, 1 },
+	{ V4X_RESOURCE_UNIFORM_BUFFER, 1, 1, 0, 1, 0, 0 },
+	{ V4X_RESOURCE_SAMPLER, 0, 0, 0, 1, 0, 0 },
 };
 
 const uint32_t mesh_uniform_vert_spirv[] = {
@@ -357,7 +357,7 @@ static const V4xShaderLiteral mesh_uniform_vert_literals[] = {
 };
 
 static const V4xShaderResource mesh_uniform_vert_resources[] = {
-	{ V4X_RESOURCE_UNIFORM_BUFFER, 1, 0, 0, 4 },
+	{ V4X_RESOURCE_UNIFORM_BUFFER, 1, 0, 0, 4, 0, 0 },
 };
 
 const uint32_t sprite_frag_spirv[] = {
@@ -404,7 +404,7 @@ static const uint32_t sprite_frag_container[] = {
 };
 
 static const V4xShaderResource sprite_frag_resources[] = {
-	{ V4X_RESOURCE_SAMPLER, 0, 0, 0, 1 },
+	{ V4X_RESOURCE_SAMPLER, 0, 0, 0, 1, 0, 0 },
 };
 
 const uint32_t sprite_vert_spirv[] = {

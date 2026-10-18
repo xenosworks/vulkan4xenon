@@ -11,7 +11,8 @@
 // Milestone 21's hardware loops, counted by an int in a block: push constants, a uniform buffer and a dynamic one, in a
 // pixel shader, a vertex shader and both at once. The layer writes each count into the loop constant xost gave the
 // loop, clamped to the 0 to 255 passes one runs. Each count puts its colour or its quad somewhere of its own. Then
-// xsdk milestone 46's loop whose count is data, its loop constant the 255 passes the layer writes.
+// xsdk milestone 46's loop whose count is data, its loop constant the 255 passes the layer writes, and loops from 100
+// and by 2, each the passes the layer works out from the count, the loop's start and its step.
 
 enum {
 	FRAMES = 30,
@@ -96,6 +97,7 @@ typedef struct {
 static uint32_t compiled_loop_count_frag[LOOP_COUNT_FRAG_SPIRV_BYTES / 4];
 static uint32_t compiled_loop_count_if_frag[LOOP_COUNT_IF_FRAG_SPIRV_BYTES / 4];
 static uint32_t compiled_loop_data_frag[LOOP_DATA_FRAG_SPIRV_BYTES / 4];
+static uint32_t compiled_loop_steps_frag[LOOP_STEPS_FRAG_SPIRV_BYTES / 4];
 static bool compiled;
 
 // A dark slate no other test clears to.
@@ -113,6 +115,8 @@ static const float unit_quad[QUAD_VERTICES][2] = { { 0, 0 }, { 1, 0 }, { 0, 1 },
 // A step of colour a pass, small enough that six passes don't saturate, and one that takes 255 passes to reach white.
 static const float coarse_step[4] = { 0.125f, 0.0625f, 0.03125f, 0.0f };
 static const float fine_step[4] = { 1.0f / MAX_PASSES, 0.5f / MAX_PASSES, 0.25f / MAX_PASSES, 0.0f };
+// A step of red and of green a pass, so each channel is its loop's passes.
+static const float pass_step[4] = { 1.0f / MAX_PASSES, 1.0f / MAX_PASSES, 0.0f, 0.0f };
 
 // loop_count.vert's rows: each moves its quad right by the step a pass and adds the colour a pass.
 static const float ROW_HOME = -0.9f;
@@ -148,6 +152,19 @@ static uint32_t to_byte(float value)
 static Rgb stepped(const float step[4], uint32_t passes)
 {
 	return (Rgb){ to_byte(step[0] * passes), to_byte(step[1] * passes), to_byte(step[2] * passes) };
+}
+
+// loop_steps.frag's colour at a count, as the GLSL runs it: the passes of its loop from 100 in red and of its loop by 2
+// in green, each stopping at the 255 a loop runs.
+static Rgb steps_rgb(int32_t count)
+{
+	uint32_t from = 0;
+	for (int32_t i = 100; i < count && from < MAX_PASSES; i++)
+		from++;
+	uint32_t by = 0;
+	for (int32_t j = 0; j < count && by < MAX_PASSES; j += 2)
+		by++;
+	return (Rgb){ to_byte(pass_step[0] * from), to_byte(pass_step[1] * by), 0 };
 }
 
 static void add_probe(Scene *scene, const char *name, uint32_t x, uint32_t y, Rgb want)
@@ -388,6 +405,30 @@ static bool build_data_count(const Harness *harness, Scene *scene)
 			compiled ? compiled_loop_data_frag : loop_data_frag_spirv, LOOP_DATA_FRAG_SPIRV_BYTES, false);
 }
 
+// loop_steps.frag in six quads, three columns by two rows, counted 0, 100, 150, 300, 400 and 600 by the push
+// constants: its loop from 100 runs 0, 0, 50, 200, 255 and 255 passes, its loop by 2 0, 50, 75, 150, 200 and 255.
+static bool build_step_counts(const Harness *harness, Scene *scene)
+{
+	static const int32_t counts[QUADS] = { 0, 100, 150, 300, 400, 600 };
+	scene->check = (HarnessProbes){ "loops: from 100 and by 2", scene->probes, 0, TOLERANCE, 0 };
+	for (uint32_t q = 0; q < QUADS; q++) {
+		const float x = 80.0f + (q % 3) * 400.0f;
+		const float y = 100.0f + (q / 3) * 320.0f;
+		Draw *const draw = &scene->draws[q];
+		*draw = (Draw){
+			.placed = true, .quad = { .x = x, .y = y, .width = 320.0f, .height = 200.0f, .depth = 0.5f }, .pushed = true
+		};
+		memcpy(draw->push.step, pass_step, sizeof draw->push.step);
+		draw->push.count = counts[q];
+		add_probe(scene, "a quad by its loops' passes", (uint32_t)x + 160, (uint32_t)y + 100, steps_rgb(counts[q]));
+	}
+	add_probe(scene, "the clear between the quads", 440, 360, clear_rgb);
+	scene->draw_count = QUADS;
+	return build_layout(harness, scene, 0, true) &&
+		build_pipeline(harness, scene, push_vert_spirv, PUSH_VERT_SPIRV_BYTES,
+			compiled ? compiled_loop_steps_frag : loop_steps_frag_spirv, LOOP_STEPS_FRAG_SPIRV_BYTES, false);
+}
+
 static VkResult record(const Harness *harness, Scene *scene)
 {
 	VkResult result = harness_command_buffers(harness, scene->commands);
@@ -463,9 +504,11 @@ void test_loops(const Harness *harness)
 	memcpy(compiled_loop_count_frag, loop_count_frag_spirv, sizeof compiled_loop_count_frag);
 	memcpy(compiled_loop_count_if_frag, loop_count_if_frag_spirv, sizeof compiled_loop_count_if_frag);
 	memcpy(compiled_loop_data_frag, loop_data_frag_spirv, sizeof compiled_loop_data_frag);
+	memcpy(compiled_loop_steps_frag, loop_steps_frag_spirv, sizeof compiled_loop_steps_frag);
 	compiled_loop_count_frag[GENERATOR_WORD] ^= GENERATOR_CHANGE;
 	compiled_loop_count_if_frag[GENERATOR_WORD] ^= GENERATOR_CHANGE;
 	compiled_loop_data_frag[GENERATOR_WORD] ^= GENERATOR_CHANGE;
+	compiled_loop_steps_frag[GENERATOR_WORD] ^= GENERATOR_CHANGE;
 	compiled = true;
 	run(harness, "counted by push constants, the shader compiled here", build_push_counts,
 		"colours each quad by its count's passes, 300 run as 255 and -5 as none");
@@ -473,6 +516,8 @@ void test_loops(const Harness *harness)
 		"colours each band by the passes before the break");
 	run(harness, "a count from data, the shader compiled here", build_data_count,
 		"colours each eighth by its count's passes, 295 run as 255");
+	run(harness, "from 100 and by 2, the shader compiled here", build_step_counts,
+		"colours each quad by its loops' passes, ceil((count - start) / step) to 255");
 	compiled = false;
 
 	run(harness, "counted by push constants", build_push_counts,
@@ -484,4 +529,6 @@ void test_loops(const Harness *harness)
 	run(harness, "counted by a uniform buffer, with an if/else and a break", build_bands,
 		"colours each band by the passes before the break");
 	run(harness, "a count from data", build_data_count, "colours each eighth by its count's passes, 295 run as 255");
+	run(harness, "from 100 and by 2", build_step_counts,
+		"colours each quad by its loops' passes, ceil((count - start) / step) to 255");
 }

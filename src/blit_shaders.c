@@ -42,7 +42,7 @@ static const uint32_t v4x_blit_frag_container[] = {
 };
 
 static const V4xShaderResource v4x_blit_frag_resources[] = {
-	{ V4X_RESOURCE_SAMPLER, 0, 0, 0, 1 },
+	{ V4X_RESOURCE_SAMPLER, 0, 0, 0, 1, 0, 0 },
 };
 
 const uint32_t v4x_blit_vert_spirv[] = {
@@ -153,7 +153,7 @@ static const uint32_t v4x_blit_four_frag_container[] = {
 };
 
 static const V4xShaderResource v4x_blit_four_frag_resources[] = {
-	{ V4X_RESOURCE_SAMPLER, 0, 0, 0, 1 },
+	{ V4X_RESOURCE_SAMPLER, 0, 0, 0, 1, 0, 0 },
 };
 
 const uint32_t v4x_blit_region_vert_spirv[] = {
@@ -226,7 +226,7 @@ static const uint32_t v4x_blit_region_vert_container[] = {
 };
 
 static const V4xShaderResource v4x_blit_region_vert_resources[] = {
-	{ V4X_RESOURCE_PUSH_CONSTANTS, 0, 0, 0, 1 },
+	{ V4X_RESOURCE_PUSH_CONSTANTS, 0, 0, 0, 1, 0, 0 },
 };
 
 const uint32_t v4x_clear_frag_spirv[] = {
@@ -265,7 +265,7 @@ static const uint32_t v4x_clear_frag_container[] = {
 };
 
 static const V4xShaderResource v4x_clear_frag_resources[] = {
-	{ V4X_RESOURCE_PUSH_CONSTANTS, 0, 0, 0, 1 },
+	{ V4X_RESOURCE_PUSH_CONSTANTS, 0, 0, 0, 1, 0, 0 },
 };
 
 const uint32_t v4x_clear_four_frag_spirv[] = {
@@ -332,7 +332,7 @@ static const uint32_t v4x_clear_four_frag_container[] = {
 };
 
 static const V4xShaderResource v4x_clear_four_frag_resources[] = {
-	{ V4X_RESOURCE_PUSH_CONSTANTS, 0, 0, 0, 4 },
+	{ V4X_RESOURCE_PUSH_CONSTANTS, 0, 0, 0, 4, 0, 0 },
 };
 
 const uint32_t v4x_depth_back_frag_spirv[] = {
@@ -384,7 +384,7 @@ static const uint32_t v4x_depth_back_frag_container[] = {
 };
 
 static const V4xShaderResource v4x_depth_back_frag_resources[] = {
-	{ V4X_RESOURCE_SAMPLER, 0, 0, 0, 1 },
+	{ V4X_RESOURCE_SAMPLER, 0, 0, 0, 1, 0, 0 },
 };
 
 static const V4xShader shaders[] = {
