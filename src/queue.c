@@ -533,7 +533,8 @@ static void place_depth(VkQueue queue, Replay *replay)
 		// The pass's colour targets would draw over a depth below their end.
 		if (depth->tile < color_tiles)
 			continue;
-		if ((depth->contents == EDRAM_IMAGE && depth->image == framebuffer->depth) ||
+		// Another size's depth lies at another pitch, and may not fit where it is.
+		if ((depth->contents == EDRAM_IMAGE && depth->image == framebuffer->depth && same_size(depth, framebuffer)) ||
 			(part == V4X_EDRAM_DEPTHS && replay->clears_depth && depth_ready(depth, replay)))
 			part = i;
 	}
@@ -769,7 +770,7 @@ static void keep_tiled_depth(VkQueue queue, Replay *replay)
 	for (uint32_t i = 0; i < V4X_EDRAM_DEPTHS && framebuffer->tiling.depth_whole; i++) {
 		const EdramPart *const depth = &queue->depths[i];
 		if (depth->tile == tile &&
-			((depth->contents == EDRAM_IMAGE && depth->image == framebuffer->depth) ||
+			((depth->contents == EDRAM_IMAGE && depth->image == framebuffer->depth && same_size(depth, framebuffer)) ||
 				(replay->clears_depth && depth_ready(depth, replay))))
 			kept = *depth;
 	}
