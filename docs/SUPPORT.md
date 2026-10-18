@@ -156,6 +156,11 @@ Some are there to refuse, as the features they need aren't reported. Each logs w
   Xenos has none.
 - The literal constants xost pools are written when a pipeline is bound, at the registers after the shader's
   uniforms.
+- **A fragment shader's constants stay below c252.** xsdk keeps c252 to c255, the group xost's `gl_FragCoord` reads its
+  offset from, which xsdk moves for each band of a tiled pass (xsdk:include/xsdk/gpu.h, `XSDK_PIXEL_CONSTANTS`), so a
+  fragment shader whose uniform blocks, push constants, comparisons or literals reach c252 makes
+  `vkCreateGraphicsPipelines` return `VK_ERROR_FEATURE_NOT_PRESENT`; written, they'd move `gl_FragCoord` for the shaders
+  after. `maxUniformBufferRange` is 4032 to match (Physical device).
 - Where a shader's resources land is xost's choice, recorded in the bundle as its `V4xShaderResource`s
   (xost:docs/xsc.md, "Interface conventions"):
   - push constants take the shader's first float constant registers, then each uniform block in (set, binding) order,
@@ -171,9 +176,9 @@ Some are there to refuse, as the features they need aren't reported. Each logs w
 - A pipeline's shaders read only what its layout has, for their stage. A resource the layout lacks makes
   `vkCreateGraphicsPipelines` log it and return `VK_ERROR_INITIALIZATION_FAILED`, which it doesn't list: that's invalid
   use, refused rather than drawn wrong.
-- Both stages sample, up to 16 samplers each, and each stage's blocks must fit its 256 float constants. A vertex shader
-  samples at the LOD it gives: `texture()` there samples level 0, as glslang gives it LOD 0 (milestone 22;
-  xost:docs/xsc.md, "Vertex textures").
+- Both stages sample, up to 16 samplers each, and each stage's blocks must fit its float constants: a vertex shader's
+  256, a fragment shader's 252 (Shaders). A vertex shader samples at the LOD it gives: `texture()` there samples level
+  0, as glslang gives it LOD 0 (milestone 22; xost:docs/xsc.md, "Vertex textures").
 - **The fetch constants shared out:** both stages and the vertex streams draw on the same 32
   (xsdk:include/xsdk/gpu.h, `xsdk_gpu_set_texture` and `xsdk_gpu_set_vertices`). The fragment shader's samplers keep
   xost's slots from 0, the vertex shader's take the slots after them, its microcode moved to match when the pipeline is
@@ -743,7 +748,7 @@ hasn't been measured (xsdk:TODO.md).
 | `maxImageDimension2D`, `maxImageDimensionCube` | 8192 |
 | `maxImageDimension3D` | 1024 |
 | `maxImageArrayLayers` | 6 |
-| `maxUniformBufferRange` | 4096 |
+| `maxUniformBufferRange` | 4032 |
 | `maxPushConstantsSize` | 128 |
 | `maxMemoryAllocationCount` | 4096 |
 | `maxSamplerAllocationCount` | 4000 |
@@ -791,7 +796,7 @@ Set limits below Vulkan 1.0's minimum:
 | `maxVertexInputAttributeOffset` 1016, `maxVertexInputBindingStride` 1020 (2047, 2048) | A fetch's stride is 8 bits of dwords (xsdk:src/shader.c). |
 | `maxFramebufferLayers` 1 (256) | No layered rendering. |
 | `maxImageArrayLayers` 6 (256) | A cube's six layers; arrays of images aren't built yet. |
-| `maxUniformBufferRange` 4096 (16384) | A block is copied into a stage's 256 float constants of 16 bytes. |
+| `maxUniformBufferRange` 4032 (16384) | A block is copied into a stage's float constants of 16 bytes, a fragment shader's 252 below the 4 xsdk keeps (Shaders). |
 | `maxPerStageResources` 28 (128) | 12 uniform buffers and 16 samplers: a stage's constants, and the fetch constants the two stages share with the vertex streams (Pipelines). |
 | `maxClipDistances`, `maxCombinedClipAndCullDistances` 6 (8) | Xenos clips against six planes (xenia:src/xenia/gpu/registers.h:539-544). |
 

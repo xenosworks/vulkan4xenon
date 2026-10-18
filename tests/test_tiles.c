@@ -18,7 +18,7 @@
 //   loads the depth where they left it;
 // - a 2048x2048 shadow map, its depth in bands: stored a band at a time and read from its memory, loaded by the next
 //   pass, which draws it back, and sampled by another;
-// - what such a pass refuses.
+// - what such a pass refuses, and a fragment shader's uniform block reaching c252, which xsdk keeps.
 // Each scene shows on screen in its own colours.
 
 enum {
@@ -1000,6 +1000,55 @@ static bool refusals_hold(const Harness *harness, const Scene *s)
 	return held && properties.limits.maxFramebufferWidth == 4096 && properties.limits.maxFramebufferHeight == 4096;
 }
 
+// high_block.frag's block reaches c252, the first of the constants xsdk keeps for gl_FragCoord, so the pipeline is
+// refused; never drawn, as with the guard gone its block would move gl_FragCoord for the shaders after.
+static bool high_block_refused(const Harness *harness, const Scene *s)
+{
+	const VkDescriptorSetLayoutBinding binding = { 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1,
+		VK_SHADER_STAGE_FRAGMENT_BIT, NULL };
+	const VkDescriptorSetLayoutCreateInfo set_info = {
+		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+		.bindingCount = 1,
+		.pBindings = &binding,
+	};
+	VkDescriptorSetLayout set_layout = VK_NULL_HANDLE;
+	VkPipelineLayout layout = VK_NULL_HANDLE;
+	const VkPushConstantRange place = { VK_SHADER_STAGE_VERTEX_BIT, 0, PLACE_BYTES };
+	const VkPipelineLayoutCreateInfo layout_info = {
+		.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+		.setLayoutCount = 1,
+		.pSetLayouts = &set_layout,
+		.pushConstantRangeCount = 1,
+		.pPushConstantRanges = &place,
+	};
+	VkPipeline pipeline = VK_NULL_HANDLE;
+	VkResult made = vkCreateDescriptorSetLayout(harness->device, &set_info, NULL, &set_layout);
+	if (made == VK_SUCCESS)
+		made = vkCreatePipelineLayout(harness->device, &layout_info, NULL, &layout);
+	const HarnessPipeline spec = {
+		.vertex_spirv = push_vert_spirv,
+		.vertex_bytes = PUSH_VERT_SPIRV_BYTES,
+		.fragment_spirv = high_block_frag_spirv,
+		.fragment_bytes = HIGH_BLOCK_FRAG_SPIRV_BYTES,
+		.bindings = &harness_quad_binding,
+		.binding_count = 1,
+		.attributes = &harness_quad_attribute,
+		.attribute_count = 1,
+		.layout = layout,
+		.dynamic_viewport = true,
+	};
+	if (made == VK_SUCCESS)
+		made = harness_pipeline(harness, &spec, s->sample_pass, &pipeline);
+	vkDestroyPipeline(harness->device, pipeline, NULL);
+	vkDestroyPipelineLayout(harness->device, layout, NULL);
+	vkDestroyDescriptorSetLayout(harness->device, set_layout, NULL);
+	VkPhysicalDeviceProperties properties;
+	vkGetPhysicalDeviceProperties(harness->physical_device, &properties);
+	xsdk_log_write("tiles: the c252 pipeline returned %d; maxUniformBufferRange %u", (int)made,
+		(unsigned)properties.limits.maxUniformBufferRange);
+	return made == VK_ERROR_FEATURE_NOT_PRESENT && properties.limits.maxUniformBufferRange == 252 * 16;
+}
+
 static bool frames_shown(
 	const Harness *harness, const VkCommandBuffer *commands, const HarnessProbe *probes, const char *what)
 {
@@ -1076,5 +1125,9 @@ void test_tiles(const Harness *harness)
 		"tiles: a query, a time stamp and a render area smaller than the framebuffer refused in a pass past eDRAM, "
 		"depth in bands loaded from an image that isn't sampled refused, and framebuffers to 4096x4096",
 		built && refusals_hold(harness, s));
+	check(
+		"tiles: a fragment shader's uniform block reaching c252, which xsdk keeps, refused, and maxUniformBufferRange "
+		"4032",
+		built && high_block_refused(harness, s));
 	destroy(harness, s);
 }

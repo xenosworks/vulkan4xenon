@@ -1596,6 +1596,8 @@ eDRAM at one sample once xsdk milestone 44's step 2 is done, then multisampling 
   it fits, else in bands, stored into a sampled depth image's texture and drawn back through the pixel shader, its
   stencil lost (docs/SUPPORT.md, Render passes). Framebuffers go to 4096x4096. Queries, time stamps and render areas
   smaller than the framebuffer are refused in such a pass.
+- A fragment shader's constants stay below c252, which xsdk keeps for `gl_FragCoord`: such a pipeline is refused, and
+  `maxUniformBufferRange` is 4032.
 - xsdk takes three additions for it (xsdk:include/xsdk/gpu.h, tiled passes): a resolve the recording draws back is left
   out of band 0's clear (`drawn_back`); depth whole sits at eDRAM's top, where the layer's untiled passes keep it
   (`depth_top`); and band 0's clear is skipped only where the last pass cleared each target to the same.

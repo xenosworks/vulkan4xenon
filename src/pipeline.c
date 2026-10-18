@@ -150,10 +150,17 @@ static bool layout_has(const PipelineLayout *layout, const V4xShaderResource *re
 		binding->type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
 }
 
-// Each stage's resources, checked against the layout and the GPU's constants.
+// Each stage's resources, checked against the layout and the GPU's constants: a fragment shader's stay below the group
+// xsdk keeps for gl_FragCoord (xsdk:include/xsdk/gpu.h, XSDK_PIXEL_CONSTANTS).
 static VkResult gather_resources(const PipelineLayout *layout, const V4xShader *shader, bool vertex, Pipeline *pipeline)
 {
 	const VkShaderStageFlags stage = vertex ? VK_SHADER_STAGE_VERTEX_BIT : VK_SHADER_STAGE_FRAGMENT_BIT;
+	const uint32_t constants = vertex ? V4X_FLOAT_CONSTANTS : XSDK_PIXEL_CONSTANTS;
+	for (uint32_t i = 0; i < shader->literal_count; i++) {
+		if (shader->literals[i].reg >= constants)
+			return v4x_host_unsupported(
+				"a shader's constants past its stage's: 256 a vertex shader's, 252 a fragment's");
+	}
 	for (uint32_t i = 0; i < shader->resource_count; i++) {
 		const V4xShaderResource *const resource = &shader->resources[i];
 		// No binding of the layout's: each instance's draw writes it (queue.c).
@@ -173,8 +180,9 @@ static VkResult gather_resources(const PipelineLayout *layout, const V4xShader *
 			resource->kind == V4X_RESOURCE_PUSH_CONSTANTS || resource->kind == V4X_RESOURCE_UNIFORM_BUFFER;
 		if (resource->kind == V4X_RESOURCE_SAMPLER && resource->first >= V4X_MAX_SAMPLERS)
 			return v4x_host_unsupported("more than 16 samplers a stage");
-		if (block && resource->first + resource->count > V4X_FLOAT_CONSTANTS)
-			return v4x_host_unsupported("blocks past the 256 float constants");
+		if ((block || resource->kind == V4X_RESOURCE_COMPARISON) && resource->first + resource->count > constants)
+			return v4x_host_unsupported(
+				"a shader's constants past its stage's: 256 a vertex shader's, 252 a fragment's");
 		if (loop &&
 			(resource->count >= XSDK_LOOP_CONSTANTS ||
 				(resource->kind == V4X_RESOURCE_PUSH_LOOP && resource->first + 4u > V4X_MAX_PUSH_CONSTANT_BYTES)))

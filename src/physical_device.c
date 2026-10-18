@@ -17,8 +17,8 @@ enum {
 	// The CPU's cache line.
 	CACHE_LINE_BYTES = 128,
 	VIEWPORT_MAX = V4X_MAX_FRAMEBUFFER_SIDE,
-	// Every register of a stage's constants (xsdk:include/xsdk/gpu.h).
-	MAX_UNIFORM_BUFFER_BYTES = V4X_FLOAT_CONSTANTS * 16,
+	// Every register of a fragment shader's constants, the 252 below the group xsdk keeps (xsdk:include/xsdk/gpu.h).
+	MAX_UNIFORM_BUFFER_BYTES = XSDK_PIXEL_CONSTANTS * 16,
 	// Vulkan 1.0's minimums, which descriptor sets in host memory meet.
 	MIN_UNIFORM_BUFFERS_PER_STAGE = 12,
 	MIN_UNIFORM_BUFFERS_PER_SET = 72,
