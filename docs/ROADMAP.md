@@ -3045,10 +3045,12 @@ the cost (section 7). So the time is measured first.
 5. **Pipeline state applied only when it changed.** Binding the pipeline that's bound already does nothing.
    Viewport, scissor, blend, raster and depth-stencil are compared with what was last applied. Render passes, blits
    and clears still force them again, as `pipeline_dirty` does now.
-6. **Uploads that wait for the GPU.** Added on 2026-10-19 after step 1. In Dusklight's attract movie,
-   `vkCmdCopyBufferToImage` waits for the GPU to finish with the image it writes, about 2.4 ms a frame over 2 copies
-   (results/2026-10-19-milestone-29/). Find what each copy waits on, then stop the wait. A busy image could get
-   memory of its own for the new texels, or the copy could run on the GPU. Measured with Dusklight's movie.
+6. **Uploads.** Added on 2026-10-19 after step 1 as uploads that wait for the GPU. In Dusklight's attract movie,
+   `vkCmdCopyBufferToImage` takes about 2.4 ms a frame over 2 copies (results/2026-10-19-milestone-29/). The
+   profile's count of the replay's waits for the GPU then found that the copies wait for nothing: Aurora uploads each
+   video frame into a new image. Their time is the CPU writing the texels into Xenos's tiled layout,
+   `xsdk_texture_upload` at 117 MB/s for R8 (xsdk:docs/HARDWARE.md). Agreed the same day in its place: faster tiled
+   uploads in xsdk, measured with xsdk_test's upload timing and Dusklight's movie.
 
 Step 1 also found Dusklight's passes waiting about 10 ms a frame in xsdk, on its resolve rectangles: 8 sizes kept, a
 9th waiting for the GPU in 1 ms sleeps. That's fixed in xsdk as its own change, agreed the same day.
