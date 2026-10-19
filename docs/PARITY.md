@@ -8,7 +8,7 @@ either.
 
 docs/SUPPORT.md says exactly what the layer does; this page sums it up against Direct3D 9. Milestones 20 to 28 in
 docs/ROADMAP.md close the gaps. Each row says whether Xenos has it, whether xsdk drives it (xost, for shaders), and
-whether the layer exposes it. As of 2026-10-18.
+whether the layer exposes it. As of 2026-10-19.
 
 Of the 47 rows, the layer has 38, part of 8 and none of 1.
 Xenos has all but three: its occlusion queries tell only whether draws rasterized anything, its gamma only approximates
@@ -40,7 +40,7 @@ need. Every other gap is software.
 | 16 vertex streams | Yes | Yes | Yes |
 | Points, lines, line strips, triangle lists, strips and fans | Yes | Yes | Yes |
 | 32-bit indices, draws past 65,535 | Yes, though a draw packet counts in 16 bits (xenia:src/xenia/gpu/registers.h:327) | Up to 65,535 a draw | Partial: lists and strips are split; fans that long are refused (SUPPORT.md, Commands) |
-| Instancing | Yes: a vertex fetch takes its index from a register (xenia:src/xenia/gpu/ucode.h:695-715) | Partial: xost lowers `gl_InstanceIndex` to a constant the runtime writes (xost:docs/xsc.md, "Interface conventions"); xsdk draws an instance at a time | Yes, a draw an instance (SUPPORT.md, Commands) |
+| Instancing | Yes: a vertex fetch takes its index from a register (xenia:src/xenia/gpu/ucode.h:695-715) | Yes but divisors past 1: xost lowers a vertex shader instanced, its instance worked out from the vertex's index (xost:docs/xsc.md, "Interface conventions"); xsdk draws a list's instances in one call, indexed from repeated indices, a strip's or a fan's a packet each (xsdk:docs/HARDWARE.md, "Instancing on the console, milestone 47 step 1" and "Instanced draws in xsdk, milestone 47 step 3") | Yes: one draw for lists, indexed or not; strips and fans a draw an instance (SUPPORT.md, Commands) |
 | Dynamic vertex buffers | n/a | Yes | Yes |
 
 ## Textures and samplers

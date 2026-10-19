@@ -86,16 +86,19 @@ Some are there to refuse, as the features they need aren't reported. Each logs w
 
 - `vkCreateShaderModule` takes standard SPIR-V and looks it up in the app's `v4x_shader_bundle`, which
   `tools/build_shaders.py` writes: GLSL → `glslang -V` → xost → a Xenos container. The key is a 64-bit FNV-1a of the
-  SPIR-V and its size (`include/vulkan4xenon.h`).
+  SPIR-V and its size (`include/vulkan4xenon.h`), and whether the container is a vertex shader's instanced variant
+  (below).
 - SPIR-V the bundle doesn't hold is compiled on the console the first time a module is made from it, through xost's
   compiler in xsdk (`xsdk_xsc_compile`), at xsdk's register split with the optimiser on, and kept till the device goes
-  (xsdk:docs/scope/shader-compiling.md, step 3). The layer logs each shader it compiles and the time it took.
+  (xsdk:docs/scope/shader-compiling.md, step 3); so is an instanced variant the bundle lacks, the first time a pipeline
+  wants it, from the module's SPIR-V, which the module keeps a copy of. The layer logs each shader it compiles and the
+  time it took.
 - An app that names a folder with `v4x_set_shader_cache`, before it makes shader modules, has what the layer compiles
   kept there, in a folder named after the compiler's version (`xsdk_xsc_version()`), one file a shader named after its
-  SPIR-V's hash and size. Each file is written beside its name and renamed into place, so a crash leaves none half
-  written. A later device reads a shader back rather than compile it; a file that doesn't match its name, or whose size
-  doesn't add up, is logged and the shader compiled again. `v4x_shader_counts` says how many the layer compiled and
-  read back. With no folder named, nothing is kept.
+  SPIR-V's hash and size, `-i` after them for an instanced variant. Each file is written beside its name and renamed
+  into place, so a crash leaves none half written. A later device reads a shader back rather than compile it; a file
+  that doesn't match its name, or whose size doesn't add up, is logged and the shader compiled again.
+  `v4x_shader_counts` says how many the layer compiled and read back. With no folder named, nothing is kept.
 - SPIR-V xost refuses returns `VK_ERROR_FEATURE_NOT_PRESENT`, logged with xost's reason, and so does a shader whose
   hardware loop a bare uniform counts, which Vulkan's GLSL has none of. `vkCreateShaderModule` doesn't list that
   result: a deviation.
@@ -154,10 +157,16 @@ Some are there to refuse, as the features they need aren't reported. Each logs w
   as culling takes it, as it did on the console for both windings (milestone 22).
 - Vertex input location n feeds the usage xost gives it: 0 position, 1 colour, 2 and up texture coordinates
   (xsdk:src/xsc_resolve.c:344-346).
-- A vertex shader may read `gl_InstanceIndex`, `firstInstance` included: xost gives it a float constant past the
-  shader's blocks, which the bundle records as a `V4X_RESOURCE_INSTANCE_INDEX` resource, and the layer writes each
-  instance's index into it before the instance's draw (Commands). A float holds it exactly up to 2^24. xost refuses
-  `gl_VertexIndex` (xost:docs/xsc.md, "Interface conventions").
+- **Instanced vertex shaders** (xsdk milestone 47; xost:docs/xsc.md, "Interface conventions"). A vertex shader that
+  reads `gl_InstanceIndex`, `firstInstance` included, is lowered instanced: a prologue works out the instance and the
+  vertex from the vertex's index and the instance group, a float constant past the shader's blocks, which the bundle
+  records as a `V4X_RESOURCE_INSTANCE` resource and xsdk writes before each piece of a draw (Commands). A float holds
+  the instance exactly up to 2^24. A pipeline with a binding at the instance's rate takes its vertex shader's
+  instanced variant, compiled with xost's `instanced` option: `tools/build_shaders.py` builds one for every vertex
+  shader that doesn't read `gl_InstanceIndex`, the bundle's entry marked `instanced`, and the layer compiles one on
+  the console where the bundle lacks it (above). A bundle written before the variants holds plain shaders alone, which
+  the layer takes as before. The variant's prologue costs a vertex four ALU instructions, which pipelines without
+  instancing don't pay. xost refuses `gl_VertexIndex`.
 - **Point sprites** (milestone 26): `gl_PointSize` goes to the point size Xenos's vertex shaders export, `oPts.x`, the
   point's width in pixels (xenia:src/xenia/gpu/ucode.h:1813-1834), and `gl_PointCoord` reads the pixel parameters'
   |zw|, a point sprite's coordinates from its top left (xenia:src/xenia/gpu/registers.h:184-212); xost:docs/xsc.md
@@ -206,10 +215,9 @@ Some are there to refuse, as the features they need aren't reported. Each logs w
   26.
 - Graphics pipelines, otherwise `VK_ERROR_FEATURE_NOT_PRESENT`:
   - a vertex and a fragment stage, entry point `main`, no specialization constants;
-  - bindings at the vertex's rate or the instance's, with strides a multiple of 4, up to 1020 bytes. One at the
-    instance's rate is fetched with a stride of 0, so every vertex reads the element its stream starts at
-    (xenia:src/xenia/gpu/shader_interpreter.cc:1013-1014), and each instance's draw moves the stream to its own
-    (Commands);
+  - bindings at the vertex's rate or the instance's, with strides a multiple of 4, up to 1020 bytes. An attribute at
+    the instance's rate is fetched at its instance's element, at its binding's stride, by the instanced vertex shader
+    such a pipeline takes (Shaders; xsdk:include/xsdk/shader.h, `per_instance`), its stream at the binding's start;
   - attributes of the vertex buffer formats (Formats) at offsets a multiple of 4;
   - point lists, line lists and strips, and triangle lists, strips and fans, without primitive restart (an xsdk
     TODO);
@@ -562,13 +570,26 @@ Some are there to refuse, as the features they need aren't reported. Each logs w
   writes its word in the CPU's byte order, as the spec has it, a store a word.
 - `vkCmdPipelineBarrier` records nothing: replay is in order, and copies wait for what used what they copy. One that
   would have a sampled depth image read from an attachment fails the command buffer (Render passes).
-- `vkCmdDraw` and `vkCmdDrawIndexed` draw any number of instances from any `firstInstance`, a draw an instance
-  (milestone 24). Before each, the streams at the instance's rate move to the instance's element, and a vertex
-  shader's `gl_InstanceIndex` constant takes its index (Shaders). **Shortcut:** an instance costs a draw packet, the
-  fetch constants of its streams at the instance's rate and its index's group of constants, and a constant written
-  waits for the draw before it (xsdk:TODO.md, "Constants written between draws hold the GPU"). One draw whose vertex
-  shader works out its instance and fetches at an index it computes would cost one draw; it's left for later
-  (docs/ROADMAP.md, milestone 24).
+- `vkCmdDraw` and `vkCmdDrawIndexed` draw any number of instances from any `firstInstance` (milestone 24; xsdk
+  milestone 47, xsdk:docs/HARDWARE.md, "Instancing on the console, milestone 47 step 1" and "Instanced draws in
+  xsdk, milestone 47 step 3"). A pipeline is instanced if a binding is at the instance's rate or its vertex shader
+  reads `gl_InstanceIndex` (Shaders), and an instanced pipeline's list draws its instances together:
+  - `vkCmdDraw` of a list, through `xsdk_gpu_draw_instanced`: its vertex count taken down to whole primitives, as
+    Vulkan draws no partial one, in pieces of whole instances up to 65,535 vertices, one packet and one group a piece.
+  - `vkCmdDrawIndexed` of a list of more than one instance, through `xsdk_gpu_draw_indexed_instanced`: the app's
+    indices from `firstIndex`, read from its mapped buffer 16 bytes a load where aligned, are repeated in up to 64
+    copies, each moved on by the power of two above their largest (`xsdk_gpu_repeat_indices`), into GPU memory the
+    queue fills in four parts of 256 KB, each reused once the submission that last wrote it is done; then a packet and
+    a group a piece of as many instances as there are copies. **Shortcut:** each such draw reads the app's indices and
+    writes its copies again, and drops the copies' range from the GPU's caches; a draw that finds every part written
+    by its own submission draws an instance at a time, as a tiled pass's recording can't wait for itself. Keep the
+    copies across draws if a port's draws spend their time there.
+  - Strips, fans, instances past 65,535 vertices or indices, an indexed draw of one instance, and pipelines that aren't
+    instanced draw an instance at a time, in the pieces below, an instanced pipeline's group written for each, so its
+    prologue keeps the vertex's index and takes the instance. **Shortcut:** such an instance costs a draw packet and
+    a group, and a constant written waits for the draw before it (xsdk:TODO.md, "Constants written between draws hold
+    the GPU"); strips and fans in one draw would need a restart or degenerate triangles an instance
+    (xsdk:docs/scope/47-instancing.md, "Not in it").
   - `firstVertex` and `vertexOffset` move the address of each stream at the vertex's rate, since xsdk draws from
     vertex 0.
   - `firstIndex` moves the index buffer's address. Indices are 16 or 32 bits, with values up to 2^24 - 1.
@@ -581,10 +602,11 @@ Some are there to refuse, as the features they need aren't reported. Each logs w
 - `vkCmdDrawIndirect` and `vkCmdDrawIndexedIndirect`: one draw each, as there's no `multiDrawIndirect` and
   `maxDrawIndirectCount` is 1; more fail the command buffer. The parameters are read at replay, in order with it:
   the host wrote them before the submit, or a copy earlier in the replay did, as nothing else writes buffers. They
-  take any instance count and first instance, as `drawIndirectFirstInstance` promises. **Deviation:** what a direct
-  draw refuses as it's recorded, an indirect one can only refuse as it's replayed, after the command buffer ended: a
-  triangle fan past 65535. It logs that and draws nothing, as does a direct draw recorded where its pipeline wasn't
-  bound, in a secondary command buffer.
+  take any instance count and first instance, as `drawIndirectFirstInstance` promises, and draw as a direct draw of
+  what they read does, an instanced list in one draw too. **Deviation:** what a direct draw refuses as it's recorded,
+  an indirect one can only refuse as it's replayed, after the command buffer ended: a triangle fan past 65535. It logs
+  that and draws nothing, as does a direct draw recorded where its pipeline wasn't bound, in a secondary command
+  buffer.
 
 ## Sync
 
