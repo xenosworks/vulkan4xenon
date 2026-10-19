@@ -3045,6 +3045,13 @@ the cost (section 7). So the time is measured first.
 5. **Pipeline state applied only when it changed.** Binding the pipeline that's bound already does nothing.
    Viewport, scissor, blend, raster and depth-stencil are compared with what was last applied. Render passes, blits
    and clears still force them again, as `pipeline_dirty` does now.
+6. **Uploads that wait for the GPU.** Added on 2026-10-19 after step 1. In Dusklight's attract movie,
+   `vkCmdCopyBufferToImage` waits for the GPU to finish with the image it writes, about 2.4 ms a frame over 2 copies
+   (results/2026-10-19-milestone-29/). Find what each copy waits on, then stop the wait. A busy image could get
+   memory of its own for the new texels, or the copy could run on the GPU. Measured with Dusklight's movie.
+
+Step 1 also found Dusklight's passes waiting about 10 ms a frame in xsdk, on its resolve rectangles: 8 sizes kept, a
+9th waiting for the GPU in 1 ms sleeps. That's fixed in xsdk as its own change, agreed the same day.
 
 Left out: translating a pass into an xsdk recording when it's recorded. A pass's begin and end depend on what eDRAM
 holds at submit, the CPU's reads of uniform buffers happen at submit, indirect draws are known only at submit, and
