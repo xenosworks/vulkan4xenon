@@ -109,7 +109,7 @@ typedef enum {
 	V4X_PROFILE_PIPELINE,
 	// A draw's float constants through xsdk: the blocks it sets and the uniform blocks it has the GPU load.
 	V4X_PROFILE_CONSTANTS,
-	// The rest of a draw's resources: each one's kind, loops, uniform blocks read on the CPU, and textures.
+	// The rest of a draw's resources: going through its plan, loops, uniform blocks read on the CPU, and textures.
 	V4X_PROFILE_RESOURCES,
 	// A draw's checks: drawable, clip planes, instances, pieces and streams.
 	V4X_PROFILE_CHECKS,

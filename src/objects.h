@@ -39,6 +39,9 @@ enum {
 	V4X_MAX_PUSH_CONSTANT_BYTES = 128,
 	// Float constant registers a stage has, each four floats (xsdk:include/xsdk/gpu.h).
 	V4X_FLOAT_CONSTANTS = 256,
+	// The GPU loads constants in whole groups of 4 from a multiple of 4 (xsdk:include/xsdk/gpu.h); xost gives each
+	// uniform block such groups to itself.
+	V4X_CONSTANT_GROUP = 4,
 	// A stage's samplers, Vulkan's minimum; both stages' together share the fetch constants the streams leave
 	// (pipeline.c).
 	V4X_MAX_SAMPLERS = 16,
@@ -336,6 +339,19 @@ typedef struct {
 	uint32_t offset_bytes;
 } ClipPlane;
 
+// What each draw does with a resource, the draw plan's groups in order (Pipeline, plan): writes a push block's
+// registers; loads a uniform block, or reads it on the CPU where it can't start a group; writes a comparison's weights;
+// points a texture; and counts a loop.
+typedef enum {
+	PLAN_PUSH,
+	PLAN_LOAD,
+	PLAN_READ,
+	PLAN_COMPARISON,
+	PLAN_TEXTURE,
+	PLAN_LOOP,
+	PLAN_GROUPS,
+} PlanGroup;
+
 typedef struct {
 	XsdkShader vertex;
 	XsdkShader pixel;
@@ -370,8 +386,9 @@ typedef struct {
 	float blend_constants[4];
 	StageResource resources[V4X_MAX_SHADER_RESOURCES];
 	uint32_t resource_count;
-	// Its resources that are hardware loops' counts, so a pipeline with none spends nothing on them.
-	uint32_t loop_count;
+	// The draw plan, made with the pipeline: its resources grouped by what each draw does with them, group g from
+	// plan[g] up to plan[g + 1], so a draw goes through each group's without working out their kinds.
+	uint16_t plan[PLAN_GROUPS + 1];
 	// The user clip planes its vertex shader's clip distances take, a bit each in clip_plane_mask (milestone 26).
 	ClipPlane clip_planes[XSDK_CLIP_PLANES];
 	uint32_t clip_plane_count;

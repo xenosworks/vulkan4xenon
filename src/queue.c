@@ -21,9 +21,7 @@ enum {
 	IDLE_TIMEOUT_MS = 10000,
 	// All of physical memory, as libxenon invalidates it (libxenon:drivers/xenos/xe.c:992).
 	ALL_MEMORY_BYTES = 0x20000000,
-	// The GPU loads constants in whole groups of 4 from a multiple of 4, from 64-byte aligned memory
-	// (xsdk:include/xsdk/gpu.h); xost gives each uniform block such groups to itself.
-	CONSTANT_GROUP = 4,
+	// The GPU loads constants from 64-byte aligned memory (xsdk:include/xsdk/gpu.h), in groups (V4X_CONSTANT_GROUP).
 	LOAD_ALIGNMENT_BYTES = 64,
 	// The visibility ids one status word holds (xsdk:include/xsdk/gpu.h).
 	VISIBILITY_WORD_IDS = XSDK_VISIBILITY_IDS / 2,
@@ -281,21 +279,28 @@ static void read_uniform_buffer(const Replay *replay, const V4xShaderResource *r
 	}
 }
 
+// The CPU's copy of a uniform block, read and written into its registers.
+static void read_block(const Replay *replay, const StageResource *stage_resource)
+{
+	read_uniform_buffer(replay, &stage_resource->resource);
+	write_constants(stage_resource->vertex, stage_resource->resource.first, block, stage_resource->resource.count);
+}
+
 // Each draw writes every block its shaders read into constants, and points their samplers' fetch constants.
-// Has the GPU load the block straight from the buffer, when the block starts a group and the buffer covers it; the
-// padding past the block takes whatever follows it, which nothing reads.
+// Has the GPU load a block that starts a group (pipeline.c, plan_group) straight from the buffer, when the buffer is
+// aligned and covers it; the padding past the block takes whatever follows it, which nothing reads.
 static bool load_uniform_buffer(const Replay *replay, const V4xShaderResource *resource, bool vertex)
 {
+	assert(resource->first % V4X_CONSTANT_GROUP == 0);
 	const DescriptorSet *const set = replay->sets[resource->set];
 	const Descriptor *const descriptor = &set->descriptors[resource->binding];
 	const LayoutBinding *const binding = &set->layout->bindings[resource->binding];
 	uint32_t address = descriptor->buffer_address;
 	if (binding->type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC)
 		address += replay->dynamic_offsets[resource->set][binding->dynamic_index];
-	if (resource->first % CONSTANT_GROUP || address % LOAD_ALIGNMENT_BYTES ||
-		descriptor->range_bytes < resource->count * 16)
+	if (address % LOAD_ALIGNMENT_BYTES || descriptor->range_bytes < resource->count * 16)
 		return false;
-	const uint32_t count = (resource->count + CONSTANT_GROUP - 1) / CONSTANT_GROUP * CONSTANT_GROUP;
+	const uint32_t count = (resource->count + V4X_CONSTANT_GROUP - 1) / V4X_CONSTANT_GROUP * V4X_CONSTANT_GROUP;
 	v4x_profile_lap(V4X_PROFILE_RESOURCES);
 	if (vertex)
 		xsdk_gpu_load_vertex_constants(resource->first, address, count);
@@ -394,47 +399,48 @@ static void apply_loops(const Pipeline *pipeline, const Replay *replay)
 {
 	uint32_t values[XSDK_LOOP_CONSTANTS];
 	memcpy(values, replay->queue->loop_constants, sizeof values);
-	for (uint32_t i = 0; i < pipeline->resource_count; i++) {
+	for (uint32_t i = pipeline->plan[PLAN_LOOP]; i < pipeline->plan[PLAN_LOOP + 1]; i++) {
 		const V4xShaderResource *const resource = &pipeline->resources[i].resource;
-		if (resource->kind == V4X_RESOURCE_PUSH_LOOP || resource->kind == V4X_RESOURCE_UNIFORM_LOOP)
-			values[resource->count] = xsdk_gpu_loop_constant(loop_count(replay, resource), 0, 1);
-		else if (resource->kind == V4X_RESOURCE_FIXED_LOOP)
-			values[resource->count] = xsdk_gpu_loop_constant(resource->first, 0, 1);
+		const uint32_t passes =
+			resource->kind == V4X_RESOURCE_FIXED_LOOP ? resource->first : loop_count(replay, resource);
+		values[resource->count] = xsdk_gpu_loop_constant(passes, 0, 1);
 	}
 	write_loops(replay->queue, values);
 }
 
+// The draw plan's groups in turn (Pipeline, plan); what a set that isn't bound holds is left as it was.
 static void apply_resources(const Pipeline *pipeline, Replay *replay)
 {
-	if (pipeline->loop_count)
+	const StageResource *const resources = pipeline->resources;
+	const uint16_t *const plan = pipeline->plan;
+	if (plan[PLAN_LOOP] < plan[PLAN_LOOP + 1])
 		apply_loops(pipeline, replay);
-	for (uint32_t i = 0; i < pipeline->resource_count; i++) {
-		const StageResource *const stage_resource = &pipeline->resources[i];
-		const V4xShaderResource *const resource = &stage_resource->resource;
-		const bool vertex = stage_resource->vertex;
-		if (resource->kind == V4X_RESOURCE_PUSH_CONSTANTS) {
-			write_constants(vertex, resource->first + stage_resource->push_first,
-				push_run(replay, stage_resource->push_first, stage_resource->push_count), stage_resource->push_count);
-			continue;
-		}
-		if (resource->kind == V4X_RESOURCE_PUSH_LOOP || resource->kind == V4X_RESOURCE_UNIFORM_LOOP ||
-			resource->kind == V4X_RESOURCE_FIXED_LOOP)
-			continue;
-		if (!replay->sets[resource->set])
-			continue;
-		if (resource->kind == V4X_RESOURCE_UNIFORM_BUFFER) {
-			if (!load_uniform_buffer(replay, resource, vertex)) {
-				read_uniform_buffer(replay, resource);
-				write_constants(vertex, resource->first, block, resource->count);
-			}
-			continue;
-		}
-		if (resource->kind == V4X_RESOURCE_COMPARISON) {
-			const Sampler *const sampler = replay->sets[resource->set]->descriptors[resource->binding].sampler;
-			write_constants(vertex, resource->first, sampler->compare_weights, 1);
-			continue;
-		}
-		point_texture(replay, resource->first, &replay->sets[resource->set]->descriptors[resource->binding]);
+	for (uint32_t i = plan[PLAN_PUSH]; i < plan[PLAN_PUSH + 1]; i++) {
+		const StageResource *const r = &resources[i];
+		write_constants(r->vertex, r->resource.first + r->push_first, push_run(replay, r->push_first, r->push_count),
+			r->push_count);
+	}
+	for (uint32_t i = plan[PLAN_LOAD]; i < plan[PLAN_LOAD + 1]; i++) {
+		const StageResource *const r = &resources[i];
+		if (replay->sets[r->resource.set] && !load_uniform_buffer(replay, &r->resource, r->vertex))
+			read_block(replay, r);
+	}
+	for (uint32_t i = plan[PLAN_READ]; i < plan[PLAN_READ + 1]; i++) {
+		if (replay->sets[resources[i].resource.set])
+			read_block(replay, &resources[i]);
+	}
+	for (uint32_t i = plan[PLAN_COMPARISON]; i < plan[PLAN_COMPARISON + 1]; i++) {
+		const V4xShaderResource *const resource = &resources[i].resource;
+		const DescriptorSet *const set = replay->sets[resource->set];
+		if (set)
+			write_constants(
+				resources[i].vertex, resource->first, set->descriptors[resource->binding].sampler->compare_weights, 1);
+	}
+	for (uint32_t i = plan[PLAN_TEXTURE]; i < plan[PLAN_TEXTURE + 1]; i++) {
+		const V4xShaderResource *const resource = &resources[i].resource;
+		const DescriptorSet *const set = replay->sets[resource->set];
+		if (set)
+			point_texture(replay, resource->first, &set->descriptors[resource->binding]);
 	}
 }
 
@@ -1194,14 +1200,29 @@ static uint32_t instanced_list(const Pipeline *pipeline, uint32_t count)
 	return count - count % pipeline->list_vertices;
 }
 
+// A draw of one instance in one piece under a vertex shader that isn't instanced: drawable, and drawn as it is, with no
+// instance group, copies or pieces.
+static bool plain(const Pipeline *pipeline, uint32_t count, uint32_t instances)
+{
+	return instances == 1 && count && count <= pipeline->piece_vertices && !pipeline->vertex.instanced;
+}
+
 static void draw(
 	Replay *replay, uint32_t vertex_count, uint32_t first_vertex, uint32_t instance_count, uint32_t first_instance)
 {
 	v4x_profile_lap(V4X_PROFILE_DISPATCH);
+	const Pipeline *const pipeline = replay->pipeline;
+	if (plain(pipeline, vertex_count, instance_count)) {
+		prepare_draw(replay);
+		point_streams(replay, (int32_t)first_vertex);
+		v4x_profile_lap(V4X_PROFILE_CHECKS);
+		xsdk_gpu_draw(pipeline->primitive, vertex_count);
+		v4x_profile_lap(V4X_PROFILE_DRAWS);
+		return;
+	}
 	if (!drawable(replay, vertex_count, instance_count))
 		return;
 	prepare_draw(replay);
-	const Pipeline *const pipeline = replay->pipeline;
 	const uint32_t whole = instanced_list(pipeline, vertex_count);
 	if (whole) {
 		point_streams(replay, (int32_t)first_vertex);
@@ -1221,14 +1242,24 @@ static void draw_indexed(Replay *replay, uint32_t count, uint32_t first_index, i
 	uint32_t instance_count, uint32_t first_instance)
 {
 	v4x_profile_lap(V4X_PROFILE_DISPATCH);
+	const Pipeline *const pipeline = replay->pipeline;
+	const uint32_t index_bytes = replay->index_32_bit ? 4 : 2;
+	if (plain(pipeline, count, instance_count)) {
+		prepare_draw(replay);
+		point_streams(replay, vertex_offset);
+		const uint32_t address = replay->index_address + first_index * index_bytes;
+		v4x_profile_lap(V4X_PROFILE_CHECKS);
+		xsdk_gpu_draw_indexed(pipeline->primitive, address, count, replay->index_32_bit);
+		v4x_profile_lap(V4X_PROFILE_DRAWS);
+		return;
+	}
 	if (!drawable(replay, count, instance_count))
 		return;
 	prepare_draw(replay);
-	const Pipeline *const pipeline = replay->pipeline;
 	const uint32_t whole = instanced_list(pipeline, count);
 	XsdkRepeatedIndices repeated;
 	if (whole && instance_count > 1 &&
-		v4x_transfer_repeat_indices(replay->queue, replay->index_bytes + first_index * (replay->index_32_bit ? 4 : 2),
+		v4x_transfer_repeat_indices(replay->queue, replay->index_bytes + first_index * index_bytes,
 			replay->index_32_bit, whole, instance_count, &repeated)) {
 		point_streams(replay, vertex_offset);
 		v4x_profile_lap(V4X_PROFILE_CHECKS);

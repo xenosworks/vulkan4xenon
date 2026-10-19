@@ -239,10 +239,45 @@ static VkResult gather_resources(const PipelineLayout *layout, const V4xShader *
 		StageResource stage_resource = { .resource = *resource, .vertex = vertex };
 		if (resource->kind == V4X_RESOURCE_PUSH_CONSTANTS && !trim_push(layout, &stage_resource))
 			continue;
-		pipeline->loop_count += loop;
 		pipeline->resources[pipeline->resource_count++] = stage_resource;
 	}
 	return VK_SUCCESS;
+}
+
+// What each draw does with a resource (queue.c): the GPU loads a uniform block only from a multiple of a group.
+static PlanGroup plan_group(const V4xShaderResource *resource)
+{
+	switch (resource->kind) {
+	case V4X_RESOURCE_PUSH_CONSTANTS:
+		return PLAN_PUSH;
+	case V4X_RESOURCE_UNIFORM_BUFFER:
+		return resource->first % V4X_CONSTANT_GROUP ? PLAN_READ : PLAN_LOAD;
+	case V4X_RESOURCE_COMPARISON:
+		return PLAN_COMPARISON;
+	case V4X_RESOURCE_PUSH_LOOP:
+	case V4X_RESOURCE_UNIFORM_LOOP:
+	case V4X_RESOURCE_FIXED_LOOP:
+		return PLAN_LOOP;
+	default:
+		return PLAN_TEXTURE;
+	}
+}
+
+// The draw plan: the resources moved into their groups, in order.
+static void make_plan(Pipeline *pipeline)
+{
+	uint32_t next = 0;
+	for (uint32_t group = 0; group < PLAN_GROUPS; group++) {
+		pipeline->plan[group] = (uint16_t)next;
+		for (uint32_t i = next; i < pipeline->resource_count; i++) {
+			if (plan_group(&pipeline->resources[i].resource) != group)
+				continue;
+			const StageResource moved = pipeline->resources[i];
+			pipeline->resources[i] = pipeline->resources[next];
+			pipeline->resources[next++] = moved;
+		}
+	}
+	pipeline->plan[PLAN_GROUPS] = (uint16_t)next;
 }
 
 // The fetch constants each stage's samplers take: one past the highest xost gave it.
@@ -350,6 +385,9 @@ static VkResult create_pipeline(
 		result = gather_resources(layout, pipeline->vertex_source, true, pipeline);
 	if (result == VK_SUCCESS)
 		result = gather_resources(layout, pipeline->pixel_source, false, pipeline);
+	// Before the clip planes, which keep their resources' places.
+	if (result == VK_SUCCESS)
+		make_plan(pipeline);
 	if (result == VK_SUCCESS)
 		result = find_clip_planes(pipeline);
 	if (result == VK_SUCCESS)
