@@ -46,3 +46,33 @@ command buffer recorded them.
   checks failed, the push constants' and every other check whose colour comes from a push.
 - **Dusklight** (`step23_dusklight_profile.log`): its pushes took 47 ns a draw, from 153. Its title scene ran as
   before.
+
+## Step 5: pipeline state set only when it changed
+
+The replay keeps what it last gave xsdk (`AppliedState`, src/queue.c) and skips a setter whose values didn't change;
+a pass's begin, a tiled pass, a blit, a clear and each command buffer's start still force them all.
+- **vkbench** (`step5_vkbench.log`, `step5_vkbench_profile.log`): `states_1000`'s submit took 1,005 us, 1.0 us a draw,
+  from 1.27 at step 1; its pipeline stage 211 ns a draw, from 481. 17 of 17.
+- **vulkan4xenon_test** (`step5_vulkan4xenon_test_1.log`, `_2.log`): 492 of 492 each.
+- **Broken on purpose,** the viewport and scissor never forced after a pass begins or a clear
+  (`step5_vulkan4xenon_test_broken.log`): 15 checks failed, in clears, subpasses, tiles, render to texture, uploads,
+  clip distances, occlusion and copies.
+
+## Step 4: a draw plan made with the pipeline
+
+Each pipeline sorts its resources by kind when it's made, and a draw of one instance in one piece skips the
+instance, piece and stream checks.
+- **vkbench, three runs** (`step4_vkbench.log`, `_2`, `_3`), within 3 us of each other: `draws_4000`'s submit took
+  2,297 to 2,300 us, 0.575 us a draw; `states_1000`'s 969 to 972 us, 0.97 a draw; `uniforms_1000`'s 380 us. Recording
+  took 1,276 to 1,278 us in `draws_4000`. 17 of 17 each.
+- **The profile** (`step4_vkbench_profile.log`), `draws_4000`, 602 ns a draw: constants 229, dispatch 117, checks 77,
+  resources 64, push and draw about 45 and 33.
+- **vulkan4xenon_test** (`step4_vulkan4xenon_test_1.log`, `_2.log`): 492 of 492 each.
+- **Broken on purpose,** the textures left out of the plan (`step4_vulkan4xenon_test_broken.log`): 95 checks failed,
+  every one that samples.
+- **Dusklight** (`step4_dusklight_profile.log`, built against xsdk `ddf4569`, which keeps 64 resolve rectangles):
+  its submit took 1.04 ms a frame for 247 to 249 draws, pipeline 726 ns a draw from 1,048.
+
+**Against the targets:** `draws_4000`'s submit is 0.575 us a draw against 0.40, and `states_1000`'s 0.97 against
+0.90. What's left is mostly xsdk's own constant setters, 229 ns for the two blocks a cube writes, and the replay's
+dispatch.

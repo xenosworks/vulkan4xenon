@@ -1,0 +1,378 @@
+log: game:\vkbench_prof.log
+log: named after \Device\Harddisk0\Partition1\vkbench\vkbench_prof.xex
+sbrk: the heap may grow to 471 MB from 0x00070000, the title's free memory
+vkbench: 11 scenes, each 60 warm-up and 600 measured frames, through xsdk then vulkan4xenon
+vkbench: a 1 ms sleep took 1982 us on average, from 323 to 2003, over 100
+vkbench: writing 1 MB, fastest of 8: write-combined, 32-bit stores 292 us (3591 MB/s), memcpy 381 us (2752 MB/s); cached, 32-bit stores 656 us then dcbst 94 us (1398 MB/s)
+vkbench: copying 1024 KB from memory into write-combined memory, fastest of 8, memcpy: 709 us (1478 MB/s)
+vkbench: copying 256 KB from the cache into write-combined memory, fastest of 8, memcpy: 48 us (5461 MB/s)
+vkbench: copying 1024 KB from memory into write-combined memory, fastest of 8, VMX stores and dcbt 8 lines ahead: 717 us (1462 MB/s)
+vkbench: copying 1024 KB from memory into write-combined memory, fastest of 8, VMX stores and dcbt 16 lines ahead: 695 us (1508 MB/s)
+vkbench: copying 1024 KB from memory into write-combined memory, fastest of 8, VMX stores and dcbt 32 lines ahead: 797 us (1315 MB/s)
+vkbench: copying 1024 KB from memory into cached memory, fastest of 8, memcpy: 578 us (1814 MB/s)
+vkbench: copying 1024 KB from memory into cached memory, fastest of 8, VMX stores, dcbt and dcbz: 464 us (2259 MB/s)
+display: 1280x720 scaled to the 1920x1080 output
+display: the line counter reached 720 after 21431 us
+PASS: vkbench: xsdk: opened
+vkbench: xsdk draws_250: draw+submit 79 us (mean 79, p99 82): draw 75, submit 4; gpu 610 (p99 655); present 15326; frame 15996 (59.9 fps)
+vkbench: xsdk draws_250: a frame: 11530 dwords, 46.1 for each of 250; 6.0 kicks; 0.0 waits, 0 us waiting
+vkbench: xsdk draws_1000: draw+submit 295 us (mean 296, p99 300): draw 291, submit 4; gpu 685 (p99 725); present 15965; frame 16995 (59.9 fps)
+vkbench: xsdk draws_1000: a frame: 45309 dwords, 45.3 for each of 1000; 10.0 kicks; 0.0 waits, 0 us waiting
+vkbench: xsdk draws_4000: draw+submit 1161 us (mean 1161, p99 1173): draw 1156, submit 4; gpu 810 (p99 955); present 14957; frame 16995 (59.9 fps)
+vkbench: xsdk draws_4000: a frame: 180416 dwords, 45.1 for each of 4000; 27.0 kicks; 0.0 waits, 0 us waiting
+vkbench: xsdk states_250: draw+submit 127 us (mean 127, p99 129): draw 123, submit 4; gpu 580 (p99 660); present 15316; frame 15996 (59.9 fps)
+vkbench: xsdk states_250: a frame: 18113 dwords, 72.5 for each of 250; 7.0 kicks; 0.0 waits, 0 us waiting
+vkbench: xsdk states_1000: draw+submit 488 us (mean 488, p99 492): draw 484, submit 4; gpu 1055 (p99 1085); present 15426; frame 16995 (59.9 fps)
+vkbench: xsdk states_1000: a frame: 71785 dwords, 71.8 for each of 1000; 13.1 kicks; 0.0 waits, 0 us waiting
+vkbench: xsdk uniforms_1000: draw+submit 296 us (mean 296, p99 300): draw 291, submit 4; gpu 681 (p99 725); present 15966; frame 16995 (59.9 fps)
+vkbench: xsdk uniforms_1000: a frame: 45309 dwords, 45.3 for each of 1000; 10.0 kicks; 0.0 waits, 0 us waiting
+vkbench: xsdk stream_1000: draw+submit 32 us (mean 32, p99 34): draw 28, submit 5; gpu 785 (p99 790); present 15076; frame 15996 (59.9 fps)
+vkbench: xsdk stream_1000: a frame: 287 dwords, 0.3 for each of 1000; 3.0 kicks; 0.0 waits, 0 us waiting
+vkbench: xsdk stream_8000: draw+submit 531 us (mean 549, p99 648): draw 520, submit 11; gpu 4131 (p99 4138); present 9975; frame 15996 (59.9 fps)
+vkbench: xsdk stream_8000: a frame: 288 dwords, 0.0 for each of 8000; 3.0 kicks; 0.0 waits, 0 us waiting
+vkbench: xsdk fill_4: draw+submit 7 us (mean 7, p99 8): draw 3, submit 4; gpu 1375 (p99 1380); present 15612; frame 16995 (59.9 fps)
+vkbench: xsdk fill_4: a frame: 291 dwords, 73.0 for each of 4; 3.0 kicks; 0.0 waits, 0 us waiting
+vkbench: xsdk fill_16: draw+submit 9 us (mean 9, p99 10): draw 4, submit 4; gpu 4585 (p99 4587); present 11402; frame 15996 (59.9 fps)
+vkbench: xsdk fill_16: a frame: 352 dwords, 22.0 for each of 16; 3.0 kicks; 0.0 waits, 0 us waiting
+vkbench: xsdk instances_4000: draw+submit 84 us (mean 85, p99 88): draw 80, submit 4; gpu 975 (p99 1016); present 15835; frame 16995 (59.9 fps)
+vkbench: xsdk instances_4000: a frame: 1848 dwords, 0.5 for each of 4000; 4.0 kicks; 0.0 waits, 0 us waiting
+PASS: vkbench: xsdk: every scene ran its 660 frames with no call failing
+display: 1280x720 scaled to the 1920x1080 output
+display: the line counter reached 720 after 32558 us
+PASS: vkbench: vulkan4xenon: opened
+vulkan4xenon: profile, the last 10 s: 142750 draws, 431680 commands, 572 submits, 571 presents; a present 250.0 draws, 250.1 us submitting; a submit 249.6 draws, 249.7 us; a lap 21.4 ns
+vulkan4xenon: profile, the last 10 s: dispatch 171 ns a draw, 107 less its 3.0 laps
+vulkan4xenon: profile, the last 10 s: push 95 ns a draw, 52 less its 2.0 laps
+vulkan4xenon: profile, the last 10 s: pipeline 35 ns a draw, 13 less its 1.0 laps
+vulkan4xenon: profile, the last 10 s: constants 257 ns a draw, 215 less its 2.0 laps
+vulkan4xenon: profile, the last 10 s: resources 128 ns a draw, 64 less its 3.0 laps
+vulkan4xenon: profile, the last 10 s: checks 120 ns a draw, 77 less its 2.0 laps
+vulkan4xenon: profile, the last 10 s: draws 57 ns a draw, 35 less its 1.0 laps
+vulkan4xenon: profile, the last 10 s: commands 133 ns a draw, 69 less its 3.0 laps
+vulkan4xenon: profile, the last 10 s: submit 5 ns a draw, 5 less its 0.0 laps
+vulkan4xenon: profile, the last 10 s: all 1000 ns a draw, 636 less its 17.0 laps
+vulkan4xenon: profile, the last 10 s: command type 1 (src/objects.h), 5 us a present, 1 a present
+vulkan4xenon: profile, the last 10 s: command type 6 (src/objects.h), 11 us a present, 500 a present
+vulkan4xenon: profile, the last 10 s: command type 7 (src/objects.h), 6 us a present, 0 a present
+vulkan4xenon: profile, the last 10 s: command type 11 (src/objects.h), 8 us a present, 250 a present
+vulkan4xenon: profile, draws_250: 150000 draws, 453600 commands, 600 submits, 600 presents; a present 250.0 draws, 243.9 us submitting; a submit 250.0 draws, 243.9 us; a lap 21.4 ns
+vulkan4xenon: profile, draws_250: dispatch 171 ns a draw, 107 less its 3.0 laps
+vulkan4xenon: profile, draws_250: push 95 ns a draw, 52 less its 2.0 laps
+vulkan4xenon: profile, draws_250: pipeline 34 ns a draw, 13 less its 1.0 laps
+vulkan4xenon: profile, draws_250: constants 257 ns a draw, 215 less its 2.0 laps
+vulkan4xenon: profile, draws_250: resources 128 ns a draw, 64 less its 3.0 laps
+vulkan4xenon: profile, draws_250: checks 120 ns a draw, 77 less its 2.0 laps
+vulkan4xenon: profile, draws_250: draws 57 ns a draw, 35 less its 1.0 laps
+vulkan4xenon: profile, draws_250: commands 109 ns a draw, 44 less its 3.0 laps
+vulkan4xenon: profile, draws_250: submit 5 ns a draw, 5 less its 0.0 laps
+vulkan4xenon: profile, draws_250: all 976 ns a draw, 612 less its 17.0 laps
+vkbench: vulkan4xenon draws_250: draw+submit 313 us (mean 313, p99 317): draw 69, submit 244; gpu 508 (p99 540); present 15850; frame 16679 (58.7 fps)
+vkbench: vulkan4xenon draws_250: a frame: 11542 dwords, 46.2 for each of 250; 6.0 kicks; 0.0 waits, 0 us waiting
+vulkan4xenon: profile, the last 10 s: 515250 draws, 1549242 commands, 582 submits, 582 presents; a present 885.3 draws, 831.4 us submitting; a submit 885.3 draws, 831.4 us; a lap 21.4 ns
+vulkan4xenon: profile, the last 10 s: dispatch 171 ns a draw, 106 less its 3.0 laps
+vulkan4xenon: profile, the last 10 s: push 98 ns a draw, 55 less its 2.0 laps
+vulkan4xenon: profile, the last 10 s: pipeline 30 ns a draw, 9 less its 1.0 laps
+vulkan4xenon: profile, the last 10 s: constants 256 ns a draw, 214 less its 2.0 laps
+vulkan4xenon: profile, the last 10 s: resources 127 ns a draw, 63 less its 3.0 laps
+vulkan4xenon: profile, the last 10 s: checks 119 ns a draw, 76 less its 2.0 laps
+vulkan4xenon: profile, the last 10 s: draws 54 ns a draw, 32 less its 1.0 laps
+vulkan4xenon: profile, the last 10 s: commands 83 ns a draw, 19 less its 3.0 laps
+vulkan4xenon: profile, the last 10 s: submit 2 ns a draw, 1 less its 0.0 laps
+vulkan4xenon: profile, the last 10 s: all 939 ns a draw, 576 less its 17.0 laps
+vulkan4xenon: profile, the last 10 s: command type 6 (src/objects.h), 37 us a present, 1771 a present
+vulkan4xenon: profile, the last 10 s: command type 11 (src/objects.h), 28 us a present, 885 a present
+vulkan4xenon: profile, draws_1000: 600000 draws, 1803600 commands, 600 submits, 600 presents; a present 1000.0 draws, 937.1 us submitting; a submit 1000.0 draws, 937.1 us; a lap 21.4 ns
+vulkan4xenon: profile, draws_1000: dispatch 171 ns a draw, 106 less its 3.0 laps
+vulkan4xenon: profile, draws_1000: push 97 ns a draw, 54 less its 2.0 laps
+vulkan4xenon: profile, draws_1000: pipeline 30 ns a draw, 9 less its 1.0 laps
+vulkan4xenon: profile, draws_1000: constants 256 ns a draw, 214 less its 2.0 laps
+vulkan4xenon: profile, draws_1000: resources 127 ns a draw, 63 less its 3.0 laps
+vulkan4xenon: profile, draws_1000: checks 119 ns a draw, 76 less its 2.0 laps
+vulkan4xenon: profile, draws_1000: draws 54 ns a draw, 32 less its 1.0 laps
+vulkan4xenon: profile, draws_1000: commands 82 ns a draw, 18 less its 3.0 laps
+vulkan4xenon: profile, draws_1000: submit 1 ns a draw, 1 less its 0.0 laps
+vulkan4xenon: profile, draws_1000: all 937 ns a draw, 574 less its 17.0 laps
+vkbench: vulkan4xenon draws_1000: draw+submit 1206 us (mean 1206, p99 1215): draw 268, submit 937; gpu 407 (p99 431); present 15038; frame 16679 (59.5 fps)
+vkbench: vulkan4xenon draws_1000: a frame: 45319 dwords, 45.3 for each of 1000; 10.0 kicks; 0.0 waits, 0 us waiting
+vulkan4xenon: profile, the last 10 s: 1851000 draws, 5556528 commands, 588 submits, 588 presents; a present 3148.0 draws, 3031.5 us submitting; a submit 3148.0 draws, 3031.5 us; a lap 21.4 ns
+vulkan4xenon: profile, the last 10 s: dispatch 180 ns a draw, 116 less its 3.0 laps
+vulkan4xenon: profile, the last 10 s: push 99 ns a draw, 56 less its 2.0 laps
+vulkan4xenon: profile, the last 10 s: pipeline 30 ns a draw, 9 less its 1.0 laps
+vulkan4xenon: profile, the last 10 s: constants 270 ns a draw, 228 less its 2.0 laps
+vulkan4xenon: profile, the last 10 s: resources 128 ns a draw, 64 less its 3.0 laps
+vulkan4xenon: profile, the last 10 s: checks 120 ns a draw, 77 less its 2.0 laps
+vulkan4xenon: profile, the last 10 s: draws 53 ns a draw, 32 less its 1.0 laps
+vulkan4xenon: profile, the last 10 s: commands 81 ns a draw, 17 less its 3.0 laps
+vulkan4xenon: profile, the last 10 s: submit 1 ns a draw, 1 less its 0.0 laps
+vulkan4xenon: profile, the last 10 s: all 963 ns a draw, 600 less its 17.0 laps
+vulkan4xenon: profile, the last 10 s: command type 6 (src/objects.h), 134 us a present, 6296 a present
+vulkan4xenon: profile, the last 10 s: command type 11 (src/objects.h), 99 us a present, 3148 a present
+vulkan4xenon: profile, draws_4000: 2400000 draws, 7203600 commands, 600 submits, 600 presents; a present 4000.0 draws, 3862.8 us submitting; a submit 4000.0 draws, 3862.8 us; a lap 21.4 ns
+vulkan4xenon: profile, draws_4000: dispatch 181 ns a draw, 117 less its 3.0 laps
+vulkan4xenon: profile, draws_4000: push 100 ns a draw, 57 less its 2.0 laps
+vulkan4xenon: profile, draws_4000: pipeline 30 ns a draw, 9 less its 1.0 laps
+vulkan4xenon: profile, draws_4000: constants 272 ns a draw, 229 less its 2.0 laps
+vulkan4xenon: profile, draws_4000: resources 128 ns a draw, 64 less its 3.0 laps
+vulkan4xenon: profile, draws_4000: checks 120 ns a draw, 77 less its 2.0 laps
+vulkan4xenon: profile, draws_4000: draws 53 ns a draw, 32 less its 1.0 laps
+vulkan4xenon: profile, draws_4000: commands 81 ns a draw, 17 less its 3.0 laps
+vulkan4xenon: profile, draws_4000: submit 1 ns a draw, 1 less its 0.0 laps
+vulkan4xenon: profile, draws_4000: all 966 ns a draw, 602 less its 17.0 laps
+vkbench: vulkan4xenon draws_4000: draw+submit 5079 us (mean 5076, p99 5149): draw 1208, submit 3866; gpu 364 (p99 392); present 10966; frame 16679 (59.4 fps)
+vkbench: vulkan4xenon draws_4000: a frame: 180426 dwords, 45.1 for each of 4000; 27.0 kicks; 0.0 waits, 0 us waiting
+vulkan4xenon: profile, the last 10 s: 1042500 draws, 3260068 commands, 585 submits, 585 presents; a present 1782.1 draws, 1781.6 us submitting; a submit 1782.1 draws, 1781.6 us; a lap 21.4 ns
+vulkan4xenon: profile, the last 10 s: dispatch 180 ns a draw, 116 less its 3.0 laps
+vulkan4xenon: profile, the last 10 s: push 100 ns a draw, 57 less its 2.0 laps
+vulkan4xenon: profile, the last 10 s: pipeline 46 ns a draw, 25 less its 1.0 laps
+vulkan4xenon: profile, the last 10 s: constants 272 ns a draw, 229 less its 2.0 laps
+vulkan4xenon: profile, the last 10 s: resources 135 ns a draw, 71 less its 3.0 laps
+vulkan4xenon: profile, the last 10 s: checks 120 ns a draw, 77 less its 2.0 laps
+vulkan4xenon: profile, the last 10 s: draws 53 ns a draw, 32 less its 1.0 laps
+vulkan4xenon: profile, the last 10 s: commands 92 ns a draw, 25 less its 3.1 laps
+vulkan4xenon: profile, the last 10 s: submit 1 ns a draw, 1 less its 0.0 laps
+vulkan4xenon: profile, the last 10 s: all 1000 ns a draw, 634 less its 17.1 laps
+vulkan4xenon: profile, the last 10 s: command type 6 (src/objects.h), 75 us a present, 3564 a present
+vulkan4xenon: profile, the last 10 s: command type 11 (src/objects.h), 56 us a present, 1782 a present
+vulkan4xenon: profile, states_250: 150000 draws, 677400 commands, 600 submits, 600 presents; a present 250.0 draws, 343.4 us submitting; a submit 250.0 draws, 343.4 us; a lap 21.4 ns
+vulkan4xenon: profile, states_250: dispatch 167 ns a draw, 103 less its 3.0 laps
+vulkan4xenon: profile, states_250: push 95 ns a draw, 53 less its 2.0 laps
+vulkan4xenon: profile, states_250: pipeline 224 ns a draw, 203 less its 1.0 laps
+vulkan4xenon: profile, states_250: constants 274 ns a draw, 232 less its 2.0 laps
+vulkan4xenon: profile, states_250: resources 216 ns a draw, 152 less its 3.0 laps
+vulkan4xenon: profile, states_250: checks 121 ns a draw, 78 less its 2.0 laps
+vulkan4xenon: profile, states_250: draws 54 ns a draw, 32 less its 1.0 laps
+vulkan4xenon: profile, states_250: commands 217 ns a draw, 120 less its 4.5 laps
+vulkan4xenon: profile, states_250: submit 6 ns a draw, 5 less its 0.0 laps
+vulkan4xenon: profile, states_250: all 1374 ns a draw, 978 less its 18.5 laps
+vkbench: vulkan4xenon states_250: draw+submit 427 us (mean 428, p99 435): draw 84, submit 343; gpu 525 (p99 573); present 15717; frame 16679 (59.5 fps)
+vkbench: vulkan4xenon states_250: a frame: 16013 dwords, 64.1 for each of 250; 7.0 kicks; 0.0 waits, 0 us waiting
+vulkan4xenon: profile, the last 10 s: 353500 draws, 1593106 commands, 589 submits, 589 presents; a present 600.2 draws, 803.5 us submitting; a submit 600.2 draws, 803.5 us; a lap 21.4 ns
+vulkan4xenon: profile, the last 10 s: dispatch 167 ns a draw, 103 less its 3.0 laps
+vulkan4xenon: profile, the last 10 s: push 95 ns a draw, 52 less its 2.0 laps
+vulkan4xenon: profile, the last 10 s: pipeline 219 ns a draw, 198 less its 1.0 laps
+vulkan4xenon: profile, the last 10 s: constants 269 ns a draw, 226 less its 2.0 laps
+vulkan4xenon: profile, the last 10 s: resources 216 ns a draw, 151 less its 3.0 laps
+vulkan4xenon: profile, the last 10 s: checks 120 ns a draw, 78 less its 2.0 laps
+vulkan4xenon: profile, the last 10 s: draws 54 ns a draw, 32 less its 1.0 laps
+vulkan4xenon: profile, the last 10 s: commands 197 ns a draw, 101 less its 4.5 laps
+vulkan4xenon: profile, the last 10 s: submit 2 ns a draw, 2 less its 0.0 laps
+vulkan4xenon: profile, the last 10 s: all 1339 ns a draw, 943 less its 18.5 laps
+vulkan4xenon: profile, the last 10 s: command type 2 (src/objects.h), 19 us a present, 300 a present
+vulkan4xenon: profile, the last 10 s: command type 5 (src/objects.h), 46 us a present, 600 a present
+vulkan4xenon: profile, the last 10 s: command type 6 (src/objects.h), 25 us a present, 1200 a present
+vulkan4xenon: profile, the last 10 s: command type 11 (src/objects.h), 19 us a present, 600 a present
+vulkan4xenon: profile, states_1000: 600000 draws, 2702400 commands, 600 submits, 600 presents; a present 1000.0 draws, 1326.7 us submitting; a submit 1000.0 draws, 1326.7 us; a lap 21.4 ns
+vulkan4xenon: profile, states_1000: dispatch 168 ns a draw, 104 less its 3.0 laps
+vulkan4xenon: profile, states_1000: push 93 ns a draw, 50 less its 2.0 laps
+vulkan4xenon: profile, states_1000: pipeline 218 ns a draw, 196 less its 1.0 laps
+vulkan4xenon: profile, states_1000: constants 267 ns a draw, 224 less its 2.0 laps
+vulkan4xenon: profile, states_1000: resources 214 ns a draw, 150 less its 3.0 laps
+vulkan4xenon: profile, states_1000: checks 120 ns a draw, 77 less its 2.0 laps
+vulkan4xenon: profile, states_1000: draws 54 ns a draw, 32 less its 1.0 laps
+vulkan4xenon: profile, states_1000: commands 192 ns a draw, 96 less its 4.5 laps
+vulkan4xenon: profile, states_1000: submit 1 ns a draw, 1 less its 0.0 laps
+vulkan4xenon: profile, states_1000: all 1327 ns a draw, 931 less its 18.5 laps
+vkbench: vulkan4xenon states_1000: draw+submit 1659 us (mean 1659, p99 1672): draw 332, submit 1327; gpu 477 (p99 486); present 14516; frame 16679 (59.4 fps)
+vkbench: vulkan4xenon states_1000: a frame: 63304 dwords, 63.3 for each of 1000; 12.1 kicks; 0.0 waits, 0 us waiting
+vulkan4xenon: profile, the last 10 s: 581000 draws, 2127216 commands, 581 submits, 581 presents; a present 1000.0 draws, 1097.6 us submitting; a submit 1000.0 draws, 1097.6 us; a lap 21.4 ns
+vulkan4xenon: profile, the last 10 s: dispatch 132 ns a draw, 82 less its 2.3 laps
+vulkan4xenon: profile, the last 10 s: push 61 ns a draw, 32 less its 1.3 laps
+vulkan4xenon: profile, the last 10 s: pipeline 154 ns a draw, 133 less its 1.0 laps
+vulkan4xenon: profile, the last 10 s: constants 218 ns a draw, 175 less its 2.0 laps
+vulkan4xenon: profile, the last 10 s: resources 195 ns a draw, 131 less its 3.0 laps
+vulkan4xenon: profile, the last 10 s: checks 120 ns a draw, 77 less its 2.0 laps
+vulkan4xenon: profile, the last 10 s: draws 53 ns a draw, 32 less its 1.0 laps
+vulkan4xenon: profile, the last 10 s: commands 164 ns a draw, 85 less its 3.7 laps
+vulkan4xenon: profile, the last 10 s: submit 1 ns a draw, 1 less its 0.0 laps
+vulkan4xenon: profile, the last 10 s: all 1098 ns a draw, 749 less its 16.3 laps
+vulkan4xenon: profile, the last 10 s: command type 5 (src/objects.h), 73 us a present, 1000 a present
+vulkan4xenon: profile, the last 10 s: command type 6 (src/objects.h), 29 us a present, 1325 a present
+vulkan4xenon: profile, the last 10 s: command type 11 (src/objects.h), 32 us a present, 1000 a present
+vulkan4xenon: profile, uniforms_1000: 600000 draws, 1203600 commands, 600 submits, 600 presents; a present 1000.0 draws, 649.7 us submitting; a submit 1000.0 draws, 649.7 us; a lap 21.4 ns
+vulkan4xenon: profile, uniforms_1000: dispatch 61 ns a draw, 40 less its 1.0 laps
+vulkan4xenon: profile, uniforms_1000: push 0 ns a draw, 0 less its 0.0 laps
+vulkan4xenon: profile, uniforms_1000: pipeline 31 ns a draw, 9 less its 1.0 laps
+vulkan4xenon: profile, uniforms_1000: constants 120 ns a draw, 78 less its 2.0 laps
+vulkan4xenon: profile, uniforms_1000: resources 158 ns a draw, 94 less its 3.0 laps
+vulkan4xenon: profile, uniforms_1000: checks 119 ns a draw, 76 less its 2.0 laps
+vulkan4xenon: profile, uniforms_1000: draws 53 ns a draw, 31 less its 1.0 laps
+vulkan4xenon: profile, uniforms_1000: commands 107 ns a draw, 64 less its 2.0 laps
+vulkan4xenon: profile, uniforms_1000: submit 1 ns a draw, 1 less its 0.0 laps
+vulkan4xenon: profile, uniforms_1000: all 650 ns a draw, 393 less its 12.0 laps
+vkbench: vulkan4xenon uniforms_1000: draw+submit 884 us (mean 885, p99 896): draw 235, submit 649; gpu 627 (p99 647); present 15142; frame 16679 (59.4 fps)
+vkbench: vulkan4xenon uniforms_1000: a frame: 13286 dwords, 13.3 for each of 1000; 6.0 kicks; 0.0 waits, 0 us waiting
+vulkan4xenon: profile, the last 10 s: 464120 draws, 931624 commands, 584 submits, 584 presents; a present 794.7 draws, 518.8 us submitting; a submit 794.7 draws, 518.8 us; a lap 21.4 ns
+vulkan4xenon: profile, the last 10 s: dispatch 61 ns a draw, 40 less its 1.0 laps
+vulkan4xenon: profile, the last 10 s: push 0 ns a draw, 0 less its 0.0 laps
+vulkan4xenon: profile, the last 10 s: pipeline 31 ns a draw, 10 less its 1.0 laps
+vulkan4xenon: profile, the last 10 s: constants 120 ns a draw, 78 less its 2.0 laps
+vulkan4xenon: profile, the last 10 s: resources 158 ns a draw, 94 less its 3.0 laps
+vulkan4xenon: profile, the last 10 s: checks 119 ns a draw, 76 less its 2.0 laps
+vulkan4xenon: profile, the last 10 s: draws 53 ns a draw, 31 less its 1.0 laps
+vulkan4xenon: profile, the last 10 s: commands 109 ns a draw, 66 less its 2.0 laps
+vulkan4xenon: profile, the last 10 s: submit 2 ns a draw, 2 less its 0.0 laps
+vulkan4xenon: profile, the last 10 s: all 653 ns a draw, 396 less its 12.0 laps
+vulkan4xenon: profile, the last 10 s: command type 5 (src/objects.h), 52 us a present, 796 a present
+vulkan4xenon: profile, the last 10 s: command type 11 (src/objects.h), 25 us a present, 795 a present
+vulkan4xenon: profile, stream_1000: 600 draws, 4200 commands, 600 submits, 600 presents; a present 1.0 draws, 12.6 us submitting; a submit 1.0 draws, 12.6 us; a lap 21.4 ns
+vulkan4xenon: profile, stream_1000: dispatch 110 ns a draw, 89 less its 1.0 laps
+vulkan4xenon: profile, stream_1000: push 0 ns a draw, 0 less its 0.0 laps
+vulkan4xenon: profile, stream_1000: pipeline 1689 ns a draw, 1667 less its 1.0 laps
+vulkan4xenon: profile, stream_1000: constants 0 ns a draw, 0 less its 0.0 laps
+vulkan4xenon: profile, stream_1000: resources 253 ns a draw, 231 less its 1.0 laps
+vulkan4xenon: profile, stream_1000: checks 401 ns a draw, 359 less its 2.0 laps
+vulkan4xenon: profile, stream_1000: draws 84 ns a draw, 62 less its 1.0 laps
+vulkan4xenon: profile, stream_1000: commands 8775 ns a draw, 8625 less its 7.0 laps
+vulkan4xenon: profile, stream_1000: submit 1325 ns a draw, 1283 less its 2.0 laps
+vulkan4xenon: profile, stream_1000: all 12637 ns a draw, 12316 less its 15.0 laps
+vkbench: vulkan4xenon stream_1000: draw+submit 39 us (mean 39, p99 43): draw 26, submit 13; gpu 802 (p99 805); present 15735; frame 16679 (59.5 fps)
+vkbench: vulkan4xenon stream_1000: a frame: 287 dwords, 0.3 for each of 1000; 3.0 kicks; 0.0 waits, 0 us waiting
+vulkan4xenon: profile, the last 10 s: 588 draws, 4116 commands, 588 submits, 588 presents; a present 1.0 draws, 15.8 us submitting; a submit 1.0 draws, 15.8 us; a lap 21.4 ns
+vulkan4xenon: profile, the last 10 s: dispatch 158 ns a draw, 136 less its 1.0 laps
+vulkan4xenon: profile, the last 10 s: push 0 ns a draw, 0 less its 0.0 laps
+vulkan4xenon: profile, the last 10 s: pipeline 2359 ns a draw, 2337 less its 1.0 laps
+vulkan4xenon: profile, the last 10 s: constants 0 ns a draw, 0 less its 0.0 laps
+vulkan4xenon: profile, the last 10 s: resources 412 ns a draw, 391 less its 1.0 laps
+vulkan4xenon: profile, the last 10 s: checks 504 ns a draw, 461 less its 2.0 laps
+vulkan4xenon: profile, the last 10 s: draws 109 ns a draw, 88 less its 1.0 laps
+vulkan4xenon: profile, the last 10 s: commands 10692 ns a draw, 10542 less its 7.0 laps
+vulkan4xenon: profile, the last 10 s: submit 1557 ns a draw, 1514 less its 2.0 laps
+vulkan4xenon: profile, the last 10 s: all 15790 ns a draw, 15469 less its 15.0 laps
+vulkan4xenon: profile, the last 10 s: command type 0 (src/objects.h), 4 us a present, 1 a present
+vulkan4xenon: profile, the last 10 s: command type 1 (src/objects.h), 6 us a present, 1 a present
+vulkan4xenon: profile, the last 10 s: 594 draws, 4158 commands, 594 submits, 594 presents; a present 1.0 draws, 51.2 us submitting; a submit 1.0 draws, 51.2 us; a lap 21.4 ns
+vulkan4xenon: profile, the last 10 s: dispatch 679 ns a draw, 658 less its 1.0 laps
+vulkan4xenon: profile, the last 10 s: push 0 ns a draw, 0 less its 0.0 laps
+vulkan4xenon: profile, the last 10 s: pipeline 9965 ns a draw, 9944 less its 1.0 laps
+vulkan4xenon: profile, the last 10 s: constants 0 ns a draw, 0 less its 0.0 laps
+vulkan4xenon: profile, the last 10 s: resources 2204 ns a draw, 2183 less its 1.0 laps
+vulkan4xenon: profile, the last 10 s: checks 1639 ns a draw, 1596 less its 2.0 laps
+vulkan4xenon: profile, the last 10 s: draws 403 ns a draw, 382 less its 1.0 laps
+vulkan4xenon: profile, the last 10 s: commands 32133 ns a draw, 31984 less its 7.0 laps
+vulkan4xenon: profile, the last 10 s: submit 4150 ns a draw, 4107 less its 2.0 laps
+vulkan4xenon: profile, the last 10 s: all 51174 ns a draw, 50853 less its 15.0 laps
+vulkan4xenon: profile, the last 10 s: command type 0 (src/objects.h), 15 us a present, 1 a present
+vulkan4xenon: profile, the last 10 s: command type 1 (src/objects.h), 17 us a present, 1 a present
+vulkan4xenon: profile, stream_8000: 600 draws, 4200 commands, 600 submits, 600 presents; a present 1.0 draws, 51.2 us submitting; a submit 1.0 draws, 51.2 us; a lap 21.4 ns
+vulkan4xenon: profile, stream_8000: dispatch 679 ns a draw, 658 less its 1.0 laps
+vulkan4xenon: profile, stream_8000: push 0 ns a draw, 0 less its 0.0 laps
+vulkan4xenon: profile, stream_8000: pipeline 9959 ns a draw, 9938 less its 1.0 laps
+vulkan4xenon: profile, stream_8000: constants 0 ns a draw, 0 less its 0.0 laps
+vulkan4xenon: profile, stream_8000: resources 2213 ns a draw, 2191 less its 1.0 laps
+vulkan4xenon: profile, stream_8000: checks 1639 ns a draw, 1596 less its 2.0 laps
+vulkan4xenon: profile, stream_8000: draws 403 ns a draw, 382 less its 1.0 laps
+vulkan4xenon: profile, stream_8000: commands 32152 ns a draw, 32002 less its 7.0 laps
+vulkan4xenon: profile, stream_8000: submit 4150 ns a draw, 4107 less its 2.0 laps
+vulkan4xenon: profile, stream_8000: all 51195 ns a draw, 50875 less its 15.0 laps
+vkbench: vulkan4xenon stream_8000: draw+submit 579 us (mean 593, p99 680): draw 526, submit 53; gpu 4148 (p99 4154); present 10592; frame 16679 (59.4 fps)
+vkbench: vulkan4xenon stream_8000: a frame: 288 dwords, 0.0 for each of 8000; 3.0 kicks; 0.0 waits, 0 us waiting
+vulkan4xenon: profile, the last 10 s: 2302 draws, 5836 commands, 589 submits, 589 presents; a present 3.9 draws, 13.7 us submitting; a submit 3.9 draws, 13.7 us; a lap 21.4 ns
+vulkan4xenon: profile, the last 10 s: dispatch 77 ns a draw, 56 less its 1.0 laps
+vulkan4xenon: profile, the last 10 s: push 0 ns a draw, 0 less its 0.0 laps
+vulkan4xenon: profile, the last 10 s: pipeline 492 ns a draw, 471 less its 1.0 laps
+vulkan4xenon: profile, the last 10 s: constants 0 ns a draw, 0 less its 0.0 laps
+vulkan4xenon: profile, the last 10 s: resources 117 ns a draw, 95 less its 1.0 laps
+vulkan4xenon: profile, the last 10 s: checks 175 ns a draw, 132 less its 2.0 laps
+vulkan4xenon: profile, the last 10 s: draws 65 ns a draw, 44 less its 1.0 laps
+vulkan4xenon: profile, the last 10 s: commands 2242 ns a draw, 2188 less its 2.5 laps
+vulkan4xenon: profile, the last 10 s: submit 329 ns a draw, 318 less its 0.5 laps
+vulkan4xenon: profile, the last 10 s: all 3497 ns a draw, 3304 less its 9.0 laps
+vulkan4xenon: profile, the last 10 s: command type 0 (src/objects.h), 3 us a present, 1 a present
+vulkan4xenon: profile, the last 10 s: command type 1 (src/objects.h), 5 us a present, 1 a present
+vulkan4xenon: profile, fill_4: 2400 draws, 6000 commands, 600 submits, 600 presents; a present 4.0 draws, 12.4 us submitting; a submit 4.0 draws, 12.4 us; a lap 21.4 ns
+vulkan4xenon: profile, fill_4: dispatch 72 ns a draw, 51 less its 1.0 laps
+vulkan4xenon: profile, fill_4: push 0 ns a draw, 0 less its 0.0 laps
+vulkan4xenon: profile, fill_4: pipeline 417 ns a draw, 396 less its 1.0 laps
+vulkan4xenon: profile, fill_4: constants 0 ns a draw, 0 less its 0.0 laps
+vulkan4xenon: profile, fill_4: resources 98 ns a draw, 76 less its 1.0 laps
+vulkan4xenon: profile, fill_4: checks 162 ns a draw, 119 less its 2.0 laps
+vulkan4xenon: profile, fill_4: draws 63 ns a draw, 41 less its 1.0 laps
+vulkan4xenon: profile, fill_4: commands 1994 ns a draw, 1941 less its 2.5 laps
+vulkan4xenon: profile, fill_4: submit 299 ns a draw, 288 less its 0.5 laps
+vulkan4xenon: profile, fill_4: all 3105 ns a draw, 2912 less its 9.0 laps
+vkbench: vulkan4xenon fill_4: draw+submit 15 us (mean 15, p99 17): draw 2, submit 13; gpu 1395 (p99 1396); present 15269; frame 16679 (59.5 fps)
+vkbench: vulkan4xenon fill_4: a frame: 302 dwords, 75.6 for each of 4; 3.0 kicks; 0.0 waits, 0 us waiting
+vulkan4xenon: profile, the last 10 s: 8372 draws, 11912 commands, 590 submits, 590 presents; a present 14.2 draws, 15.9 us submitting; a submit 14.2 draws, 15.9 us; a lap 21.4 ns
+vulkan4xenon: profile, the last 10 s: dispatch 64 ns a draw, 43 less its 1.0 laps
+vulkan4xenon: profile, the last 10 s: push 0 ns a draw, 0 less its 0.0 laps
+vulkan4xenon: profile, the last 10 s: pipeline 141 ns a draw, 119 less its 1.0 laps
+vulkan4xenon: profile, the last 10 s: constants 0 ns a draw, 0 less its 0.0 laps
+vulkan4xenon: profile, the last 10 s: resources 64 ns a draw, 42 less its 1.0 laps
+vulkan4xenon: profile, the last 10 s: checks 131 ns a draw, 88 less its 2.0 laps
+vulkan4xenon: profile, the last 10 s: draws 55 ns a draw, 33 less its 1.0 laps
+vulkan4xenon: profile, the last 10 s: commands 580 ns a draw, 550 less its 1.4 laps
+vulkan4xenon: profile, the last 10 s: submit 83 ns a draw, 80 less its 0.1 laps
+vulkan4xenon: profile, the last 10 s: all 1118 ns a draw, 956 less its 7.6 laps
+vulkan4xenon: profile, the last 10 s: command type 0 (src/objects.h), 3 us a present, 1 a present
+vulkan4xenon: profile, the last 10 s: command type 1 (src/objects.h), 5 us a present, 1 a present
+vulkan4xenon: profile, the last 10 s: command type 11 (src/objects.h), 0 us a present, 14 a present
+vulkan4xenon: profile, fill_16: 9600 draws, 13200 commands, 600 submits, 600 presents; a present 16.0 draws, 16.5 us submitting; a submit 16.0 draws, 16.5 us; a lap 21.4 ns
+vulkan4xenon: profile, fill_16: dispatch 63 ns a draw, 42 less its 1.0 laps
+vulkan4xenon: profile, fill_16: push 0 ns a draw, 0 less its 0.0 laps
+vulkan4xenon: profile, fill_16: pipeline 128 ns a draw, 107 less its 1.0 laps
+vulkan4xenon: profile, fill_16: constants 0 ns a draw, 0 less its 0.0 laps
+vulkan4xenon: profile, fill_16: resources 62 ns a draw, 41 less its 1.0 laps
+vulkan4xenon: profile, fill_16: checks 130 ns a draw, 87 less its 2.0 laps
+vulkan4xenon: profile, fill_16: draws 54 ns a draw, 33 less its 1.0 laps
+vulkan4xenon: profile, fill_16: commands 517 ns a draw, 488 less its 1.4 laps
+vulkan4xenon: profile, fill_16: submit 74 ns a draw, 71 less its 0.1 laps
+vulkan4xenon: profile, fill_16: all 1029 ns a draw, 869 less its 7.5 laps
+vkbench: vulkan4xenon fill_16: draw+submit 19 us (mean 19, p99 21): draw 2, submit 17; gpu 4602 (p99 4605); present 12057; frame 16679 (59.4 fps)
+vkbench: vulkan4xenon fill_16: a frame: 362 dwords, 22.7 for each of 16; 3.0 kicks; 0.0 waits, 0 us waiting
+vulkan4xenon: profile, the last 10 s: 2969 draws, 6898 commands, 584 submits, 584 presents; a present 5.1 draws, 67.6 us submitting; a submit 5.1 draws, 67.6 us; a lap 21.4 ns
+vulkan4xenon: profile, the last 10 s: dispatch 97 ns a draw, 76 less its 1.0 laps
+vulkan4xenon: profile, the last 10 s: push 0 ns a draw, 0 less its 0.0 laps
+vulkan4xenon: profile, the last 10 s: pipeline 334 ns a draw, 313 less its 1.0 laps
+vulkan4xenon: profile, the last 10 s: constants 0 ns a draw, 0 less its 0.0 laps
+vulkan4xenon: profile, the last 10 s: resources 100 ns a draw, 78 less its 1.0 laps
+vulkan4xenon: profile, the last 10 s: checks 8667 ns a draw, 8625 less its 2.0 laps
+vulkan4xenon: profile, the last 10 s: draws 2064 ns a draw, 2042 less its 1.0 laps
+vulkan4xenon: profile, the last 10 s: commands 1796 ns a draw, 1746 less its 2.3 laps
+vulkan4xenon: profile, the last 10 s: submit 243 ns a draw, 234 less its 0.4 laps
+vulkan4xenon: profile, the last 10 s: all 13301 ns a draw, 13114 less its 8.7 laps
+vulkan4xenon: profile, the last 10 s: command type 0 (src/objects.h), 3 us a present, 1 a present
+vulkan4xenon: profile, the last 10 s: command type 1 (src/objects.h), 5 us a present, 1 a present
+vulkan4xenon: profile, instances_4000: 600 draws, 4800 commands, 600 submits, 600 presents; a present 1.0 draws, 86.1 us submitting; a submit 1.0 draws, 86.1 us; a lap 21.4 ns
+vulkan4xenon: profile, instances_4000: dispatch 299 ns a draw, 278 less its 1.0 laps
+vulkan4xenon: profile, instances_4000: push 0 ns a draw, 0 less its 0.0 laps
+vulkan4xenon: profile, instances_4000: pipeline 1553 ns a draw, 1532 less its 1.0 laps
+vulkan4xenon: profile, instances_4000: constants 0 ns a draw, 0 less its 0.0 laps
+vulkan4xenon: profile, instances_4000: resources 321 ns a draw, 299 less its 1.0 laps
+vulkan4xenon: profile, instances_4000: checks 59216 ns a draw, 59173 less its 2.0 laps
+vulkan4xenon: profile, instances_4000: draws 14078 ns a draw, 14057 less its 1.0 laps
+vulkan4xenon: profile, instances_4000: commands 9402 ns a draw, 9231 less its 8.0 laps
+vulkan4xenon: profile, instances_4000: submit 1252 ns a draw, 1209 less its 2.0 laps
+vulkan4xenon: profile, instances_4000: all 86121 ns a draw, 85779 less its 16.0 laps
+vkbench: vulkan4xenon instances_4000: draw+submit 151 us (mean 151, p99 157): draw 65, submit 86; gpu 988 (p99 1032); present 15437; frame 16679 (59.5 fps)
+vkbench: vulkan4xenon instances_4000: a frame: 1866 dwords, 0.5 for each of 4000; 4.0 kicks; 0.0 waits, 0 us waiting
+PASS: vkbench: vulkan4xenon: every scene ran its 660 frames with no call failing
+vkbench: vulkan4xenon against xsdk, medians
+vkbench: draws_250: draw+submit 313 us against 79, 3.96x; gpu 508 us against 610, 0.83x; 0 of 2304 points differ
+PASS: vkbench: draws_250: both backends drew the same picture
+vkbench: draws_1000: draw+submit 1206 us against 295, 4.09x; gpu 407 us against 685, 0.59x; 0 of 2304 points differ
+PASS: vkbench: draws_1000: both backends drew the same picture
+vkbench: draws_4000: draw+submit 5079 us against 1161, 4.37x; gpu 364 us against 810, 0.45x; 0 of 2304 points differ
+PASS: vkbench: draws_4000: both backends drew the same picture
+vkbench: states_250: draw+submit 427 us against 127, 3.36x; gpu 525 us against 580, 0.91x; 0 of 2304 points differ
+PASS: vkbench: states_250: both backends drew the same picture
+vkbench: states_1000: draw+submit 1659 us against 488, 3.40x; gpu 477 us against 1055, 0.45x; 0 of 2304 points differ
+PASS: vkbench: states_1000: both backends drew the same picture
+vkbench: uniforms_1000: draw+submit 884 us against 296, 2.99x; gpu 627 us against 681, 0.92x; 0 of 2304 points differ
+PASS: vkbench: uniforms_1000: both backends drew the same picture
+vkbench: stream_1000: draw+submit 39 us against 32, 1.22x; gpu 802 us against 785, 1.02x; 0 of 2304 points differ
+PASS: vkbench: stream_1000: both backends drew the same picture
+vkbench: stream_8000: draw+submit 579 us against 531, 1.09x; gpu 4148 us against 4131, 1.00x; 0 of 2304 points differ
+PASS: vkbench: stream_8000: both backends drew the same picture
+vkbench: fill_4: draw+submit 15 us against 7, 2.14x; gpu 1395 us against 1375, 1.01x; 0 of 2304 points differ
+PASS: vkbench: fill_4: both backends drew the same picture
+vkbench: fill_16: draw+submit 19 us against 9, 2.11x; gpu 4602 us against 4585, 1.00x; 0 of 2304 points differ
+PASS: vkbench: fill_16: both backends drew the same picture
+vkbench: instances_4000: draw+submit 151 us against 84, 1.80x; gpu 988 us against 975, 1.01x; 0 of 2304 points differ
+PASS: vkbench: instances_4000: both backends drew the same picture
+vkbench: scenes against the scene whose picture they draw, through each backend, medians
+vkbench: xsdk: instances_4000 against draws_4000: draw+submit 84 us against 1161, 0.07x; gpu 975 us against 810, 1.20x; 0 of 2304 points differ
+PASS: vkbench: xsdk: instances_4000 drew draws_4000's picture
+vkbench: vulkan4xenon: instances_4000 against draws_4000: draw+submit 151 us against 5079, 0.03x; gpu 988 us against 364, 2.71x; 0 of 2304 points differ
+PASS: vkbench: vulkan4xenon: instances_4000 drew draws_4000's picture
+tests: 17 passed, 0 failed
+exit: status 0
