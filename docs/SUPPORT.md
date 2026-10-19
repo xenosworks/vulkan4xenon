@@ -99,18 +99,17 @@ Some are there to refuse, as the features they need aren't reported. Each logs w
 - SPIR-V xost refuses returns `VK_ERROR_FEATURE_NOT_PRESENT`, logged with xost's reason, and so does a shader whose
   hardware loop a bare uniform counts, which Vulkan's GLSL has none of. `vkCreateShaderModule` doesn't list that
   result: a deviation.
-- The shader subset is xost's (xost:docs/xsc.md): no bitwise operations, and a break on data in a loop raises an
-  error. A shader of each kind has 64 registers, xsdk's split, which xost builds for (xsdk:docs/HARDWARE.md, "Pixel
-  shaders past 16 registers, milestone 24").
+- The shader subset is xost's (xost:docs/xsc.md): no bitwise operations. A shader of each kind has 64 registers,
+  xsdk's split, which xost builds for (xsdk:docs/HARDWARE.md, "Pixel shaders past 16 registers, milestone 24").
 - `if`/`else` in either stage, nested, in an unrolled loop's body and around `gl_FragDepth` (milestone 21;
   xost:docs/xsc.md, "Control flow"). In a pixel shader, where the condition reads only push constants, uniform blocks
   and literals, so every pixel takes the same arm, and an arm has work of its own, the arms go in execs on the predicate
   and the arm not taken runs no instructions (xenia:src/xenia/gpu/ucode.h:114-124); a vertex shader's arms in such execs
   hung the GPU on the console (xsdk:docs/HARDWARE.md, "Branches, vulkan4xenon milestone 21"), so a vertex shader's stay
   selects. Otherwise both arms run and a select picks each value, as a group of 64 that splits runs both arms on Xenos
-  anyway. Refused, with xost's reason: a `break` or `return` in an arm, a `discard` in an arm xost's unroller merges, a
-  `switch`, and a matrix, array or struct an `if`/`else` chooses. An output stored on one path alone takes that value on
-  the other, where GLSL leaves it undefined.
+  anyway. A `break` or `continue` in an arm is taken as loops take one (below). Refused, with xost's reason: a `return`
+  in an arm, a `discard` in an arm xost's unroller merges, a `switch`, and a matrix, array or struct an `if`/`else`
+  chooses. An output stored on one path alone takes that value on the other, where GLSL leaves it undefined.
 - A fragment shader may write `gl_FragDepth` outside any `if`/`else`, in both arms of one, or before one and again in
   an arm; written on one path alone, it's refused, as nothing else gives the pixel a depth (xost:docs/xsc.md,
   "Control flow"). Its draws skip no hidden pixels early, as xsdk turns hierarchical depth off for them
@@ -118,20 +117,38 @@ Some are there to refuse, as the features they need aren't reported. Each logs w
 - Fragment outputs at locations 0 to 3 go to the subpass's colour attachments 0 to 3, xost's `oC0` to `oC3`, a float
   output in every component; with more than one, each is stored once, outside any `if`/`else` (xost:docs/xsc.md,
   milestone 25).
-- A loop counted by an int in a push constant or uniform block, `for (int i = 0; i < b.n; i++)`, is a hardware loop
-  (milestone 21; xost:docs/xsc.md, "Loops a block counts"). The bundle names where the int is, and each draw the layer
-  reads it, from the push constants or the bound buffer at its dynamic offset, and sets the loop constant xost gave the
-  loop: a vertex shader's from 0, a fragment shader's from 16. The loop constants are written only when one changes.
-  **Deviation:** a count past 255 runs 255 passes, the most a loop constant counts
-  (xenia:src/xenia/gpu/xenos.h:1086-1097); 0 or less runs none, as Vulkan does. Refused, with xost's reason: such a
-  loop inside another loop or an `if`/`else` on data, a `continue`, a break but `if (c) break;` ending a pass on a
-  value every vertex or pixel shares, a store into part of an output in the loop, and a sample or derivative at
-  coordinates a pass works out. A pipeline whose loop's int lies past the push constants returns
-  `VK_ERROR_FEATURE_NOT_PRESENT`.
+- **Loops,** in every shape xost takes (milestone 21 and xsdk milestone 46; xost:docs/xsc.md, "Loops" and "Loops a
+  block counts"):
+  - a constant count, which xost unrolls;
+  - `for (int i = s; i < b.n; i += k)`, counted by an int in a push constant or uniform block from a constant start by
+    a constant step;
+  - a loop whose count is data: a `for` to `int()` of a float or an interpolant, a `while` or a `do`/`while`;
+  - breaks and continues on data in either kind of loop, each vertex or pixel leaving at a pass of its own;
+  - loops nested 4 deep, and loops in an `if`/`else` on data;
+  - samples and derivatives in a pass.
+
+  All but the unrolled loops are hardware loops. The bundle names where a block's int is, with the loop's start and
+  step; each draw the layer reads it, from the push constants or the bound buffer at its dynamic offset, and sets the
+  loop constant xost gave the loop to `xsdk_xsc_loop_passes(start, step, n)` passes, ceil((n - start) / step) as
+  Shader Model 3's `loop` counts them (`V4X_RESOURCE_PUSH_LOOP`, `V4X_RESOURCE_UNIFORM_LOOP`). A loop whose count is
+  data runs from a loop constant of 255 passes (`V4X_RESOURCE_FIXED_LOOP`), left on its condition. A vertex shader's
+  loop constants are from 0, a fragment shader's from 16, and they're written only when one changes.
+  **Deviation:** a loop runs at most 255 passes, the most a loop constant counts
+  (xenia:src/xenia/gpu/xenos.h:1086-1097), as one of Shader Model 3's does: a count past 255 runs 255, and a loop
+  whose count is data stops at 255 passes too. 0 or less runs none, as Vulkan does. An implicit LOD or a derivative in
+  a pass reads the quad's pixels in that pass, which mixes passes where they left at different ones; GLSL leaves both
+  undefined there. Refused, with xost's reason: a `discard` or `return` in a loop, a store into part of an output in a
+  hardware loop, a fifth nested hardware loop, a loop's condition on a block's int other than `i < b.n`, and a matrix,
+  array or struct a hardware loop carries. A pipeline whose loop's int lies past the push constants, or whose block
+  loop has no step, from a bundle built before xost gave one, returns `VK_ERROR_FEATURE_NOT_PRESENT`.
 - Samples at a LOD, with gradients or with a bias the shader gives, constant or worked out: `textureLod`, `textureGrad`
   and `texture()`'s bias, and their projective forms (milestone 22; xost:docs/xsc.md, "LOD and gradients"). The
   sampler's LOD bias and clamps apply on top, as Vulkan's do. Gradients on a cube map, offsets (`textureOffset` and the
-  like), a sample index and a minimum LOD are refused, as xost refuses them.
+  like), a sample index and a minimum LOD are refused, as xost refuses them. **Deviation:** a LOD from `textureGrad`'s
+  gradients is one a 2x2 quad, from its first pixel inside the primitive, top left, top right, bottom left then bottom
+  right, not each pixel's own (xsdk:docs/HARDWARE.md, "Samples in a loop's pass, milestone 46 step 6"). Gradients the
+  same across a quad, as derivatives of a value linear across it are, take the same LOD either way; a LOD
+  `textureLod` gives is each pixel's own.
 - A fragment shader may read `gl_FrontFacing`, from the pixel parameters' sign, in an expression, an `if`/`else` or a
   discard (milestone 22; xost:docs/xsc.md, "Facing"). It holds on the face the pipeline's `frontFace` makes front,
   as culling takes it, as it did on the console for both windings (milestone 22).

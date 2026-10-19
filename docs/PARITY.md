@@ -10,7 +10,7 @@ docs/SUPPORT.md says exactly what the layer does; this page sums it up against D
 docs/ROADMAP.md close the gaps. Each row says whether Xenos has it, whether xsdk drives it (xost, for shaders), and
 whether the layer exposes it. As of 2026-10-18.
 
-Of the 47 rows, the layer has 37, part of 9 and none of 1.
+Of the 47 rows, the layer has 38, part of 8 and none of 1.
 Xenos has all but three: its occlusion queries tell only whether draws rasterized anything, its gamma only approximates
 sRGB, and whether it compares depth in a fetch hasn't been checked, which xost's comparison after the fetch doesn't
 need. Every other gap is software.
@@ -22,11 +22,11 @@ need. Every other gap is software.
 | Vertex and pixel shaders from a high-level language | Yes | Yes: GLSL through xost, offline or on the console | Yes |
 | 256 vertex and 224 pixel float constants | Yes | Yes | Yes, 256 a stage |
 | Constant arrays at a run-time index, as skinning palettes are | Yes | Yes (xost:docs/xsc.md:72) | Yes |
-| `if` and `else` | Yes: conditional execs and predicates (xenia:src/xenia/gpu/ucode.h:101-130) | Yes: selects on data, execs on the predicate where every pixel agrees; a `switch`, and a `break` or `return` in an arm, refused (xost:docs/xsc.md, "Control flow") | Yes |
-| Loops | Yes (xenia:src/xenia/gpu/ucode.h:132) | Partial: fixed counts unrolled, an `if` on data inside them; counts in a block as hardware loops, broken out of on a value every vertex or pixel shares; no break on data, `continue` or counted loop inside another (xost:docs/xsc.md, "Loops a block counts") | Partial, as xost; a count past 255 runs 255 (SUPPORT.md, Shaders) |
+| `if` and `else` | Yes: conditional execs and predicates (xenia:src/xenia/gpu/ucode.h:101-130) | Yes: selects on data, execs on the predicate where every pixel agrees; a `switch`, and a `return` in an arm, refused (xost:docs/xsc.md, "Control flow") | Yes |
+| Loops | Yes (xenia:src/xenia/gpu/ucode.h:132) | Yes: constant counts unrolled; counts in a block, from a start by a step, and counts from data as hardware loops; breaks and continues on data in either, loops nested 4 deep and in an `if` on data, and samples and derivatives in a pass, confirmed on the console (xost:docs/xsc.md, "Loops" and "Loops a block counts") | Yes; a loop runs at most 255 passes, as one of Shader Model 3's does (SUPPORT.md, Shaders) |
 | `discard` | Yes | Yes, confirmed on the console (xost:docs/xsc.md:64) | Yes |
 | Derivatives | Yes | Yes, confirmed on the console (xost:docs/xsc.md:373) | Yes |
-| A computed LOD and gradients (`texldl`, `texldd`) | Yes | Yes, confirmed on the console (xost:docs/xsc.md, "LOD and gradients") | Yes |
+| A computed LOD and gradients (`texldl`, `texldd`) | Yes | Yes, confirmed on the console (xost:docs/xsc.md, "LOD and gradients") | Yes; the LOD from gradients is one a 2x2 quad, from its first pixel, as the console takes it (SUPPORT.md, Shaders) |
 | The pixel's position and facing (`vPos`, `vFace`) | Yes | Yes: `gl_FragCoord.xy`, and `gl_FrontFacing`, confirmed on the console (xost:docs/xsc.md:72, "Facing") | Yes |
 | Depth output | Yes | Yes: outside any `if`, or in both arms of one; written on one path alone, refused, as nothing else gives the pixel a depth (xost:docs/xsc.md, "Control flow") | Yes |
 | Vertex texture fetch | Yes | Yes, confirmed on the console (xost:docs/xsc.md, "Vertex textures") | Yes, sharing the fetch constants with the fragment shader and the vertex streams (SUPPORT.md, Pipelines) |
@@ -91,7 +91,9 @@ need. Every other gap is software.
 
 - **The layer alone,** as xsdk has it: multisampling. DXT, which most PC ports ship, the 16-bit and half-float texture
   formats, and the vertex formats came with milestone 20.
-- **xost:** breaks on data, and loops a block counts inside other loops. Almost every ported shader meets one.
+- **xost:** none of Shader Model 3's left. Its loops came with xsdk milestone 46, one running at most 255 passes as
+  one of Shader Model 3's does; a `discard` or `return` in a loop is still refused (xost:docs/xsc.md, "Loops a block
+  counts").
 - **xsdk, then the layer:** targets past eDRAM multisampled, and a volume texture's mips. Float targets blending
   waits on the console.
 
