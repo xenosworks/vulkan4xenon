@@ -91,9 +91,8 @@ need. Every other gap is software.
 
 - **The layer alone,** as xsdk has it: multisampling. DXT, which most PC ports ship, the 16-bit and half-float texture
   formats, and the vertex formats came with milestone 20.
-- **xost:** none of Shader Model 3's left. Its loops came with xsdk milestone 46, one running at most 255 passes as
-  one of Shader Model 3's does; a `discard` or `return` in a loop is still refused (xost:docs/xsc.md, "Loops a block
-  counts").
+- **xost:** a `discard` or `return` inside a loop, still refused (xost:docs/xsc.md, "Loops a block counts"). Its loops
+  otherwise came with xsdk milestone 46, one running at most 255 passes as one of Shader Model 3's does.
 - **xsdk, then the layer:** targets past eDRAM multisampled, and a volume texture's mips. Float targets blending
   waits on the console.
 
