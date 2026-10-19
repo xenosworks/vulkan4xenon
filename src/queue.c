@@ -41,15 +41,31 @@ typedef struct {
 	const Sampler *sampler;
 } PointedTexture;
 
+// The pipeline state the replay last gave xsdk, so a draw sets only what differs: whose shaders, whose literals, and
+// the values the rest were worked out from or are.
+typedef struct {
+	const Pipeline *pipeline;
+	const V4xShader *vertex_literals;
+	const V4xShader *pixel_literals;
+	VkViewport viewport;
+	VkRect2D scissor;
+	XsdkBlendState blends[V4X_MAX_COLOR_ATTACHMENTS];
+	uint32_t blend_count;
+	XsdkRasterState raster;
+	XsdkDepthStencilState depth_stencil;
+} AppliedState;
+
 // What one replay has bound so far.
 typedef struct {
 	VkQueue queue;
 	// The submission it belongs to (VkQueue_T's serial).
 	uint32_t serial;
 	const Pipeline *pipeline;
-	// The pipeline's registers must be set again: a resolve replaces the vertex shader, the viewport and the state.
+	// The pipeline's registers must be set again, whatever applied holds: a resolve replaces the vertex shader, the
+	// viewport and the state, and the layer's own draws set theirs.
 	bool pipeline_dirty;
-	// Only the viewport and scissor must, after vkCmdSetViewport or vkCmdSetScissor.
+	AppliedState applied;
+	// Only the viewport and scissor may have changed, after vkCmdSetViewport or vkCmdSetScissor.
 	bool viewport_dirty;
 	VkViewport viewport;
 	VkRect2D scissor;
@@ -124,14 +140,28 @@ static int32_t smaller(int32_t a, int32_t b)
 	return a < b ? a : b;
 }
 
+// Whether a draw sets a state: xsdk's is unknown, or the value differs from what the replay last set, which then takes
+// it. Values the same bit for bit set the same registers.
+static bool changed(Replay *replay, void *applied, const void *value, size_t size_bytes)
+{
+	if (!replay->pipeline_dirty && !memcmp(applied, value, size_bytes))
+		return false;
+	memcpy(applied, value, size_bytes);
+	return true;
+}
+
 // Vulkan's y points down and its pixel centres sit on halves; xsdk's viewport is y-up with centres on whole numbers.
 // Vulkan clips to the viewport, and Xenos draws past it as far as the scissor (docs/SUPPORT.md, Pipelines), so the
 // scissor stops at the viewport's pixels too.
-static void apply_viewport(const Pipeline *pipeline, const Replay *replay)
+static void apply_viewport(const Pipeline *pipeline, Replay *replay)
 {
 	const VkViewport *const v = pipeline->dynamic_viewport ? &replay->viewport : &pipeline->viewport;
-	xsdk_gpu_set_viewport(v->x - 0.5f, v->y + v->height - 0.5f, v->width, -v->height, v->minDepth, v->maxDepth);
 	const VkRect2D *const s = pipeline->dynamic_scissor ? &replay->scissor : &pipeline->scissor;
+	const bool viewport_changed = changed(replay, &replay->applied.viewport, v, sizeof *v);
+	if (viewport_changed)
+		xsdk_gpu_set_viewport(v->x - 0.5f, v->y + v->height - 0.5f, v->width, -v->height, v->minDepth, v->maxDepth);
+	if (!changed(replay, &replay->applied.scissor, s, sizeof *s) && !viewport_changed)
+		return;
 	const int32_t left = larger(s->offset.x, first_pixel(v->x));
 	const int32_t top = larger(s->offset.y, first_pixel(v->y));
 	const int32_t right = smaller(s->offset.x + (int32_t)s->extent.width, first_pixel(v->x + v->width));
@@ -140,26 +170,41 @@ static void apply_viewport(const Pipeline *pipeline, const Replay *replay)
 		bottom > top ? (uint32_t)(bottom - top) : 0);
 }
 
-// The state blocks dynamic state may change: the pipeline's own, or worked out with what the commands set.
-static void apply_dynamic(const Pipeline *pipeline, const Replay *replay)
+// The state blocks dynamic state may change: the pipeline's own, or worked out with what the commands set. The blend
+// constants aren't compared, as few pipelines take them.
+static void apply_dynamic(const Pipeline *pipeline, Replay *replay)
 {
-	XsdkRasterState raster;
-	XsdkDepthStencilState depth_stencil;
-	xsdk_gpu_set_raster(v4x_pipeline_raster(pipeline, &replay->dynamic, &raster));
-	xsdk_gpu_set_depth_stencil(v4x_pipeline_depth_stencil(pipeline, &replay->dynamic, &depth_stencil));
+	XsdkRasterState raster_scratch;
+	XsdkDepthStencilState depth_stencil_scratch;
+	const XsdkRasterState *const raster = v4x_pipeline_raster(pipeline, &replay->dynamic, &raster_scratch);
+	if (changed(replay, &replay->applied.raster, raster, sizeof *raster))
+		xsdk_gpu_set_raster(raster);
+	const XsdkDepthStencilState *const depth_stencil =
+		v4x_pipeline_depth_stencil(pipeline, &replay->dynamic, &depth_stencil_scratch);
+	if (changed(replay, &replay->applied.depth_stencil, depth_stencil, sizeof *depth_stencil))
+		xsdk_gpu_set_depth_stencil(depth_stencil);
 	const float *const constants = v4x_pipeline_blend_constants(pipeline, &replay->dynamic);
 	if (constants)
 		xsdk_gpu_set_blend_constants(constants);
 }
 
-static void apply_pipeline(const Pipeline *pipeline, const Replay *replay)
+// Each pipeline has shaders of its own. A shader's literals stay in their registers while the pipelines drawing share
+// that shader, as its blocks never reach them; another shader's may.
+static void apply_pipeline(const Pipeline *pipeline, Replay *replay)
 {
+	AppliedState *const applied = &replay->applied;
+	applied->pipeline = pipeline;
 	xsdk_gpu_set_shaders(&pipeline->vertex, &pipeline->pixel);
+	if (changed(replay, &applied->vertex_literals, &pipeline->vertex_source, sizeof pipeline->vertex_source))
+		write_literals(pipeline->vertex_source, true);
+	if (changed(replay, &applied->pixel_literals, &pipeline->pixel_source, sizeof pipeline->pixel_source))
+		write_literals(pipeline->pixel_source, false);
 	apply_viewport(pipeline, replay);
-	xsdk_gpu_set_blends(pipeline->blends, pipeline->blend_count);
+	const uint32_t count = pipeline->blend_count;
+	const bool count_changed = changed(replay, &applied->blend_count, &count, sizeof count);
+	if (changed(replay, applied->blends, pipeline->blends, count * sizeof *pipeline->blends) || count_changed)
+		xsdk_gpu_set_blends(pipeline->blends, count);
 	apply_dynamic(pipeline, replay);
-	write_literals(pipeline->vertex_source, true);
-	write_literals(pipeline->pixel_source, false);
 }
 
 static void write_constants(bool vertex, uint32_t first, const float *values, uint32_t count)
@@ -1044,7 +1089,7 @@ static void prepare_draw(Replay *replay)
 	const Pipeline *const pipeline = replay->pipeline;
 	v4x_profile_draw();
 	replay->queue->drawn = true;
-	if (replay->pipeline_dirty) {
+	if (replay->pipeline_dirty || pipeline != replay->applied.pipeline) {
 		apply_pipeline(pipeline, replay);
 	} else {
 		if (replay->viewport_dirty)
@@ -1362,9 +1407,9 @@ static void replay_command(VkQueue queue, VkCommandBuffer buffer, Replay *replay
 	case COMMAND_END_RENDER_PASS:
 		end_pass_command(queue, buffer, replay, index);
 		break;
+	// The next draw sets what differs from the pipeline it last set.
 	case COMMAND_BIND_PIPELINE:
 		replay->pipeline = command->pipeline;
-		replay->pipeline_dirty = true;
 		break;
 	case COMMAND_BIND_VERTEX_BUFFER:
 		replay->bindings[command->vertex_buffer.binding] = (VertexBinding){ .address = command->vertex_buffer.address,

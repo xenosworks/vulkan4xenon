@@ -105,7 +105,7 @@ typedef enum {
 	V4X_PROFILE_DISPATCH,
 	// vkCmdPushConstants at replay: where its bytes were recorded, or their copy into the replay.
 	V4X_PROFILE_PUSH,
-	// A draw's pipeline state: checking it, and setting it again when a bind or a command made it dirty.
+	// A draw's pipeline state: comparing it with what the replay last set, and setting what differs.
 	V4X_PROFILE_PIPELINE,
 	// A draw's float constants through xsdk: the blocks it sets and the uniform blocks it has the GPU load.
 	V4X_PROFILE_CONSTANTS,
