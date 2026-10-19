@@ -45,8 +45,15 @@ static uint64_t command_ticks[COMMAND_TYPES];
 static uint32_t command_laps[COMMAND_TYPES];
 static uint64_t logged_command_ticks[COMMAND_TYPES];
 static uint32_t logged_command_laps[COMMAND_TYPES];
+// The replay's waits for the GPU: their ticks and count, both at the last log, and when the one going on began.
+static uint64_t wait_ticks;
+static uint32_t waits;
+static uint64_t logged_wait_ticks;
+static uint32_t logged_waits;
+static uint32_t wait_began;
 
 static void log_commands(void);
+static void log_waits(void);
 
 // The low word alone: a lap is far shorter than its 86 s wrap.
 static uint32_t time_base(void)
@@ -128,8 +135,20 @@ void v4x_profile_present(void)
 		return;
 	v4x_profile_log("the last 10 s", &logged, &totals);
 	log_commands();
+	log_waits();
 	logged = totals;
 	logged_at = now;
+}
+
+void v4x_profile_wait_start(void)
+{
+	wait_began = time_base();
+}
+
+void v4x_profile_wait_end(void)
+{
+	wait_ticks += time_base() - wait_began;
+	waits++;
 }
 
 V4xProfile v4x_profile_totals(void)
@@ -208,4 +227,17 @@ static void log_commands(void)
 			"a present",
 			(unsigned)type, (unsigned)each(nanoseconds(taken) / 1000, presents), (unsigned)each(times, presents));
 	}
+}
+
+// Since the last log, the replay's waits for the GPU: their time a present, and how many, in tenths.
+static void log_waits(void)
+{
+	const uint32_t presents = totals.presents - logged.presents;
+	const uint32_t us = each(nanoseconds(wait_ticks - logged_wait_ticks) / 1000, presents);
+	const uint32_t tenths = each((uint64_t)(waits - logged_waits) * 10, presents);
+	xsdk_log_write(
+		"vulkan4xenon: profile, the last 10 s: the replay's waits for the GPU, %u us a present, %u.%u a present",
+		(unsigned)us, (unsigned)(tenths / 10), (unsigned)(tenths % 10));
+	logged_wait_ticks = wait_ticks;
+	logged_waits = waits;
 }

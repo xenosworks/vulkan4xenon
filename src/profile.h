@@ -19,6 +19,9 @@ void v4x_profile_command(uint32_t type);
 void v4x_profile_draw(void);
 // Counts a present, and logs the frames since the last log once 10 seconds have passed.
 void v4x_profile_present(void);
+// Time a wait for the GPU in the replay, for the 10 s log; the stage the wait falls in still counts it too.
+void v4x_profile_wait_start(void);
+void v4x_profile_wait_end(void);
 #else
 static inline void v4x_profile_submit(void)
 {
@@ -44,6 +47,14 @@ static inline void v4x_profile_draw(void)
 }
 
 static inline void v4x_profile_present(void)
+{
+}
+
+static inline void v4x_profile_wait_start(void)
+{
+}
+
+static inline void v4x_profile_wait_end(void)
 {
 }
 #endif

@@ -3074,7 +3074,8 @@ stages add up to the submit. The first submit times 10,000 laps back to back, to
   counts, with the draws and microseconds a submit and a present, and what a lap costs; then each stage's nanoseconds a
   draw, as timed and less what its laps cost, with its laps a draw; then `all`, their sum.
 - **Any title,** Dusklight among them, logs the same lines as `the last 10 s` at its first present after each 10
-  seconds, so its frames are presents.
+  seconds, so its frames are presents. Then each command type that took 2% of the submit or more, and the replay's
+  waits for the GPU (step 6), each in microseconds and times a present; a wait is counted in its stage as well.
 
 ## 5. The Dusklight track
 

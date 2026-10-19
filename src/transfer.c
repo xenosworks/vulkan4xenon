@@ -9,6 +9,7 @@
 #include "format.h"
 #include "image.h"
 #include "objects.h"
+#include "profile.h"
 #include "query.h"
 #include "sync.h"
 #include "xsdk/gpu.h"
@@ -53,7 +54,9 @@ static void wait_for_serial(VkQueue queue, uint32_t serial, const char *what)
 	const uint32_t fence = serial == queue->serial ? xsdk_gpu_fence() : v4x_sync_fence_of(queue, serial);
 	if (xsdk_gpu_fence_done(fence))
 		return;
+	v4x_profile_wait_start();
 	const NTSTATUS status = xsdk_gpu_wait(fence, IDLE_TIMEOUT_MS);
+	v4x_profile_wait_end();
 	if (!NT_SUCCESS(status))
 		xsdk_log_write("vulkan4xenon: the GPU didn't finish with %s: 0x%08X", what, (unsigned)status);
 }
@@ -91,7 +94,9 @@ static void wait_for_draws(VkQueue queue)
 {
 	if (!queue->drawn)
 		return;
+	v4x_profile_wait_start();
 	const NTSTATUS status = xsdk_gpu_wait(xsdk_gpu_fence(), IDLE_TIMEOUT_MS);
+	v4x_profile_wait_end();
 	if (!NT_SUCCESS(status))
 		xsdk_log_write(
 			"vulkan4xenon: the GPU didn't finish its draws for a copy into a buffer: 0x%08X", (unsigned)status);
