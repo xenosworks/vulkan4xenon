@@ -1,4 +1,5 @@
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -39,6 +40,7 @@ typedef enum {
 	SHADER_UNIFORM_PIXEL,
 	SHADER_SPRITE_VERTEX,
 	SHADER_SPRITE_PIXEL,
+	SHADER_INSTANCED_VERTEX,
 	SHADERS,
 } ShaderKind;
 
@@ -47,29 +49,35 @@ typedef enum {
 	PROGRAM_MESH_GRAY,
 	PROGRAM_UNIFORM,
 	PROGRAM_SPRITE,
+	PROGRAM_INSTANCED,
 	PROGRAMS,
 } ProgramKind;
 
 typedef struct {
 	const uint32_t *spirv;
 	uint32_t size_bytes;
+	// The bundle's variant compiled with xost's instanced option.
+	bool instanced;
 } ShaderSpirv;
 
 static const ShaderSpirv spirv[SHADERS] = {
-	[SHADER_MESH_VERTEX] = { mesh_vert_spirv, MESH_VERT_SPIRV_BYTES },
-	[SHADER_MESH_PIXEL] = { mesh_frag_spirv, MESH_FRAG_SPIRV_BYTES },
-	[SHADER_MESH_GRAY_PIXEL] = { mesh_gray_frag_spirv, MESH_GRAY_FRAG_SPIRV_BYTES },
-	[SHADER_UNIFORM_VERTEX] = { mesh_uniform_vert_spirv, MESH_UNIFORM_VERT_SPIRV_BYTES },
-	[SHADER_UNIFORM_PIXEL] = { mesh_uniform_frag_spirv, MESH_UNIFORM_FRAG_SPIRV_BYTES },
-	[SHADER_SPRITE_VERTEX] = { sprite_vert_spirv, SPRITE_VERT_SPIRV_BYTES },
-	[SHADER_SPRITE_PIXEL] = { sprite_frag_spirv, SPRITE_FRAG_SPIRV_BYTES },
+	[SHADER_MESH_VERTEX] = { mesh_vert_spirv, MESH_VERT_SPIRV_BYTES, false },
+	[SHADER_MESH_PIXEL] = { mesh_frag_spirv, MESH_FRAG_SPIRV_BYTES, false },
+	[SHADER_MESH_GRAY_PIXEL] = { mesh_gray_frag_spirv, MESH_GRAY_FRAG_SPIRV_BYTES, false },
+	[SHADER_UNIFORM_VERTEX] = { mesh_uniform_vert_spirv, MESH_UNIFORM_VERT_SPIRV_BYTES, false },
+	[SHADER_UNIFORM_PIXEL] = { mesh_uniform_frag_spirv, MESH_UNIFORM_FRAG_SPIRV_BYTES, false },
+	[SHADER_SPRITE_VERTEX] = { sprite_vert_spirv, SPRITE_VERT_SPIRV_BYTES, false },
+	[SHADER_SPRITE_PIXEL] = { sprite_frag_spirv, SPRITE_FRAG_SPIRV_BYTES, false },
+	[SHADER_INSTANCED_VERTEX] = { mesh_instanced_vert_spirv, MESH_INSTANCED_VERT_SPIRV_BYTES, true },
 };
 
+// The instanced cubes take sprite.frag: the texture times the colour, here each instance's tint.
 static const ShaderKind program_shaders[PROGRAMS][2] = {
 	[PROGRAM_MESH] = { SHADER_MESH_VERTEX, SHADER_MESH_PIXEL },
 	[PROGRAM_MESH_GRAY] = { SHADER_MESH_VERTEX, SHADER_MESH_GRAY_PIXEL },
 	[PROGRAM_UNIFORM] = { SHADER_UNIFORM_VERTEX, SHADER_UNIFORM_PIXEL },
 	[PROGRAM_SPRITE] = { SHADER_SPRITE_VERTEX, SHADER_SPRITE_PIXEL },
+	[PROGRAM_INSTANCED] = { SHADER_INSTANCED_VERTEX, SHADER_SPRITE_PIXEL },
 };
 
 typedef struct {
@@ -80,6 +88,10 @@ typedef struct {
 	volatile uint32_t *quad_indices;
 	volatile uint32_t *fullscreen;
 	volatile uint32_t *stream;
+	// instances_4000's: each instance's DrawItem, and the cube's indices in copies an instance each.
+	volatile uint32_t *instances;
+	volatile uint32_t *cube_copies_memory;
+	XsdkRepeatedIndices cube_copies;
 	XsdkTexture textures[TEXTURE_COUNT];
 	XsdkSamplerState sampler;
 	XsdkBlendState opaque;
@@ -127,7 +139,8 @@ static const V4xShader *find_shader(const ShaderSpirv *code)
 	const uint64_t hash = spirv_hash(code->spirv, code->size_bytes);
 	for (uint32_t i = 0; i < v4x_shader_bundle.count; i++) {
 		const V4xShader *const shader = &v4x_shader_bundle.shaders[i];
-		if (shader->spirv_hash == hash && shader->spirv_size_bytes == code->size_bytes)
+		if (shader->spirv_hash == hash && shader->spirv_size_bytes == code->size_bytes &&
+			shader->instanced == code->instanced)
 			return shader;
 	}
 	return NULL;
@@ -164,6 +177,30 @@ static bool lay_out(XsdkShader *shader, bool sprite)
 	return NT_SUCCESS(status);
 }
 
+// The mesh's two at the vertex's rate, then stream 1's DrawItems at the instance's: the matrix's columns and the tint,
+// locations 2 to 6, the texture coordinates 0 to 4 to xost (src/pipeline.c, location_usage).
+static bool lay_out_instances(XsdkShader *shader)
+{
+	_Static_assert(offsetof(DrawItem, tint) == MVP_FLOATS * 4, "the tint follows the matrix");
+	enum { COLUMN_BYTES = 16, PER_INSTANCE = 5 };
+	XsdkVertexElement elements[2 + PER_INSTANCE] = {
+		{ .usage = XSDK_USAGE_POSITION, .format = XSDK_VERTEX_FLOAT3, .offset_bytes = 0 },
+		{ .usage = XSDK_USAGE_COLOR, .format = XSDK_VERTEX_FLOAT2, .offset_bytes = 12 },
+	};
+	for (uint32_t i = 0; i < PER_INSTANCE; i++)
+		elements[2 + i] = (XsdkVertexElement){ .usage = XSDK_USAGE_TEXCOORD,
+			.usage_index = i,
+			.format = XSDK_VERTEX_FLOAT4,
+			.stream = 1,
+			.offset_bytes = i * COLUMN_BYTES,
+			.per_instance = true };
+	const uint32_t strides[XSDK_VERTEX_STREAMS] = { MESH_STRIDE_BYTES, sizeof(DrawItem) };
+	const NTSTATUS status = xsdk_shader_set_vertex_layout(shader, elements, 2 + PER_INSTANCE, strides);
+	if (!NT_SUCCESS(status))
+		xsdk_log_write("vkbench: xsdk_shader_set_vertex_layout failed for the instances: 0x%08X", (unsigned)status);
+	return NT_SUCCESS(status);
+}
+
 static bool load_shaders(void)
 {
 	for (uint32_t i = 0; i < SHADERS; i++) {
@@ -180,7 +217,26 @@ static bool load_shaders(void)
 		}
 	}
 	return lay_out(&state.shaders[SHADER_MESH_VERTEX], false) &&
-		lay_out(&state.shaders[SHADER_UNIFORM_VERTEX], false) && lay_out(&state.shaders[SHADER_SPRITE_VERTEX], true);
+		lay_out(&state.shaders[SHADER_UNIFORM_VERTEX], false) && lay_out(&state.shaders[SHADER_SPRITE_VERTEX], true) &&
+		lay_out_instances(&state.shaders[SHADER_INSTANCED_VERTEX]);
+}
+
+// The cube's indices in copies of 64, the count the layer repeats an app's indices in, which met milestone 47's cost
+// targets (xsdk:docs/HARDWARE.md, "Instancing on the console, milestone 47 step 1").
+static bool make_cube_copies(const uint16_t indices[CUBE_INDEX_COUNT])
+{
+	enum { COPIES = 64 };
+	uint32_t wide[CUBE_INDEX_COUNT];
+	for (uint32_t i = 0; i < CUBE_INDEX_COUNT; i++)
+		wide[i] = indices[i];
+	const uint32_t size_bytes = xsdk_gpu_repeated_index_bytes(wide, CUBE_INDEX_COUNT, COPIES);
+	state.cube_copies_memory = xsdk_gpu_alloc(size_bytes);
+	if (!state.cube_copies_memory)
+		return false;
+	xsdk_gpu_repeat_indices(&state.cube_copies, state.cube_copies_memory, wide, CUBE_INDEX_COUNT, COPIES);
+	__asm__ volatile("sync" ::: "memory");
+	xsdk_gpu_invalidate(state.cube_copies.address, size_bytes);
+	return true;
 }
 
 static volatile uint32_t *gpu_copy(const void *data, uint32_t size_bytes)
@@ -208,7 +264,9 @@ static bool make_buffers(void)
 	state.quad_indices = gpu_copy(quad_indices, QUAD_INDEX_BYTES);
 	state.fullscreen = gpu_copy(fullscreen, sizeof fullscreen);
 	state.stream = xsdk_gpu_alloc(STREAM_BYTES);
-	return state.cube_vertices && state.cube_indices && state.quad_indices && state.fullscreen && state.stream;
+	state.instances = xsdk_gpu_alloc(MAX_DRAW_ITEMS * sizeof(DrawItem));
+	return state.cube_vertices && state.cube_indices && state.quad_indices && state.fullscreen && state.stream &&
+		state.instances && make_cube_copies(cube_indices);
 }
 
 static bool make_textures(void)
@@ -386,6 +444,22 @@ static void xsdk_draw_meshes(const DrawItem *items, int count, bool uniform_buff
 	}
 }
 
+// draws_4000's state, each item copied whole as its instance's element, then one indexed instanced draw.
+static void xsdk_draw_instances(const DrawItem *items, int count)
+{
+	const uint32_t size_bytes = (uint32_t)count * sizeof(DrawItem);
+	// The GPU is done with the instances: each frame waits for its fence.
+	memcpy((void *)state.instances, items, size_bytes);
+	xsdk_gpu_invalidate(xsdk_gpu_address(state.instances), size_bytes);
+	use_program(PROGRAM_INSTANCED);
+	use_texture(0);
+	use_blend(false);
+	use_depth(true);
+	use_vertices(state.cube_vertices, CUBE_VERTEX_COUNT * MESH_STRIDE_BYTES);
+	xsdk_gpu_set_vertices(1, xsdk_gpu_address(state.instances), size_bytes);
+	xsdk_gpu_draw_indexed_instanced(XSDK_PRIMITIVE_TRIANGLE_LIST, &state.cube_copies, 0, (uint32_t)count);
+}
+
 static void xsdk_draw_sprites(const SpriteVertex *vertices, int sprite_count)
 {
 	// The GPU is done with the stream: each frame waits for its fence.
@@ -460,6 +534,8 @@ static void xsdk_shutdown(void)
 	xsdk_gpu_free(state.offscreen);
 	for (int i = 0; i < TEXTURE_COUNT; i++)
 		xsdk_texture_free(&state.textures[i]);
+	xsdk_gpu_free(state.cube_copies_memory);
+	xsdk_gpu_free(state.instances);
 	xsdk_gpu_free(state.stream);
 	xsdk_gpu_free(state.fullscreen);
 	xsdk_gpu_free(state.quad_indices);
@@ -478,6 +554,7 @@ const BenchBackend bench_xsdk_backend = {
 	.init = xsdk_init,
 	.begin_frame = xsdk_begin_frame,
 	.draw_meshes = xsdk_draw_meshes,
+	.draw_instances = xsdk_draw_instances,
 	.draw_sprites = xsdk_draw_sprites,
 	.draw_fullscreen = xsdk_draw_fullscreen,
 	.submit_frame = xsdk_submit_frame,

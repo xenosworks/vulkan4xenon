@@ -509,6 +509,9 @@ layer against xsdk's, with the gap's causes named from measurements.
     reading uniform buffers at replay for this one to measure;
   - `stream_1000` and `stream_8000`: that many sprites, moved on the CPU and written out every frame, one draw;
   - `fill_4` and `fill_16`: alpha-blended full-screen layers, bound by the GPU, so both should tie.
+  - `instances_4000`, added for xsdk's milestone 47 (xsdk:docs/scope/47-instancing.md, step 5): `draws_4000`'s cubes
+    in one indexed draw of 4,000 instances, each cube's matrix and tint at the instance's rate, through
+    `xsdk_gpu_draw_indexed_instanced` and `vkCmdDrawIndexed`; through each backend its picture must be `draws_4000`'s.
   - vkbench's minify scenes are left out: they compare linear and swizzled images, and images here are always tiled.
 - **Per frame, in microseconds,** as vkbench measures them: sim, draw, submit, present and frame, and also gpu: from
   the submit's kick to its fence landing, with the CPU spinning on it. 60 warm-up and 600 measured frames a scene.

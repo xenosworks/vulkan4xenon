@@ -53,6 +53,8 @@ typedef struct {
 	void (*begin_frame)(void);
 	// One draw each; with uniform buffers, each draw's matrix and tint come from a dynamic uniform buffer.
 	void (*draw_meshes)(const DrawItem *items, int count, bool uniform_buffers);
+	// One indexed draw of count instances, each item an instance's element, its matrix and tint at the instance's rate.
+	void (*draw_instances)(const DrawItem *items, int count);
 	void (*draw_sprites)(const SpriteVertex *vertices, int sprite_count);
 	void (*draw_fullscreen)(int layers);
 	// Hands the frame to the GPU and kicks it.

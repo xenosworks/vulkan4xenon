@@ -44,16 +44,17 @@ typedef enum {
 static const char *const metric_names[METRICS] = { "frame", "sim", "draw", "submit", "gpu", "present", "draw_submit" };
 
 static const SceneDef scenes[] = {
-	{ "draws_250", SCENE_DRAWS, 250 },
-	{ "draws_1000", SCENE_DRAWS, 1000 },
-	{ "draws_4000", SCENE_DRAWS, 4000 },
-	{ "states_250", SCENE_STATES, 250 },
-	{ "states_1000", SCENE_STATES, 1000 },
-	{ "uniforms_1000", SCENE_UNIFORMS, 1000 },
-	{ "stream_1000", SCENE_STREAM, 1000 },
-	{ "stream_8000", SCENE_STREAM, 8000 },
-	{ "fill_4", SCENE_FILL, 4 },
-	{ "fill_16", SCENE_FILL, 16 },
+	{ "draws_250", SCENE_DRAWS, 250, NULL },
+	{ "draws_1000", SCENE_DRAWS, 1000, NULL },
+	{ "draws_4000", SCENE_DRAWS, 4000, NULL },
+	{ "states_250", SCENE_STATES, 250, NULL },
+	{ "states_1000", SCENE_STATES, 1000, NULL },
+	{ "uniforms_1000", SCENE_UNIFORMS, 1000, NULL },
+	{ "stream_1000", SCENE_STREAM, 1000, NULL },
+	{ "stream_8000", SCENE_STREAM, 8000, NULL },
+	{ "fill_4", SCENE_FILL, 4, NULL },
+	{ "fill_16", SCENE_FILL, 16, NULL },
+	{ "instances_4000", SCENE_INSTANCES, 4000, "draws_4000" },
 };
 
 enum {
@@ -281,34 +282,60 @@ static uint32_t ratio_hundredths(uint32_t numerator, uint32_t denominator)
 	return denominator ? (uint32_t)(((uint64_t)numerator * 100 + denominator / 2) / denominator) : 0;
 }
 
+// Run b's picture and medians against run a's: the first differing points, then b's times against a's; how many points
+// differ.
+static uint32_t compare_runs(const char *what, uint32_t a_backend, uint32_t a_scene, const char *a_name,
+	uint32_t b_backend, uint32_t b_scene, const char *b_name)
+{
+	const uint32_t *const a_picture = pictures[a_backend][a_scene];
+	const uint32_t *const b_picture = pictures[b_backend][b_scene];
+	uint32_t differing = 0;
+	for (uint32_t i = 0; i < GRID_POINTS; i++) {
+		if (near(a_picture[i], b_picture[i]))
+			continue;
+		if (differing++ < MAX_DIFFERENCES_LOGGED)
+			xsdk_log_write("vkbench: %s: at (%u, %u) %s drew %08X, %s %08X", what,
+				(unsigned)(i % GRID_COLUMNS * GRID_STEP + GRID_STEP / 2),
+				(unsigned)(i / GRID_COLUMNS * GRID_STEP + GRID_STEP / 2), a_name, (unsigned)a_picture[i], b_name,
+				(unsigned)b_picture[i]);
+	}
+	const Stat *const a = results[a_backend][a_scene];
+	const Stat *const b = results[b_backend][b_scene];
+	const uint32_t cpu = ratio_hundredths(b[METRIC_DRAW_SUBMIT].median, a[METRIC_DRAW_SUBMIT].median);
+	const uint32_t gpu = ratio_hundredths(b[METRIC_GPU].median, a[METRIC_GPU].median);
+	xsdk_log_write(
+		"vkbench: %s: draw+submit %u us against %u, %u.%02ux; gpu %u us against %u, %u.%02ux; %u of %u "
+		"points differ",
+		what, (unsigned)b[METRIC_DRAW_SUBMIT].median, (unsigned)a[METRIC_DRAW_SUBMIT].median, (unsigned)(cpu / 100),
+		(unsigned)(cpu % 100), (unsigned)b[METRIC_GPU].median, (unsigned)a[METRIC_GPU].median, (unsigned)(gpu / 100),
+		(unsigned)(gpu % 100), (unsigned)differing, (unsigned)GRID_POINTS);
+	return differing;
+}
+
 static void compare(uint32_t s)
 {
 	if (!ran[0][s] || !ran[1][s])
 		return;
-	uint32_t differing = 0;
-	for (uint32_t i = 0; i < GRID_POINTS; i++) {
-		if (near(pictures[0][s][i], pictures[1][s][i]))
-			continue;
-		if (differing++ < MAX_DIFFERENCES_LOGGED)
-			xsdk_log_write("vkbench: %s: at (%u, %u) xsdk drew %08X, vulkan4xenon %08X", scenes[s].name,
-				(unsigned)(i % GRID_COLUMNS * GRID_STEP + GRID_STEP / 2),
-				(unsigned)(i / GRID_COLUMNS * GRID_STEP + GRID_STEP / 2), (unsigned)pictures[0][s][i],
-				(unsigned)pictures[1][s][i]);
-	}
-	const Stat *const xsdk = results[0][s];
-	const Stat *const vulkan = results[1][s];
-	const uint32_t cpu = ratio_hundredths(vulkan[METRIC_DRAW_SUBMIT].median, xsdk[METRIC_DRAW_SUBMIT].median);
-	const uint32_t gpu = ratio_hundredths(vulkan[METRIC_GPU].median, xsdk[METRIC_GPU].median);
-	xsdk_log_write(
-		"vkbench: %s: draw+submit %u us against %u, %u.%02ux; gpu %u us against %u, %u.%02ux; %u of %u "
-		"points differ",
-		scenes[s].name, (unsigned)vulkan[METRIC_DRAW_SUBMIT].median, (unsigned)xsdk[METRIC_DRAW_SUBMIT].median,
-		(unsigned)(cpu / 100), (unsigned)(cpu % 100), (unsigned)vulkan[METRIC_GPU].median,
-		(unsigned)xsdk[METRIC_GPU].median, (unsigned)(gpu / 100), (unsigned)(gpu % 100), (unsigned)differing,
-		(unsigned)GRID_POINTS);
+	const uint32_t differing = compare_runs(scenes[s].name, 0, s, "xsdk", 1, s, "vulkan4xenon");
 	char name[96];
 	(void)snprintf(name, sizeof name, "vkbench: %s: both backends drew the same picture", scenes[s].name);
 	check(name, differing == 0);
+}
+
+// Through each backend, scene s against scene t, the one whose picture it draws.
+static void compare_scenes(uint32_t s, uint32_t t)
+{
+	for (uint32_t b = 0; b < BACKENDS; b++) {
+		if (!ran[b][s] || !ran[b][t])
+			continue;
+		char what[96];
+		(void)snprintf(what, sizeof what, "%s: %s against %s", backends[b]->name, scenes[s].name, scenes[t].name);
+		const uint32_t differing = compare_runs(what, b, t, scenes[t].name, b, s, scenes[s].name);
+		char name[96];
+		(void)snprintf(
+			name, sizeof name, "vkbench: %s: %s drew %s's picture", backends[b]->name, scenes[s].name, scenes[t].name);
+		check(name, differing == 0);
+	}
 }
 
 static void open_results(void)
@@ -341,6 +368,13 @@ int main(void)
 	xsdk_log_write("vkbench: vulkan4xenon against xsdk, medians");
 	for (uint32_t s = 0; s < SCENES; s++)
 		compare(s);
+	xsdk_log_write("vkbench: scenes against the scene whose picture they draw, through each backend, medians");
+	for (uint32_t s = 0; s < SCENES; s++) {
+		for (uint32_t t = 0; scenes[s].picture_of && t < SCENES; t++) {
+			if (!strcmp(scenes[t].name, scenes[s].picture_of))
+				compare_scenes(s, t);
+		}
+	}
 	if (frames_csv)
 		fclose(frames_csv);
 	if (summary_csv)

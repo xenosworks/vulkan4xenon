@@ -1,4 +1,5 @@
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -21,6 +22,7 @@ enum {
 	TINT_REGION = MAX_DRAW_ITEMS * UNIFORM_STRIDE,
 	UNIFORM_BYTES = 2 * TINT_REGION,
 	STREAM_BYTES = MAX_SPRITES * 4 * sizeof(SpriteVertex),
+	INSTANCE_BYTES = MAX_DRAW_ITEMS * sizeof(DrawItem),
 	QUAD_INDEX_BYTES = MAX_SPRITES * QUAD_INDICES * 2,
 	UPLOAD_TIMEOUT_NS = 1000000000,
 };
@@ -41,6 +43,7 @@ typedef enum {
 	PIPELINE_GRAY_BLEND,
 	PIPELINE_UNIFORM,
 	PIPELINE_SPRITE,
+	PIPELINE_INSTANCED,
 	PIPELINES,
 } PipelineKind;
 
@@ -79,6 +82,7 @@ typedef struct {
 	Buffer quad_indices;
 	Buffer fullscreen;
 	Buffer stream;
+	Buffer instances;
 	Buffer uniforms;
 	VkImage textures[TEXTURE_COUNT];
 	VkDeviceMemory texture_memory[TEXTURE_COUNT];
@@ -380,21 +384,33 @@ static bool create_module(const uint32_t *spirv, uint32_t size_bytes, VkShaderMo
 	return ok("vkCreateShaderModule", vkCreateShaderModule(state.device, &info, NULL, module));
 }
 
+// A pipeline's vertices: the cube's, the sprites', or the cube's with each instance's DrawItem at the instance's rate.
+typedef enum { INPUT_MESH, INPUT_SPRITE, INPUT_INSTANCES } VertexInput;
+
 typedef struct {
 	const uint32_t *vertex_spirv;
 	uint32_t vertex_bytes;
 	const uint32_t *fragment_spirv;
 	uint32_t fragment_bytes;
 	VkPipelineLayout layout;
-	bool sprite;
+	VertexInput input;
 	bool blend;
 	bool depth;
 } PipelineSpec;
 
-static const VkVertexInputBindingDescription mesh_binding = { 0, sizeof(MeshVertex), VK_VERTEX_INPUT_RATE_VERTEX };
+// The cube's binding and attributes, then the instances': the matrix's columns and the tint.
+static const VkVertexInputBindingDescription mesh_bindings[] = {
+	{ 0, sizeof(MeshVertex), VK_VERTEX_INPUT_RATE_VERTEX },
+	{ 1, sizeof(DrawItem), VK_VERTEX_INPUT_RATE_INSTANCE },
+};
 static const VkVertexInputAttributeDescription mesh_attributes[] = {
 	{ 0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0 },
 	{ 1, 0, VK_FORMAT_R32G32_SFLOAT, 12 },
+	{ 2, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 0 },
+	{ 3, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 16 },
+	{ 4, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 32 },
+	{ 5, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 48 },
+	{ 6, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(DrawItem, tint) },
 };
 static const VkVertexInputBindingDescription sprite_binding = { 0, sizeof(SpriteVertex), VK_VERTEX_INPUT_RATE_VERTEX };
 static const VkVertexInputAttributeDescription sprite_attributes[] = {
@@ -405,12 +421,17 @@ static const VkVertexInputAttributeDescription sprite_attributes[] = {
 
 static VkResult create_pipeline_from(const PipelineSpec *spec, const VkShaderModule modules[2], VkPipeline *pipeline)
 {
+	const bool sprite = spec->input == INPUT_SPRITE;
+	// The cube's own binding and attributes, or those with the instances' after them.
+	const bool instances = spec->input == INPUT_INSTANCES;
+	const uint32_t mesh_binding_count = instances ? 2 : 1;
+	const uint32_t mesh_attribute_count = instances ? 7 : 2;
 	const VkPipelineVertexInputStateCreateInfo input = {
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-		.vertexBindingDescriptionCount = 1,
-		.pVertexBindingDescriptions = spec->sprite ? &sprite_binding : &mesh_binding,
-		.vertexAttributeDescriptionCount = spec->sprite ? 3 : 2,
-		.pVertexAttributeDescriptions = spec->sprite ? sprite_attributes : mesh_attributes,
+		.vertexBindingDescriptionCount = sprite ? 1 : mesh_binding_count,
+		.pVertexBindingDescriptions = sprite ? &sprite_binding : mesh_bindings,
+		.vertexAttributeDescriptionCount = sprite ? 3 : mesh_attribute_count,
+		.pVertexAttributeDescriptions = sprite ? sprite_attributes : mesh_attributes,
 	};
 	const VkPipelineInputAssemblyStateCreateInfo assembly = {
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
@@ -500,17 +521,20 @@ static bool create_pipelines(void)
 {
 	const PipelineSpec specs[PIPELINES] = {
 		[PIPELINE_MESH] = { mesh_vert_spirv, MESH_VERT_SPIRV_BYTES, mesh_frag_spirv, MESH_FRAG_SPIRV_BYTES,
-			state.push_layout, false, false, true },
+			state.push_layout, INPUT_MESH, false, true },
 		[PIPELINE_MESH_BLEND] = { mesh_vert_spirv, MESH_VERT_SPIRV_BYTES, mesh_frag_spirv, MESH_FRAG_SPIRV_BYTES,
-			state.push_layout, false, true, true },
+			state.push_layout, INPUT_MESH, true, true },
 		[PIPELINE_GRAY] = { mesh_vert_spirv, MESH_VERT_SPIRV_BYTES, mesh_gray_frag_spirv, MESH_GRAY_FRAG_SPIRV_BYTES,
-			state.push_layout, false, false, true },
+			state.push_layout, INPUT_MESH, false, true },
 		[PIPELINE_GRAY_BLEND] = { mesh_vert_spirv, MESH_VERT_SPIRV_BYTES, mesh_gray_frag_spirv,
-			MESH_GRAY_FRAG_SPIRV_BYTES, state.push_layout, false, true, true },
+			MESH_GRAY_FRAG_SPIRV_BYTES, state.push_layout, INPUT_MESH, true, true },
 		[PIPELINE_UNIFORM] = { mesh_uniform_vert_spirv, MESH_UNIFORM_VERT_SPIRV_BYTES, mesh_uniform_frag_spirv,
-			MESH_UNIFORM_FRAG_SPIRV_BYTES, state.uniform_layout, false, false, true },
+			MESH_UNIFORM_FRAG_SPIRV_BYTES, state.uniform_layout, INPUT_MESH, false, true },
 		[PIPELINE_SPRITE] = { sprite_vert_spirv, SPRITE_VERT_SPIRV_BYTES, sprite_frag_spirv, SPRITE_FRAG_SPIRV_BYTES,
-			state.push_layout, true, true, false },
+			state.push_layout, INPUT_SPRITE, true, false },
+		// draws_4000's state, the texture times each instance's tint through sprite.frag.
+		[PIPELINE_INSTANCED] = { mesh_instanced_vert_spirv, MESH_INSTANCED_VERT_SPIRV_BYTES, sprite_frag_spirv,
+			SPRITE_FRAG_SPIRV_BYTES, state.push_layout, INPUT_INSTANCES, false, true },
 	};
 	for (uint32_t i = 0; i < PIPELINES; i++) {
 		if (!create_pipeline(&specs[i], &state.pipelines[i]))
@@ -557,6 +581,7 @@ static bool create_buffers(void)
 		create_buffer(VK_BUFFER_USAGE_INDEX_BUFFER_BIT, QUAD_INDEX_BYTES, quad_indices, &state.quad_indices) &&
 		create_buffer(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, sizeof fullscreen, fullscreen, &state.fullscreen) &&
 		create_buffer(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, STREAM_BYTES, NULL, &state.stream) &&
+		create_buffer(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, INSTANCE_BYTES, NULL, &state.instances) &&
 		create_buffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, UNIFORM_BYTES, NULL, &state.uniforms);
 }
 
@@ -789,6 +814,22 @@ static void vulkan_draw_meshes(const DrawItem *items, int count, bool uniform_bu
 	}
 }
 
+// draws_4000's cubes, each item copied whole as its instance's element, in one vkCmdDrawIndexed of them all.
+static void vulkan_draw_instances(const DrawItem *items, int count)
+{
+	const VkCommandBuffer cmd = state.commands;
+	const VkBuffer buffers[2] = { state.cube_vertices.buffer, state.instances.buffer };
+	const VkDeviceSize offsets[2] = { 0, 0 };
+	// The GPU is done with the instances: each frame waits for its fence.
+	memcpy(state.instances.mapped, items, (size_t)count * sizeof(DrawItem));
+	vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, state.pipelines[PIPELINE_INSTANCED]);
+	vkCmdBindDescriptorSets(
+		cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, state.push_layout, 0, 1, &state.texture_sets[0], 0, NULL);
+	vkCmdBindVertexBuffers(cmd, 0, 2, buffers, offsets);
+	vkCmdBindIndexBuffer(cmd, state.cube_indices.buffer, 0, VK_INDEX_TYPE_UINT16);
+	vkCmdDrawIndexed(cmd, CUBE_INDEX_COUNT, (uint32_t)count, 0, 0, 0);
+}
+
 static void vulkan_draw_sprites(const SpriteVertex *vertices, int sprite_count)
 {
 	const VkCommandBuffer cmd = state.commands;
@@ -896,6 +937,7 @@ static void vulkan_shutdown(void)
 		vkFreeMemory(device, state.texture_memory[i], NULL);
 	}
 	destroy_buffer(&state.uniforms);
+	destroy_buffer(&state.instances);
 	destroy_buffer(&state.stream);
 	destroy_buffer(&state.fullscreen);
 	destroy_buffer(&state.quad_indices);
@@ -929,6 +971,7 @@ const BenchBackend bench_vulkan_backend = {
 	.init = vulkan_init,
 	.begin_frame = vulkan_begin_frame,
 	.draw_meshes = vulkan_draw_meshes,
+	.draw_instances = vulkan_draw_instances,
 	.draw_sprites = vulkan_draw_sprites,
 	.draw_fullscreen = vulkan_draw_fullscreen,
 	.submit_frame = vulkan_submit_frame,

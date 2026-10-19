@@ -135,6 +135,7 @@ void scene_setup(const SceneDef *scene)
 	case SCENE_DRAWS:
 	case SCENE_STATES:
 	case SCENE_UNIFORMS:
+	case SCENE_INSTANCES:
 		setup_meshes(scene);
 		break;
 	case SCENE_STREAM:
@@ -151,6 +152,7 @@ void scene_update(const SceneDef *scene, int frame)
 	case SCENE_DRAWS:
 	case SCENE_STATES:
 	case SCENE_UNIFORMS:
+	case SCENE_INSTANCES:
 		update_meshes(scene, frame);
 		break;
 	case SCENE_STREAM:
@@ -170,6 +172,9 @@ void scene_render(const SceneDef *scene, const BenchBackend *backend)
 		break;
 	case SCENE_UNIFORMS:
 		backend->draw_meshes(items, scene->count, true);
+		break;
+	case SCENE_INSTANCES:
+		backend->draw_instances(items, scene->count);
 		break;
 	case SCENE_STREAM:
 		backend->draw_sprites(sprite_vertices, scene->count);
