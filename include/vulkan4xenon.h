@@ -101,9 +101,9 @@ V4xShaderCounts v4x_shader_counts(void);
 
 // The parts of vkQueueSubmit a profile build times, made with make V4X_PROFILE=1 (docs/ROADMAP.md, milestone 29).
 typedef enum {
-	// The replay's loop and switch, from one command to the next push's copy or draw.
+	// The replay's loop and switch, from one command to the next push or draw.
 	V4X_PROFILE_DISPATCH,
-	// vkCmdPushConstants' bytes copied into the replay.
+	// vkCmdPushConstants at replay: where its bytes were recorded, or their copy into the replay.
 	V4X_PROFILE_PUSH,
 	// A draw's pipeline state: checking it, and setting it again when a bind or a command made it dirty.
 	V4X_PROFILE_PIPELINE,

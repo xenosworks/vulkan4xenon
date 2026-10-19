@@ -195,18 +195,26 @@ static Command *record(VkCommandBuffer buffer, CommandType type)
 	return command;
 }
 
-// Copies bytes into the command buffer's data and returns where, or saves the error.
-static bool record_data(VkCommandBuffer buffer, const void *bytes, uint32_t size_bytes, uint32_t *at)
+// Copies bytes into the command buffer's data, at an address a multiple of alignment_bytes, and returns where, or
+// saves the error. The data's words are 4-byte aligned, so the padding is at most alignment_bytes - 4.
+static bool record_aligned(
+	VkCommandBuffer buffer, const void *bytes, uint32_t size_bytes, uint32_t alignment_bytes, uint32_t *at)
 {
 	const uint32_t aligned = (size_bytes + 3) & ~3u;
-	while (buffer->data_bytes + aligned > buffer->data_capacity_bytes) {
+	while (buffer->data_bytes + alignment_bytes - 4 + aligned > buffer->data_capacity_bytes) {
 		if (!grow_data(buffer))
 			return false;
 	}
-	*at = buffer->data_bytes;
-	memcpy(buffer->data + buffer->data_bytes, bytes, size_bytes);
-	buffer->data_bytes += aligned;
+	const uint32_t padding = -(uint32_t)(uintptr_t)(buffer->data + buffer->data_bytes) & (alignment_bytes - 1);
+	*at = buffer->data_bytes + padding;
+	memcpy(buffer->data + *at, bytes, size_bytes);
+	buffer->data_bytes = *at + aligned;
 	return true;
+}
+
+static bool record_data(VkCommandBuffer buffer, const void *bytes, uint32_t size_bytes, uint32_t *at)
+{
+	return record_aligned(buffer, bytes, size_bytes, 4, at);
 }
 
 // Each subpass begins as a render pass of its own, its clears from the values the render pass began with.
@@ -421,7 +429,9 @@ VKAPI_ATTR void VKAPI_CALL vkCmdPushConstants(VkCommandBuffer commandBuffer, VkP
 	(void)layout;
 	(void)stageFlags;
 	uint32_t at = 0;
-	if (!record_data(commandBuffer, pValues, size, &at))
+	// On 16 bytes, as the replay has xsdk load constants from here (queue.c); data moved as it grows may lose that,
+	// which costs time alone.
+	if (!record_aligned(commandBuffer, pValues, size, 16, &at))
 		return;
 	Command *const command = record(commandBuffer, COMMAND_PUSH_CONSTANTS);
 	if (!command)

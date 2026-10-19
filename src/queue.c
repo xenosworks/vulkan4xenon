@@ -27,6 +27,8 @@ enum {
 	LOAD_ALIGNMENT_BYTES = 64,
 	// The visibility ids one status word holds (xsdk:include/xsdk/gpu.h).
 	VISIBILITY_WORD_IDS = XSDK_VISIBILITY_IDS / 2,
+	// The push constants in quads of 16 bytes, a float constant register each.
+	PUSH_QUADS = V4X_MAX_PUSH_CONSTANT_BYTES / 16,
 };
 
 typedef struct {
@@ -77,6 +79,9 @@ typedef struct {
 	bool index_32_bit;
 	const DescriptorSet *sets[V4X_MAX_DESCRIPTOR_SETS];
 	const uint32_t *dynamic_offsets[V4X_MAX_DESCRIPTOR_SETS];
+	// Where each quad of the push constants is now: in a command buffer's data, where a push recorded it, or in push,
+	// which takes pushes of part of a quad and a stage's quads from several pushes.
+	const float *push_quads[PUSH_QUADS];
 	float push[V4X_MAX_PUSH_CONSTANT_BYTES / 4];
 	// What each stream and texture slot points at, so a draw points only what changed; zero where it isn't known.
 	VertexBinding pointed_streams[XSDK_VERTEX_STREAMS];
@@ -167,6 +172,47 @@ static void write_constants(bool vertex, uint32_t first, const float *values, ui
 	v4x_profile_lap(V4X_PROFILE_CONSTANTS);
 }
 
+// Brings a quad of the push constants into the replay's copy, from where a push recorded it.
+static void copy_push_quad(Replay *replay, uint32_t quad)
+{
+	float *const copy = &replay->push[4 * quad];
+	if (replay->push_quads[quad] == copy)
+		return;
+	memcpy(copy, replay->push_quads[quad], 4 * sizeof(float));
+	replay->push_quads[quad] = copy;
+}
+
+// A push of whole quads is read where it was recorded, so xsdk's loads don't wait on stores just made; any other is
+// copied in over the quads it touches.
+static void push_constants(Replay *replay, const uint8_t *bytes, uint32_t offset_bytes, uint32_t size_bytes)
+{
+	const uint32_t first = offset_bytes / 16;
+	const uint32_t end = (offset_bytes + size_bytes + 15) / 16;
+	if (offset_bytes % 16 == 0 && size_bytes % 16 == 0) {
+		for (uint32_t q = first; q < end; q++)
+			replay->push_quads[q] = (const float *)(bytes + (q - first) * 16);
+		return;
+	}
+	for (uint32_t q = first; q < end; q++)
+		copy_push_quad(replay, q);
+	memcpy((uint8_t *)replay->push + offset_bytes, bytes, size_bytes);
+}
+
+// count quads of the push constants from first as one run: where they lie one after another, as one push recorded
+// them, or else copied together.
+static const float *push_run(Replay *replay, uint32_t first, uint32_t count)
+{
+	const uintptr_t run = (uintptr_t)replay->push_quads[first];
+	uint32_t q = 1;
+	while (q < count && (uintptr_t)replay->push_quads[first + q] == run + 16 * q)
+		q++;
+	if (q == count)
+		return replay->push_quads[first];
+	for (q = first; q < first + count; q++)
+		copy_push_quad(replay, q);
+	return &replay->push[4 * first];
+}
+
 // A uniform buffer's bytes as the block's registers, zero past the descriptor's range.
 static void read_uniform_buffer(const Replay *replay, const V4xShaderResource *resource)
 {
@@ -219,7 +265,7 @@ static bool load_uniform_buffer(const Replay *replay, const V4xShaderResource *r
 static void read_plane(const Replay *replay, const V4xShaderResource *resource, uint32_t offset_bytes, float plane[4])
 {
 	if (resource->kind == V4X_RESOURCE_PUSH_CONSTANTS) {
-		memcpy(plane, (const uint8_t *)replay->push + offset_bytes, 4 * sizeof(float));
+		memcpy(plane, replay->push_quads[offset_bytes / 16], 4 * sizeof(float));
 		return;
 	}
 	const DescriptorSet *const set = replay->sets[resource->set];
@@ -269,7 +315,9 @@ static uint32_t loop_count(const Replay *replay, const V4xShaderResource *resour
 {
 	int32_t count = 0;
 	if (resource->kind == V4X_RESOURCE_PUSH_LOOP) {
-		memcpy(&count, (const uint8_t *)replay->push + resource->first, sizeof count);
+		// An int's offset is a multiple of 4, so it lies in one quad.
+		const uint8_t *const quad = (const uint8_t *)replay->push_quads[resource->first / 16];
+		memcpy(&count, quad + resource->first % 16, sizeof count);
 	} else {
 		const DescriptorSet *const set = replay->sets[resource->set];
 		const Descriptor *const descriptor = set ? &set->descriptors[resource->binding] : NULL;
@@ -321,7 +369,7 @@ static void apply_resources(const Pipeline *pipeline, Replay *replay)
 		const bool vertex = stage_resource->vertex;
 		if (resource->kind == V4X_RESOURCE_PUSH_CONSTANTS) {
 			write_constants(vertex, resource->first + stage_resource->push_first,
-				&replay->push[4 * stage_resource->push_first], stage_resource->push_count);
+				push_run(replay, stage_resource->push_first, stage_resource->push_count), stage_resource->push_count);
 			continue;
 		}
 		if (resource->kind == V4X_RESOURCE_PUSH_LOOP || resource->kind == V4X_RESOURCE_UNIFORM_LOOP ||
@@ -1333,8 +1381,8 @@ static void replay_command(VkQueue queue, VkCommandBuffer buffer, Replay *replay
 		break;
 	case COMMAND_PUSH_CONSTANTS:
 		v4x_profile_lap(V4X_PROFILE_DISPATCH);
-		memcpy((uint8_t *)replay->push + command->push_constants.offset_bytes,
-			buffer->data + command->push_constants.data_at, command->push_constants.size_bytes);
+		push_constants(replay, buffer->data + command->push_constants.data_at, command->push_constants.offset_bytes,
+			command->push_constants.size_bytes);
 		v4x_profile_lap(V4X_PROFILE_PUSH);
 		break;
 	case COMMAND_COPY_BUFFER_TO_IMAGE:
@@ -1446,6 +1494,8 @@ VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit(
 		for (uint32_t j = 0; j < pSubmits[i].commandBufferCount; j++) {
 			const VkCommandBuffer buffer = pSubmits[i].pCommandBuffers[j];
 			Replay replay = { .queue = queue, .serial = queue->serial, .pipeline_dirty = true };
+			for (uint32_t q = 0; q < PUSH_QUADS; q++)
+				replay.push_quads[q] = &replay.push[4 * q];
 			v4x_profile_commands(buffer->count);
 			for (uint32_t c = 0; c < buffer->count; c++)
 				replay_command(queue, buffer, &replay, c);

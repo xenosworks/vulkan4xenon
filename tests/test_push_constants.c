@@ -7,7 +7,11 @@
 
 enum {
 	FRAMES = 60,
-	QUADS = 3,
+	QUADS = 4,
+	// The quad pushed in pieces (push_quad).
+	PIECES_QUAD = 3,
+	VEC4_BYTES = 16,
+	RED_GREEN_BYTES = 8,
 	QUAD_VERTICES = 6,
 	STRIDE_BYTES = 16,
 	// push.vert reads scale and offset from bytes 0 to 31, push.frag the colour from 32 to 47.
@@ -46,6 +50,8 @@ static const Quad quads[QUADS] = {
 		{ 0, 192, 192 } },
 	{ { 0.4f, 0.5f, 1.0f, 1.0f }, { 0.5f, -0.4f, 0.0f, 0.0f }, { 1.0f, 64.0f / 255, 192.0f / 255, 1.0f },
 		{ 255, 64, 192 } },
+	// Its blue is the quad before's, as only its red and green are pushed.
+	{ { 0.4f, 0.5f, 1.0f, 1.0f }, { -0.2f, 0.45f, 0.0f, 0.0f }, { 0.0f, 1.0f, 0.0f, 0.0f }, { 0, 255, 192 } },
 };
 
 // A dark green: 16, 40, 16.
@@ -118,7 +124,24 @@ static bool build(const Harness *harness, Scene *scene)
 				&scene->vertex_memory));
 }
 
-// Each quad pushes its vertex range, then its fragment range, then draws.
+// A quad pushes its vertex range, then its fragment range. The last pushes its offset then its scale, a range from two
+// pushes recorded apart, and its colour's red and green alone, part of 16 bytes: both of which the layer copies
+// (docs/SUPPORT.md, Pipelines).
+static void push_quad(VkCommandBuffer commands, VkPipelineLayout layout, const Quad *quad, bool in_pieces)
+{
+	if (!in_pieces) {
+		vkCmdPushConstants(commands, layout, VK_SHADER_STAGE_VERTEX_BIT, 0, VERTEX_RANGE_BYTES, quad);
+		vkCmdPushConstants(
+			commands, layout, VK_SHADER_STAGE_FRAGMENT_BIT, FRAGMENT_OFFSET_BYTES, FRAGMENT_RANGE_BYTES, quad->color);
+		return;
+	}
+	vkCmdPushConstants(commands, layout, VK_SHADER_STAGE_VERTEX_BIT, VEC4_BYTES, VEC4_BYTES, quad->offset);
+	vkCmdPushConstants(commands, layout, VK_SHADER_STAGE_VERTEX_BIT, 0, VEC4_BYTES, quad->scale);
+	vkCmdPushConstants(
+		commands, layout, VK_SHADER_STAGE_FRAGMENT_BIT, FRAGMENT_OFFSET_BYTES, RED_GREEN_BYTES, quad->color);
+}
+
+// Each quad pushes, then draws.
 static VkResult record(const Harness *harness, Scene *scene)
 {
 	VkResult result = harness_command_buffers(harness, scene->commands);
@@ -137,9 +160,7 @@ static VkResult record(const Harness *harness, Scene *scene)
 		vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, scene->pipeline);
 		vkCmdBindVertexBuffers(commands, 0, 1, &scene->vertices, &offset);
 		for (uint32_t q = 0; q < QUADS; q++) {
-			vkCmdPushConstants(commands, scene->layout, VK_SHADER_STAGE_VERTEX_BIT, 0, VERTEX_RANGE_BYTES, &quads[q]);
-			vkCmdPushConstants(commands, scene->layout, VK_SHADER_STAGE_FRAGMENT_BIT, FRAGMENT_OFFSET_BYTES,
-				FRAGMENT_RANGE_BYTES, quads[q].color);
+			push_quad(commands, scene->layout, &quads[q], q == PIECES_QUAD);
 			vkCmdDraw(commands, QUAD_VERTICES, 1, 0, 0);
 		}
 		vkCmdEndRenderPass(commands);
