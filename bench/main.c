@@ -9,6 +9,7 @@
 #include "bench.h"
 #include "probes.h"
 #include "scenes.h"
+#include "vulkan4xenon.h"
 #include "xsdk/gpu.h"
 #include "xsdk/log.h"
 
@@ -128,9 +129,16 @@ static bool measure(const BenchBackend *backend, const SceneDef *scene)
 {
 	uint64_t previous = bench_now_ns();
 	XsdkGpuStats ring_start = { 0 };
+#ifdef V4X_PROFILE
+	V4xProfile profile_start = { 0 };
+#endif
 	for (int f = 0; f < WARMUP_FRAMES + MEASURE_FRAMES; f++) {
-		if (f == WARMUP_FRAMES)
+		if (f == WARMUP_FRAMES) {
 			xsdk_gpu_stats(&ring_start);
+#ifdef V4X_PROFILE
+			profile_start = v4x_profile_totals();
+#endif
+		}
 		const uint64_t t0 = bench_now_ns();
 		scene_update(scene, f);
 		const uint64_t t1 = bench_now_ns();
@@ -159,6 +167,12 @@ static bool measure(const BenchBackend *backend, const SceneDef *scene)
 		}
 		previous = t0;
 	}
+#ifdef V4X_PROFILE
+	// The layer's submit stages over the measured frames; xsdk's backend submits none.
+	const V4xProfile profile_end = v4x_profile_totals();
+	if (profile_end.submits != profile_start.submits)
+		v4x_profile_log(scene->name, &profile_start, &profile_end);
+#endif
 	xsdk_gpu_stats(&ring_use);
 	ring_use.dwords -= ring_start.dwords;
 	ring_use.kicks -= ring_start.kicks;
