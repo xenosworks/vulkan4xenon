@@ -65,7 +65,8 @@ void test_push_constants(const Harness *harness);
 void test_uniform_buffers(const Harness *harness);
 // Index buffers and every topology (milestone 3).
 void test_indexed(const Harness *harness);
-// Instanced draws, indexed and not, direct and indirect, each instance placed and coloured on its own (milestone 24).
+// Instanced draws, indexed and not, direct and indirect, lists, strips and 1,000 in one draw, each instance placed and
+// coloured on its own (milestones 24 and 47).
 void test_instancing(const Harness *harness);
 // Strips past 65535 vertices, drawn in pieces sharing the vertices where they meet; long fans refused (milestone 24).
 void test_strips(const Harness *harness);
