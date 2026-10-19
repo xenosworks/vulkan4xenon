@@ -98,6 +98,27 @@ static const uint32_t v4x_blit_vert_container[] = {
 	0xE2010100,
 };
 
+static const uint32_t v4x_blit_vert_instanced_container[] = {
+	0x102A1101, 0x000000B8, 0x00000084, 0x00000000, 0x00000024, 0x00000000,
+	0x00000080, 0x00000000, 0x00000000, 0x00000058, 0x0000001C, 0x00000053,
+	0xFFFE0300, 0x00000001, 0x0000001C, 0x00001000, 0x0000004C, 0x00000030,
+	0x00020000, 0x00010000, 0x0000003C, 0x00000000, 0x5F696E73, 0x74616E63,
+	0x6500ABAB, 0x00010003, 0x00010004, 0x00010000, 0x00000000, 0x76735F33,
+	0x5F300078, 0x6F737400, 0x00000000, 0x00000084, 0x00010003, 0x00000000,
+	0x00000000, 0x00002023, 0x00000001, 0x00000002, 0x00000001, 0x00000290,
+	0x0030A007, 0x00100008, 0x00003050, 0x0000100A, 0x00004003, 0x20071200,
+	0x12003007, 0x00000000, 0x1009C200, 0x12000002, 0x00000000, 0x100AC400,
+	0x22000000, 0xC80F0001, 0x006C6CB1, 0x8B000000, 0xC80F0002, 0x00000000,
+	0xEA010100, 0xC8010001, 0x04C6006C, 0x6B000200, 0xC8020001, 0x00001B00,
+	0xA0020000, 0x05F82020, 0x00000688, 0x00000000, 0x05F83020, 0x00000688,
+	0x00000000, 0xC80F803E, 0x00000000, 0xE2030300, 0xC80F8000, 0x00000000,
+	0xE2020200,
+};
+
+static const V4xShaderResource v4x_blit_vert_instanced_resources[] = {
+	{ V4X_RESOURCE_INSTANCE, 0, 0, 0, 1, 0, 0 },
+};
+
 const uint32_t v4x_blit_four_frag_spirv[] = {
 	0x07230203, 0x00010000, 0x0008000B, 0x0000001D, 0x00000000, 0x00020011,
 	0x00000001, 0x0006000B, 0x00000001, 0x4C534C47, 0x6474732E, 0x3035342E,
@@ -227,6 +248,31 @@ static const uint32_t v4x_blit_region_vert_container[] = {
 
 static const V4xShaderResource v4x_blit_region_vert_resources[] = {
 	{ V4X_RESOURCE_PUSH_CONSTANTS, 0, 0, 0, 1, 0, 0 },
+};
+
+static const uint32_t v4x_blit_region_vert_instanced_container[] = {
+	0x102A1101, 0x000000EC, 0x000000A8, 0x00000000, 0x00000024, 0x00000000,
+	0x000000A8, 0x00000000, 0x00000000, 0x00000080, 0x0000001C, 0x0000007B,
+	0xFFFE0300, 0x00000002, 0x0000001C, 0x00001000, 0x00000074, 0x00000044,
+	0x00020000, 0x00010000, 0x00000048, 0x00000000, 0x00000058, 0x00020001,
+	0x00010000, 0x00000064, 0x00000000, 0x757600AB, 0x00010003, 0x00010004,
+	0x00010000, 0x00000000, 0x5F696E73, 0x74616E63, 0x6500ABAB, 0x00010003,
+	0x00010004, 0x00010000, 0x00000000, 0x76735F33, 0x5F300078, 0x6F737400,
+	0x00000000, 0x000000A8, 0x00010003, 0x00000000, 0x00000000, 0x00002023,
+	0x00000001, 0x00000002, 0x00000001, 0x00000290, 0x0030A007, 0x00100008,
+	0x00003050, 0x0000100A, 0x0000100B, 0x0000100C, 0x0000100D, 0x00004003,
+	0x20071200, 0x12003007, 0x00000000, 0x1009C200, 0x12000002, 0x00000000,
+	0x400AC400, 0x22000000, 0xC80F0001, 0x006C6CB1, 0x8B000101, 0xC80F0002,
+	0x00000000, 0xEA010100, 0xC8010001, 0x04C6006C, 0x6B010200, 0xC8020001,
+	0x00001B00, 0xA0020100, 0x05F82020, 0x00000688, 0x00000000, 0x05F83020,
+	0x00000688, 0x00000000, 0xC80F803E, 0x00000000, 0xE2030300, 0xC80F0001,
+	0x000A0A00, 0x22000000, 0xC80F0003, 0x00000000, 0xE1020100, 0xC80F0001,
+	0x00000000, 0x60000300, 0xC80F8000, 0x00000000, 0xE2010100,
+};
+
+static const V4xShaderResource v4x_blit_region_vert_instanced_resources[] = {
+	{ V4X_RESOURCE_PUSH_CONSTANTS, 0, 0, 0, 1, 0, 0 },
+	{ V4X_RESOURCE_INSTANCE, 0, 0, 1, 1, 0, 0 },
 };
 
 const uint32_t v4x_clear_frag_spirv[] = {
@@ -388,13 +434,15 @@ static const V4xShaderResource v4x_depth_back_frag_resources[] = {
 };
 
 static const V4xShader shaders[] = {
-	{ 0x9CC2214B327BA30Bull, 552, v4x_blit_frag_container, 208, NULL, 0, v4x_blit_frag_resources, 1, NULL, 0 },
-	{ 0x44C70BCFE37A5B64ull, 888, v4x_blit_vert_container, 220, NULL, 0, NULL, 0, NULL, 0 },
-	{ 0x0D2D54C08F4536F4ull, 884, v4x_blit_four_frag_container, 244, NULL, 0, v4x_blit_four_frag_resources, 1, NULL, 0 },
-	{ 0x284B7B9341DA5AE0ull, 1192, v4x_blit_region_vert_container, 308, NULL, 0, v4x_blit_region_vert_resources, 1, NULL, 0 },
-	{ 0x8C331896FB13A338ull, 496, v4x_clear_frag_container, 180, NULL, 0, v4x_clear_frag_resources, 1, NULL, 0 },
-	{ 0x33B1C76FBF0892AAull, 992, v4x_clear_four_frag_container, 348, NULL, 0, v4x_clear_four_frag_resources, 1, NULL, 0 },
-	{ 0xECFBFF99C693D8A3ull, 748, v4x_depth_back_frag_container, 220, NULL, 0, v4x_depth_back_frag_resources, 1, NULL, 0 },
+	{ 0x9CC2214B327BA30Bull, 552, v4x_blit_frag_container, 208, NULL, 0, v4x_blit_frag_resources, 1, NULL, 0, false },
+	{ 0x44C70BCFE37A5B64ull, 888, v4x_blit_vert_container, 220, NULL, 0, NULL, 0, NULL, 0, false },
+	{ 0x44C70BCFE37A5B64ull, 888, v4x_blit_vert_instanced_container, 316, NULL, 0, v4x_blit_vert_instanced_resources, 1, NULL, 0, true },
+	{ 0x0D2D54C08F4536F4ull, 884, v4x_blit_four_frag_container, 244, NULL, 0, v4x_blit_four_frag_resources, 1, NULL, 0, false },
+	{ 0x284B7B9341DA5AE0ull, 1192, v4x_blit_region_vert_container, 308, NULL, 0, v4x_blit_region_vert_resources, 1, NULL, 0, false },
+	{ 0x284B7B9341DA5AE0ull, 1192, v4x_blit_region_vert_instanced_container, 404, NULL, 0, v4x_blit_region_vert_instanced_resources, 2, NULL, 0, true },
+	{ 0x8C331896FB13A338ull, 496, v4x_clear_frag_container, 180, NULL, 0, v4x_clear_frag_resources, 1, NULL, 0, false },
+	{ 0x33B1C76FBF0892AAull, 992, v4x_clear_four_frag_container, 348, NULL, 0, v4x_clear_four_frag_resources, 1, NULL, 0, false },
+	{ 0xECFBFF99C693D8A3ull, 748, v4x_depth_back_frag_container, 220, NULL, 0, v4x_depth_back_frag_resources, 1, NULL, 0, false },
 };
 
-const V4xShaderBundle v4x_blit_bundle = { shaders, 7 };
+const V4xShaderBundle v4x_blit_bundle = { shaders, 9 };

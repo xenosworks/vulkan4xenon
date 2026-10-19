@@ -375,7 +375,7 @@ VKAPI_ATTR void VKAPI_CALL vkCmdBindVertexBuffers(VkCommandBuffer commandBuffer,
 	}
 }
 
-// Each instance is replayed as a draw of its own (queue.c).
+// An instanced list's instances are replayed together, others' each as a draw of its own (queue.c).
 VKAPI_ATTR void VKAPI_CALL vkCmdDraw(VkCommandBuffer commandBuffer, uint32_t vertexCount, uint32_t instanceCount,
 	uint32_t firstVertex, uint32_t firstInstance)
 {
@@ -1102,6 +1102,7 @@ VKAPI_ATTR void VKAPI_CALL vkCmdBindIndexBuffer(
 	if (!command)
 		return;
 	const Buffer *const object = v4x_object(buffer);
+	command->index_buffer.bytes = buffer_bytes(object, offset);
 	command->index_buffer.address = object->memory->address + object->offset_bytes + (uint32_t)offset;
 	command->index_buffer.is_32_bit = indexType == VK_INDEX_TYPE_UINT32;
 }

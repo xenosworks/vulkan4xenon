@@ -30,9 +30,9 @@ enum {
 	MICROSECONDS_PER_SECOND = 1000000,
 	CACHE_PATH_BYTES = 256,
 	// "V4XS", and the layout of what follows it, which changes as V4xShader's parts do: 2 since clip planes, 3 since a
-	// block loop's start and step.
+	// block loop's start and step, 4 since instanced variants.
 	CACHE_MAGIC = 0x56345853,
-	CACHE_LAYOUT = 3,
+	CACHE_LAYOUT = 4,
 	// No container xost writes is near this; a file that says so is damaged.
 	MAX_CACHED_BYTES = 1024 * 1024,
 	FOLDER_MODE = 0777,
@@ -49,6 +49,8 @@ typedef struct {
 	uint32_t literal_count;
 	uint32_t resource_count;
 	uint32_t clip_plane_count;
+	// Compiled with xost's instanced option, which the shader is kept under too.
+	uint32_t instanced;
 } CacheHeader;
 
 // Named before shader modules are made, and only read after.
@@ -74,11 +76,11 @@ static uint64_t spirv_hash(const uint32_t *code, uint32_t size_bytes)
 	return hash;
 }
 
-static const V4xShader *in_bundle(const V4xShaderBundle *bundle, uint64_t hash, uint32_t size_bytes)
+static const V4xShader *in_bundle(const V4xShaderBundle *bundle, uint64_t hash, uint32_t size_bytes, bool instanced)
 {
 	for (uint32_t i = 0; bundle && i < bundle->count; i++) {
 		const V4xShader *const shader = &bundle->shaders[i];
-		if (shader->spirv_hash == hash && shader->spirv_size_bytes == size_bytes)
+		if (shader->spirv_hash == hash && shader->spirv_size_bytes == size_bytes && shader->instanced == instanced)
 			return shader;
 	}
 	return NULL;
@@ -87,7 +89,7 @@ static const V4xShader *in_bundle(const V4xShaderBundle *bundle, uint64_t hash, 
 const V4xShader *v4x_shader_find(const V4xShaderBundle *bundle, const uint32_t *code, uint32_t size_bytes)
 {
 	const uint64_t hash = spirv_hash(code, size_bytes);
-	const V4xShader *const found = in_bundle(bundle, hash, size_bytes);
+	const V4xShader *const found = in_bundle(bundle, hash, size_bytes, false);
 	if (!found)
 		xsdk_log_write("vulkan4xenon: no compiled shader for SPIR-V %08X%08X, %u bytes", (unsigned)(hash >> 32),
 			(unsigned)hash, (unsigned)size_bytes);
@@ -111,7 +113,7 @@ static uint8_t resource_kind(XsdkXscResourceKind kind)
 	case XSDK_XSC_COMPARISON:
 		return V4X_RESOURCE_COMPARISON;
 	case XSDK_XSC_INSTANCE:
-		return V4X_RESOURCE_INSTANCE_INDEX;
+		return V4X_RESOURCE_INSTANCE;
 	default:
 		return V4X_RESOURCE_SAMPLER;
 	}
@@ -177,14 +179,16 @@ static V4xShader *new_shader(const VkAllocationCallbacks *allocator, const Cache
 		.resources = parts->resources,
 		.resource_count = sizes->resource_count,
 		.clip_planes = parts->clip_planes,
-		.clip_plane_count = sizes->clip_plane_count };
+		.clip_plane_count = sizes->clip_plane_count,
+		.instanced = sizes->instanced };
 	return shader;
 }
 
 static CacheHeader header_of(const V4xShader *shader)
 {
 	return (CacheHeader){ CACHE_MAGIC, CACHE_LAYOUT, shader->spirv_hash, shader->spirv_size_bytes,
-		shader->container_size_bytes, shader->literal_count, shader->resource_count, shader->clip_plane_count };
+		shader->container_size_bytes, shader->literal_count, shader->resource_count, shader->clip_plane_count,
+		shader->instanced };
 }
 
 static uint32_t needs_of(const XsdkXscShader *compiled, XsdkXscNeedKind kind)
@@ -197,14 +201,14 @@ static uint32_t needs_of(const XsdkXscShader *compiled, XsdkXscNeedKind kind)
 
 // The literals, then the resources, each loop's count among them after the blocks and samplers, then the clip planes,
 // as the bundle has them.
-static V4xShader *shader_from(
-	const VkAllocationCallbacks *allocator, const XsdkXscShader *compiled, uint64_t hash, uint32_t size_bytes)
+static V4xShader *shader_from(const VkAllocationCallbacks *allocator, const XsdkXscShader *compiled, uint64_t hash,
+	uint32_t size_bytes, bool instanced)
 {
 	const CacheHeader sizes = { CACHE_MAGIC, CACHE_LAYOUT, hash, size_bytes, (uint32_t)compiled->container_bytes,
 		needs_of(compiled, XSDK_XSC_LITERAL),
 		(uint32_t)compiled->resource_count + needs_of(compiled, XSDK_XSC_BLOCK_LOOP) +
 			needs_of(compiled, XSDK_XSC_FIXED_LOOP),
-		needs_of(compiled, XSDK_XSC_CLIP_PLANE) };
+		needs_of(compiled, XSDK_XSC_CLIP_PLANE), instanced };
 	ShaderParts parts;
 	V4xShader *const shader = new_shader(allocator, &sizes, &parts);
 	if (!shader)
@@ -267,22 +271,23 @@ static bool cache_folder(char path[CACHE_PATH_BYTES])
 	return cache_directory[0] && length > 0 && length < (int)CACHE_PATH_BYTES;
 }
 
-static bool cache_file(uint64_t hash, uint32_t size_bytes, char path[CACHE_PATH_BYTES])
+// An instanced variant's name ends in -i.
+static bool cache_file(uint64_t hash, uint32_t size_bytes, bool instanced, char path[CACHE_PATH_BYTES])
 {
 	char folder[CACHE_PATH_BYTES];
 	if (!cache_folder(folder))
 		return false;
-	const int length = snprintf(path, CACHE_PATH_BYTES, "%s/%08X%08X-%u.v4xs", folder, (unsigned)(hash >> 32),
-		(unsigned)hash, (unsigned)size_bytes);
+	const int length = snprintf(path, CACHE_PATH_BYTES, "%s/%08X%08X-%u%s.v4xs", folder, (unsigned)(hash >> 32),
+		(unsigned)hash, (unsigned)size_bytes, instanced ? "-i" : "");
 	return length > 0 && length < (int)CACHE_PATH_BYTES;
 }
 
-// The shader kept for this SPIR-V, or NULL where there's none, or one that doesn't check out.
-static V4xShader *read_cached(VkDevice device, uint64_t hash, uint32_t size_bytes)
+// The shader kept for this SPIR-V and option, or NULL where there's none, or one that doesn't check out.
+static V4xShader *read_cached(VkDevice device, uint64_t hash, uint32_t size_bytes, bool instanced)
 {
 	char path[CACHE_PATH_BYTES];
 	struct stat info;
-	if (!cache_file(hash, size_bytes, path) || stat(path, &info) != 0)
+	if (!cache_file(hash, size_bytes, instanced, path) || stat(path, &info) != 0)
 		return NULL;
 	FILE *const file = fopen(path, "rb");
 	if (!file)
@@ -290,8 +295,9 @@ static V4xShader *read_cached(VkDevice device, uint64_t hash, uint32_t size_byte
 	CacheHeader header;
 	const bool sound = fread(&header, sizeof header, 1, file) == 1 && header.magic == CACHE_MAGIC &&
 		header.layout == CACHE_LAYOUT && header.spirv_hash == hash && header.spirv_size_bytes == size_bytes &&
-		header.container_size_bytes < MAX_CACHED_BYTES && header.literal_count < MAX_CACHED_BYTES &&
-		header.resource_count < MAX_CACHED_BYTES && header.clip_plane_count < MAX_CACHED_BYTES;
+		header.instanced == instanced && header.container_size_bytes < MAX_CACHED_BYTES &&
+		header.literal_count < MAX_CACHED_BYTES && header.resource_count < MAX_CACHED_BYTES &&
+		header.clip_plane_count < MAX_CACHED_BYTES;
 	const size_t tail = sound ? tail_bytes(&header) : 0;
 	ShaderParts parts;
 	V4xShader *shader = sound && (size_t)info.st_size == sizeof header + tail
@@ -319,7 +325,7 @@ static void keep_on_disk(const V4xShader *shader)
 	char folder[CACHE_PATH_BYTES];
 	char path[CACHE_PATH_BYTES];
 	char written[CACHE_PATH_BYTES + sizeof ".new"];
-	if (!cache_folder(folder) || !cache_file(shader->spirv_hash, shader->spirv_size_bytes, path))
+	if (!cache_folder(folder) || !cache_file(shader->spirv_hash, shader->spirv_size_bytes, shader->instanced, path))
 		return;
 	(void)snprintf(written, sizeof written, "%s.new", path);
 	const CacheHeader header = header_of(shader);
@@ -338,11 +344,12 @@ static void keep_on_disk(const V4xShader *shader)
 }
 
 // Through xost's compiler at xsdk's register split with the optimiser on, as Dusklight's pack is built.
-static V4xShader *compile(VkDevice device, const uint32_t *code, uint32_t size_bytes, uint64_t hash)
+static V4xShader *compile(VkDevice device, const uint32_t *code, uint32_t size_bytes, uint64_t hash, bool instanced)
 {
 	XsdkXscOptions options;
 	xsdk_xsc_default_options(&options);
 	options.optimize = true;
+	options.instanced = instanced;
 	XsdkXscShader compiled;
 	const uint64_t start = now_us();
 	const XsdkXscStatus status = xsdk_xsc_compile(code, size_bytes / sizeof(uint32_t), &options, &compiled);
@@ -359,20 +366,20 @@ static V4xShader *compile(VkDevice device, const uint32_t *code, uint32_t size_b
 		xsdk_log_write("vulkan4xenon: SPIR-V %08X%08X wants a bare uniform's loop constants or a resource past %u",
 			high, low, (unsigned)MAX_RESOURCE_REGISTER);
 	else
-		shader = shader_from(v4x_host_device_allocator(device, NULL), &compiled, hash, size_bytes);
+		shader = shader_from(v4x_host_device_allocator(device, NULL), &compiled, hash, size_bytes, instanced);
 	xsdk_xsc_free(&compiled);
 	if (shader)
-		xsdk_log_write("vulkan4xenon: compiled SPIR-V %08X%08X, %u bytes, in %u us", high, low, (unsigned)size_bytes,
-			(unsigned)us);
+		xsdk_log_write("vulkan4xenon: compiled SPIR-V %08X%08X, %u bytes%s, in %u us", high, low, (unsigned)size_bytes,
+			instanced ? ", instanced" : "", (unsigned)us);
 	return shader;
 }
 
 // Under device->shaders_lock.
-static const V4xShader *kept(VkDevice device, uint64_t hash, uint32_t size_bytes)
+static const V4xShader *kept(VkDevice device, uint64_t hash, uint32_t size_bytes, bool instanced)
 {
 	for (uint32_t i = 0; i < device->shader_count; i++) {
 		const V4xShader *const shader = device->shaders[i];
-		if (shader->spirv_hash == hash && shader->spirv_size_bytes == size_bytes)
+		if (shader->spirv_hash == hash && shader->spirv_size_bytes == size_bytes && shader->instanced == instanced)
 			return shader;
 	}
 	return NULL;
@@ -394,17 +401,18 @@ static bool keep(VkDevice device, V4xShader *shader)
 	return true;
 }
 
-// What the cache holds for this SPIR-V, else what it compiles to, kept on the disk.
-static V4xShader *cached_or_compiled(VkDevice device, const uint32_t *code, uint32_t size_bytes, uint64_t hash)
+// What the cache holds for this SPIR-V and option, else what it compiles to, kept on the disk.
+static V4xShader *cached_or_compiled(
+	VkDevice device, const uint32_t *code, uint32_t size_bytes, uint64_t hash, bool instanced)
 {
-	V4xShader *shader = read_cached(device, hash, size_bytes);
+	V4xShader *shader = read_cached(device, hash, size_bytes, instanced);
 	if (shader) {
 		(void)__atomic_add_fetch(&read_count, 1, __ATOMIC_RELAXED);
-		xsdk_log_write(
-			"vulkan4xenon: SPIR-V %08X%08X read from the shader cache", (unsigned)(hash >> 32), (unsigned)hash);
+		xsdk_log_write("vulkan4xenon: SPIR-V %08X%08X%s read from the shader cache", (unsigned)(hash >> 32),
+			(unsigned)hash, instanced ? ", instanced," : "");
 		return shader;
 	}
-	shader = compile(device, code, size_bytes, hash);
+	shader = compile(device, code, size_bytes, hash, instanced);
 	if (!shader)
 		return NULL;
 	(void)__atomic_add_fetch(&compiled_count, 1, __ATOMIC_RELAXED);
@@ -412,13 +420,14 @@ static V4xShader *cached_or_compiled(VkDevice device, const uint32_t *code, uint
 	return shader;
 }
 
-// The shader this device made from this SPIR-V before, else one read or compiled now and kept.
-static const V4xShader *compiled_shader(VkDevice device, const uint32_t *code, uint32_t size_bytes, uint64_t hash)
+// The shader this device made from this SPIR-V and option before, else one read or compiled now and kept.
+static const V4xShader *compiled_shader(
+	VkDevice device, const uint32_t *code, uint32_t size_bytes, uint64_t hash, bool instanced)
 {
 	(void)pthread_mutex_lock(&device->shaders_lock);
-	const V4xShader *found = kept(device, hash, size_bytes);
+	const V4xShader *found = kept(device, hash, size_bytes, instanced);
 	if (!found) {
-		V4xShader *const shader = cached_or_compiled(device, code, size_bytes, hash);
+		V4xShader *const shader = cached_or_compiled(device, code, size_bytes, hash, instanced);
 		if (shader && !keep(device, shader))
 			v4x_host_free(v4x_host_device_allocator(device, NULL), shader);
 		else
@@ -444,18 +453,38 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateShaderModule(VkDevice device, const VkSha
 {
 	const uint32_t size_bytes = (uint32_t)pCreateInfo->codeSize;
 	const uint64_t hash = spirv_hash(pCreateInfo->pCode, size_bytes);
-	const V4xShader *found = in_bundle(&v4x_shader_bundle, hash, size_bytes);
+	const V4xShader *found = in_bundle(&v4x_shader_bundle, hash, size_bytes, false);
 	if (!found)
-		found = compiled_shader(device, pCreateInfo->pCode, size_bytes, hash);
+		found = compiled_shader(device, pCreateInfo->pCode, size_bytes, hash, false);
 	if (!found)
 		return VK_ERROR_FEATURE_NOT_PRESENT;
 	ShaderModule *const module = v4x_host_alloc(
-		v4x_host_device_allocator(device, pAllocator), sizeof *module, VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
+		v4x_host_device_allocator(device, pAllocator), sizeof *module + size_bytes, VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
 	if (!module)
 		return VK_ERROR_OUT_OF_HOST_MEMORY;
-	module->shader = found;
+	*module = (ShaderModule){ .shader = found, .spirv_hash = hash, .spirv_size_bytes = size_bytes };
+	memcpy(module + 1, pCreateInfo->pCode, size_bytes);
 	*pShaderModule = v4x_handle(module);
 	return VK_SUCCESS;
+}
+
+static bool has_instance_group(const V4xShader *shader)
+{
+	for (uint32_t i = 0; i < shader->resource_count; i++) {
+		if (shader->resources[i].kind == V4X_RESOURCE_INSTANCE)
+			return true;
+	}
+	return false;
+}
+
+const V4xShader *v4x_shader_instanced(VkDevice device, const ShaderModule *module)
+{
+	if (has_instance_group(module->shader))
+		return module->shader;
+	const V4xShader *const found = in_bundle(&v4x_shader_bundle, module->spirv_hash, module->spirv_size_bytes, true);
+	return found
+		? found
+		: compiled_shader(device, (const uint32_t *)(module + 1), module->spirv_size_bytes, module->spirv_hash, true);
 }
 
 VKAPI_ATTR void VKAPI_CALL vkDestroyShaderModule(

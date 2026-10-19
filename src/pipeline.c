@@ -6,6 +6,7 @@
 #include "host.h"
 #include "objects.h"
 #include "pipeline_state.h"
+#include "shader.h"
 #include "xsdk/gpu.h"
 #include "xsdk/log.h"
 #include "xsdk/shader.h"
@@ -59,28 +60,41 @@ static void location_usage(uint32_t location, XsdkVertexElement *element)
 	element->usage_index = location >= 3 ? location - 2 : 0;
 }
 
-static VkResult find_stages(const VkGraphicsPipelineCreateInfo *info, Pipeline *pipeline)
+static bool instance_rate(const VkPipelineVertexInputStateCreateInfo *input)
 {
+	for (uint32_t i = 0; i < input->vertexBindingDescriptionCount; i++) {
+		if (input->pVertexBindingDescriptions[i].inputRate == VK_VERTEX_INPUT_RATE_INSTANCE)
+			return true;
+	}
+	return false;
+}
+
+// A pipeline with a binding at the instance's rate takes its vertex shader's instanced variant (shader.c); one that
+// reads gl_InstanceIndex is instanced already.
+static VkResult find_stages(VkDevice device, const VkGraphicsPipelineCreateInfo *info, Pipeline *pipeline)
+{
+	const ShaderModule *vertex = NULL;
 	for (uint32_t i = 0; i < info->stageCount; i++) {
 		const VkPipelineShaderStageCreateInfo *const stage = &info->pStages[i];
 		if (strcmp(stage->pName, "main") || stage->pSpecializationInfo)
 			return v4x_host_unsupported("entry points other than main, and specialization constants");
 		const ShaderModule *const module = v4x_object(stage->module);
 		if (stage->stage == VK_SHADER_STAGE_VERTEX_BIT)
-			pipeline->vertex_source = module->shader;
+			vertex = module;
 		else if (stage->stage == VK_SHADER_STAGE_FRAGMENT_BIT)
 			pipeline->pixel_source = module->shader;
 		else
 			return v4x_host_unsupported("stages other than vertex and fragment");
 	}
-	if (!pipeline->vertex_source || !pipeline->pixel_source)
+	if (!vertex || !pipeline->pixel_source)
 		return v4x_host_unsupported("pipelines without both a vertex and a fragment shader");
-	return VK_SUCCESS;
+	pipeline->vertex_source =
+		instance_rate(info->pVertexInputState) ? v4x_shader_instanced(device, vertex) : vertex->shader;
+	return pipeline->vertex_source ? VK_SUCCESS : VK_ERROR_FEATURE_NOT_PRESENT;
 }
 
-// Each binding becomes the next stream; each attribute an element of the vertex shader's layout. A binding at the
-// instance's rate is fetched with a stride of 0, every vertex reading the element its stream starts at
-// (xenia:src/xenia/gpu/shader_interpreter.cc:1013-1014), and each instance's draw moves the stream.
+// Each binding becomes the next stream; each attribute an element of the vertex shader's layout, one at the instance's
+// rate fetched at its instance's element of its binding's stride (xsdk:include/xsdk/shader.h, per_instance).
 static VkResult lay_out_vertices(const VkPipelineVertexInputStateCreateInfo *input, Pipeline *pipeline)
 {
 	uint32_t strides[XSDK_VERTEX_STREAMS] = { 0 };
@@ -88,11 +102,10 @@ static VkResult lay_out_vertices(const VkPipelineVertexInputStateCreateInfo *inp
 		const VkVertexInputBindingDescription *const binding = &input->pVertexBindingDescriptions[i];
 		if (binding->stride % 4 || binding->stride > V4X_MAX_VERTEX_STRIDE_BYTES)
 			return v4x_host_unsupported("strides not a multiple of 4, or past 1020 bytes");
-		const bool per_instance = binding->inputRate == VK_VERTEX_INPUT_RATE_INSTANCE;
-		pipeline->streams[i] = (VertexStream){
-			.binding = binding->binding, .stride_bytes = binding->stride, .per_instance = per_instance
-		};
-		strides[i] = per_instance ? 0 : binding->stride;
+		pipeline->streams[i] = (VertexStream){ .binding = binding->binding,
+			.stride_bytes = binding->stride,
+			.per_instance = binding->inputRate == VK_VERTEX_INPUT_RATE_INSTANCE };
+		strides[i] = binding->stride;
 	}
 	pipeline->stream_count = input->vertexBindingDescriptionCount;
 	XsdkVertexElement elements[V4X_MAX_VERTEX_ATTRIBUTES];
@@ -105,8 +118,10 @@ static VkResult lay_out_vertices(const VkPipelineVertexInputStateCreateInfo *inp
 			return v4x_host_unsupported(
 				"vertex formats docs/SUPPORT.md doesn't list, or at offsets not a multiple of 4");
 		for (uint32_t s = 0; s < pipeline->stream_count; s++) {
-			if (pipeline->streams[s].binding == attribute->binding)
+			if (pipeline->streams[s].binding == attribute->binding) {
 				element->stream = s;
+				element->per_instance = pipeline->streams[s].per_instance;
+			}
 		}
 	}
 	const NTSTATUS status =
@@ -163,12 +178,9 @@ static VkResult gather_resources(const PipelineLayout *layout, const V4xShader *
 	}
 	for (uint32_t i = 0; i < shader->resource_count; i++) {
 		const V4xShaderResource *const resource = &shader->resources[i];
-		// No binding of the layout's: each instance's draw writes it (queue.c).
-		if (resource->kind == V4X_RESOURCE_INSTANCE_INDEX) {
-			pipeline->reads_instance_index = true;
-			pipeline->instance_index_constant = resource->first;
+		// No binding of the layout's: xsdk writes the group, from the shader's own record of it (queue.c).
+		if (resource->kind == V4X_RESOURCE_INSTANCE)
 			continue;
-		}
 		const bool fixed = resource->kind == V4X_RESOURCE_FIXED_LOOP;
 		if (!fixed && !layout_has(layout, resource, stage)) {
 			xsdk_log_write("vulkan4xenon: the pipeline layout lacks set %u binding %u, kind %u, for the %s shader",
@@ -289,7 +301,7 @@ static void free_pipeline(const VkAllocationCallbacks *allocator, Pipeline *pipe
 }
 
 static VkResult create_pipeline(
-	const VkGraphicsPipelineCreateInfo *info, const VkAllocationCallbacks *allocator, VkPipeline *out)
+	VkDevice device, const VkGraphicsPipelineCreateInfo *info, const VkAllocationCallbacks *allocator, VkPipeline *out)
 {
 	Pipeline *const pipeline = v4x_host_alloc(allocator, sizeof *pipeline, VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
 	if (!pipeline)
@@ -297,7 +309,7 @@ static VkResult create_pipeline(
 	const RenderPassSubpasses *const render_pass = v4x_object(info->renderPass);
 	VkResult result = v4x_pipeline_state(info, &render_pass->subpasses[info->subpass], pipeline);
 	if (result == VK_SUCCESS)
-		result = find_stages(info, pipeline);
+		result = find_stages(device, info, pipeline);
 	const PipelineLayout *const layout = v4x_object(info->layout);
 	if (result == VK_SUCCESS)
 		result = gather_resources(layout, pipeline->vertex_source, true, pipeline);
@@ -327,7 +339,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateGraphicsPipelines(VkDevice device, VkPipe
 	const VkAllocationCallbacks *const allocator = v4x_host_device_allocator(device, pAllocator);
 	VkResult result = VK_SUCCESS;
 	for (uint32_t i = 0; i < createInfoCount; i++) {
-		const VkResult created = create_pipeline(&pCreateInfos[i], allocator, &pPipelines[i]);
+		const VkResult created = create_pipeline(device, &pCreateInfos[i], allocator, &pPipelines[i]);
 		if (created != VK_SUCCESS) {
 			pPipelines[i] = VK_NULL_HANDLE;
 			result = created;

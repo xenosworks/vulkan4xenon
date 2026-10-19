@@ -156,6 +156,10 @@ enum {
 	V4X_SUBMIT_FENCES = 64,
 	// The depths eDRAM keeps track of at once.
 	V4X_EDRAM_DEPTHS = 4,
+	// GPU memory for indexed instanced draws' repeated indices (transfer.c), in parts filled in turn; a part holds the
+	// most a draw repeats, a packet's 65535 indices of 32 bits.
+	V4X_INDEX_COPY_PARTS = 4,
+	V4X_INDEX_COPY_PART_BYTES = 256 * 1024,
 };
 
 struct VkQueue_T {
@@ -179,6 +183,12 @@ struct VkQueue_T {
 	// The loop constants as last written, once one has been: the GPU keeps them from one submission to the next.
 	uint32_t loop_constants[XSDK_LOOP_CONSTANTS];
 	bool loops_written;
+	// The repeated indices' memory, the part being filled and the bytes it holds, and the submission that last wrote
+	// each part, 0 for none (transfer.c).
+	volatile uint32_t *index_copies;
+	uint32_t copy_part;
+	uint32_t copy_part_bytes;
+	uint32_t copy_serials[V4X_INDEX_COPY_PARTS];
 };
 
 struct VkDevice_T {
@@ -242,8 +252,11 @@ typedef struct {
 	XsdkTexture texture;
 } ImageView;
 
+// A module's shader, and its SPIR-V, copied after it, for an instanced variant compiled when a pipeline wants it.
 typedef struct {
 	const V4xShader *shader;
+	uint64_t spirv_hash;
+	uint32_t spirv_size_bytes;
 } ShaderModule;
 
 typedef struct {
@@ -303,8 +316,8 @@ typedef struct {
 typedef struct {
 	uint32_t binding;
 	uint32_t stride_bytes;
-	// At the instance's rate: the shader fetches it with a stride of 0, and each instance's draw points it at its
-	// element.
+	// At the instance's rate: the instanced shader fetches each instance's element, so the stream stays at the
+	// binding's start.
 	bool per_instance;
 } VertexStream;
 
@@ -328,6 +341,8 @@ typedef struct {
 	bool dynamic_viewport;
 	bool dynamic_scissor;
 	uint32_t primitive;
+	// A list's vertices a primitive, 1 to 3; 0 for a strip or a fan.
+	uint32_t list_vertices;
 	// A draw past what a draw packet carries goes in pieces of up to piece_vertices, each piece_step on from the last:
 	// lists split on whole primitives, and strips share the vertices where pieces meet. Fans don't split: step 0.
 	uint32_t piece_vertices;
@@ -350,9 +365,6 @@ typedef struct {
 	uint32_t resource_count;
 	// Its resources that are hardware loops' counts, so a pipeline with none spends nothing on them.
 	uint32_t loop_count;
-	// The vertex shader reads gl_InstanceIndex from this float constant, which each instance's draw writes.
-	bool reads_instance_index;
-	uint32_t instance_index_constant;
 	// The user clip planes its vertex shader's clip distances take, a bit each in clip_plane_mask (milestone 26).
 	ClipPlane clip_planes[XSDK_CLIP_PLANES];
 	uint32_t clip_plane_count;
@@ -602,7 +614,9 @@ typedef struct {
 		} timestamp;
 		// A VkViewport, VkRect2D, ClearRect, QueryCopy, LevelCopy or DrawnBlit in the command buffer's data.
 		uint32_t state_at;
+		// The index buffer's bytes at its offset, and their GPU address.
 		struct {
+			volatile const uint8_t *bytes;
 			uint32_t address;
 			bool is_32_bit;
 		} index_buffer;

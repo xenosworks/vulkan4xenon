@@ -87,15 +87,21 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(VkPhysicalDevice physicalDevice, c
 	const NTSTATUS splash = xsdk_splash_begin();
 	if (!NT_SUCCESS(splash))
 		xsdk_log_write("vulkan4xenon: no boot logo: 0x%08X", (unsigned)splash);
-	const VkResult blit = v4x_blit_create(&device->queue.blit);
-	if (blit != VK_SUCCESS) {
+	VkResult made = v4x_blit_create(&device->queue.blit);
+	device->queue.index_copies =
+		made == VK_SUCCESS ? xsdk_gpu_alloc(V4X_INDEX_COPY_PARTS * V4X_INDEX_COPY_PART_BYTES) : NULL;
+	if (made == VK_SUCCESS && !device->queue.index_copies) {
+		v4x_blit_destroy(&device->queue.blit);
+		made = VK_ERROR_OUT_OF_DEVICE_MEMORY;
+	}
+	if (made != VK_SUCCESS) {
 		xsdk_splash_end();
 		const NTSTATUS closed = xsdk_gpu_close();
 		if (!NT_SUCCESS(closed))
 			xsdk_log_write("vulkan4xenon: xsdk_gpu_close failed: 0x%08X", (unsigned)closed);
 		(void)pthread_mutex_destroy(&device->shaders_lock);
 		v4x_host_free(allocator, device);
-		return blit;
+		return made;
 	}
 	if (allocator) {
 		device->allocator = *allocator;
@@ -117,6 +123,7 @@ VKAPI_ATTR void VKAPI_CALL vkDestroyDevice(VkDevice device, const VkAllocationCa
 {
 	if (!device)
 		return;
+	xsdk_gpu_free(device->queue.index_copies);
 	v4x_blit_destroy(&device->queue.blit);
 	xsdk_splash_end();
 	const NTSTATUS status = xsdk_gpu_close();

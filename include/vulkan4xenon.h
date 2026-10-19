@@ -1,6 +1,7 @@
 #ifndef VULKAN4XENON_H
 #define VULKAN4XENON_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include <vulkan/vulkan.h>
@@ -27,25 +28,25 @@ enum {
 	V4X_RESOURCE_UNIFORM_LOOP,
 	// A sampler2DShadow's comparison: the float constant its sampler's compare op is written to.
 	V4X_RESOURCE_COMPARISON,
-	// A vertex shader's gl_InstanceIndex: the float constant of its instance group, which the layer writes each
-	// instance's index into, in w (xost:docs/xsc.md, "Interface conventions").
-	V4X_RESOURCE_INSTANCE_INDEX,
+	// An instanced vertex shader's instance group, the float constant xsdk writes before each piece of an instanced
+	// draw (xost:docs/xsc.md, "Interface conventions"; xsdk:include/xsdk/gpu.h).
+	V4X_RESOURCE_INSTANCE,
 	// Loops whose count is data, the third loop kind, last so the kinds before keep their numbers: loop constant count,
 	// which runs first passes, 255 (xsdk:include/xsdk/xsc.h, XSDK_XSC_FIXED_LOOP).
 	V4X_RESOURCE_FIXED_LOOP,
 };
 
-// Where xost put a block, sampler, comparison or gl_InstanceIndex the shader reads (xost:docs/xsc.md, "Interface
+// Where xost put a block, sampler, comparison or instance group the shader reads (xost:docs/xsc.md, "Interface
 // conventions"), or where a loop's count is.
 typedef struct {
 	uint8_t kind;
-	// The descriptor set and binding; 0 for push constants, the instance index and a fixed loop.
+	// The descriptor set and binding; 0 for push constants, the instance group and a fixed loop.
 	uint8_t set;
 	uint8_t binding;
-	// The first float constant register, holding the block's first 16 bytes or the index, the fetch constant, a loop's
+	// The first float constant register, holding the block's first 16 bytes or the group, the fetch constant, a loop's
 	// count's byte in its block, or a fixed loop's passes.
 	uint16_t first;
-	// Registers the block fills; 1 for a sampler and the index; a loop's loop constant.
+	// Registers the block fills; 1 for a sampler and the group; a loop's loop constant.
 	uint16_t count;
 	// A block loop's i: where it starts and what each pass adds, 1 or more, which the layer works its passes out from
 	// (xsdk:include/xsdk/xsc.h, xsdk_xsc_loop_passes); 0 for the other kinds.
@@ -72,6 +73,10 @@ typedef struct {
 	uint32_t resource_count;
 	const V4xShaderClipPlane *clip_planes;
 	uint32_t clip_plane_count;
+	// Compiled with xost's instanced option: the variant a pipeline with a binding at the instance's rate takes of a
+	// vertex shader that doesn't read gl_InstanceIndex (xost:docs/xsc.md, "Interface conventions"). Last, so a bundle
+	// written before it holds plain shaders alone.
+	bool instanced;
 } V4xShader;
 
 typedef struct {

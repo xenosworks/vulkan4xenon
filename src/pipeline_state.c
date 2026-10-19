@@ -25,6 +25,7 @@ static bool takes(const Pipeline *pipeline, VkDynamicState state)
 // A list splits on whole primitives.
 static void split_list(Pipeline *pipeline, uint32_t primitive_vertices)
 {
+	pipeline->list_vertices = primitive_vertices;
 	pipeline->piece_vertices = V4X_MAX_DRAW_VERTICES - V4X_MAX_DRAW_VERTICES % primitive_vertices;
 	pipeline->piece_step = pipeline->piece_vertices;
 }

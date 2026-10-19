@@ -71,6 +71,7 @@ typedef struct {
 	float clear_depth;
 	uint32_t clear_stencil;
 	VertexBinding bindings[V4X_MAX_VERTEX_BINDINGS];
+	volatile const uint8_t *index_bytes;
 	uint32_t index_address;
 	bool index_32_bit;
 	const DescriptorSet *sets[V4X_MAX_DESCRIPTOR_SETS];
@@ -1003,15 +1004,15 @@ static void prepare_draw(Replay *replay)
 }
 
 // xsdk draws from vertex 0, so each stream at the vertex's rate starts at the draw's first vertex, which may come
-// before the binding's, and each at the instance's rate at the instance's element.
-static void point_streams(Replay *replay, int32_t first_vertex, uint32_t instance)
+// before the binding's; one at the instance's rate stays at the binding's start, the shader fetching each instance's
+// element (pipeline.c).
+static void point_streams(Replay *replay, int32_t first_vertex)
 {
 	const Pipeline *const pipeline = replay->pipeline;
 	for (uint32_t s = 0; s < pipeline->stream_count; s++) {
 		const VertexStream *const source = &pipeline->streams[s];
 		const VertexBinding *const binding = &replay->bindings[source->binding];
-		const uint32_t skipped = source->per_instance ? instance * source->stride_bytes
-													  : (uint32_t)(first_vertex * (int32_t)source->stride_bytes);
+		const uint32_t skipped = source->per_instance ? 0 : (uint32_t)(first_vertex * (int32_t)source->stride_bytes);
 		const VertexBinding stream = { .address = binding->address + skipped,
 			.size_bytes = binding->size_bytes - skipped };
 		if (replay->pointed_streams[s].address == stream.address &&
@@ -1022,24 +1023,23 @@ static void point_streams(Replay *replay, int32_t first_vertex, uint32_t instanc
 	}
 }
 
-// The instance group of a vertex shader that reads gl_InstanceIndex, for a draw of one instance: 1/S, 0.5/S and S 0,
-// so its prologue keeps the vertex's index and takes the instance from w (xost:docs/xsc.md, "Interface conventions");
-// a float holds it exactly up to 2^24.
-static void write_instance_index(const Pipeline *pipeline, uint32_t instance)
+// An instanced vertex shader's group for a draw of one instance: 1/S, 0.5/S and S 0, so its prologue keeps the vertex's
+// index and takes the instance from w (xost:docs/xsc.md, "Interface conventions"); a float holds it exactly up to 2^24.
+static void write_instance(const Pipeline *pipeline, uint32_t instance)
 {
-	if (!pipeline->reads_instance_index)
+	if (!pipeline->vertex.instanced)
 		return;
 	const float values[4] = { 0.0f, 0.0f, 0.0f, (float)instance };
-	xsdk_gpu_set_vertex_constants(pipeline->instance_index_constant, values, 1);
+	xsdk_gpu_set_vertex_constants(pipeline->vertex.instance_constant, values, 1);
 }
 
 // One instance, in the pieces its pipeline splits a draw into (Pipeline, piece_vertices).
 static void draw_instance(Replay *replay, uint32_t vertex_count, uint32_t first_vertex, uint32_t instance)
 {
 	const Pipeline *const pipeline = replay->pipeline;
-	write_instance_index(pipeline, instance);
+	write_instance(pipeline, instance);
 	for (uint32_t start = 0;; start += pipeline->piece_step) {
-		point_streams(replay, (int32_t)(first_vertex + start), instance);
+		point_streams(replay, (int32_t)(first_vertex + start));
 		const uint32_t left = vertex_count - start;
 		xsdk_gpu_draw(pipeline->primitive, left < pipeline->piece_vertices ? left : pipeline->piece_vertices);
 		if (left <= pipeline->piece_vertices)
@@ -1051,8 +1051,8 @@ static void draw_indexed_instance(
 	Replay *replay, uint32_t count, uint32_t first_index, int32_t vertex_offset, uint32_t instance)
 {
 	const Pipeline *const pipeline = replay->pipeline;
-	write_instance_index(pipeline, instance);
-	point_streams(replay, vertex_offset, instance);
+	write_instance(pipeline, instance);
+	point_streams(replay, vertex_offset);
 	const uint32_t index_bytes = replay->index_32_bit ? 4 : 2;
 	for (uint32_t start = 0;; start += pipeline->piece_step) {
 		const uint32_t address = replay->index_address + (first_index + start) * index_bytes;
@@ -1077,24 +1077,52 @@ static bool drawable(const Replay *replay, uint32_t count, uint32_t instances)
 	return true;
 }
 
-// A draw an instance: the simple way, before a shader that fetches at an index it works out (docs/ROADMAP.md,
-// milestone 24).
+// An instanced pipeline's list draws its instances together, each count vertices or indices taken down to whole
+// primitives, as Vulkan draws no partial one; 0 where they go an instance at a time: a pipeline that isn't instanced, a
+// strip, a fan, or an instance past what a draw packet holds (docs/SUPPORT.md, Commands).
+static uint32_t instanced_list(const Pipeline *pipeline, uint32_t count)
+{
+	if (!pipeline->vertex.instanced || !pipeline->list_vertices || count > V4X_MAX_DRAW_VERTICES)
+		return 0;
+	return count - count % pipeline->list_vertices;
+}
+
 static void draw(
 	Replay *replay, uint32_t vertex_count, uint32_t first_vertex, uint32_t instance_count, uint32_t first_instance)
 {
 	if (!drawable(replay, vertex_count, instance_count))
 		return;
 	prepare_draw(replay);
+	const Pipeline *const pipeline = replay->pipeline;
+	const uint32_t whole = instanced_list(pipeline, vertex_count);
+	if (whole) {
+		point_streams(replay, (int32_t)first_vertex);
+		xsdk_gpu_draw_instanced(pipeline->primitive, whole, first_instance, instance_count);
+		return;
+	}
 	for (uint32_t i = 0; i < instance_count; i++)
 		draw_instance(replay, vertex_count, first_vertex, first_instance + i);
 }
 
+// A list's indices are repeated, a copy an instance, unless the copies' memory is full (transfer.c); one instance draws
+// from the app's own, which a copy would only read back first, from write-combined memory at 80 MB/s
+// (xsdk:docs/HARDWARE.md, "Instancing on the console, milestone 47 step 1").
 static void draw_indexed(Replay *replay, uint32_t count, uint32_t first_index, int32_t vertex_offset,
 	uint32_t instance_count, uint32_t first_instance)
 {
 	if (!drawable(replay, count, instance_count))
 		return;
 	prepare_draw(replay);
+	const Pipeline *const pipeline = replay->pipeline;
+	const uint32_t whole = instanced_list(pipeline, count);
+	XsdkRepeatedIndices repeated;
+	if (whole && instance_count > 1 &&
+		v4x_transfer_repeat_indices(replay->queue, replay->index_bytes + first_index * (replay->index_32_bit ? 4 : 2),
+			replay->index_32_bit, whole, instance_count, &repeated)) {
+		point_streams(replay, vertex_offset);
+		xsdk_gpu_draw_indexed_instanced(pipeline->primitive, &repeated, first_instance, instance_count);
+		return;
+	}
 	for (uint32_t i = 0; i < instance_count; i++)
 		draw_indexed_instance(replay, count, first_index, vertex_offset, first_instance + i);
 }
@@ -1339,6 +1367,7 @@ static void replay_command(VkQueue queue, VkCommandBuffer buffer, Replay *replay
 			replay_command(queue, command->secondary, replay, c);
 		break;
 	case COMMAND_BIND_INDEX_BUFFER:
+		replay->index_bytes = command->index_buffer.bytes;
 		replay->index_address = command->index_buffer.address;
 		replay->index_32_bit = command->index_buffer.is_32_bit;
 		break;

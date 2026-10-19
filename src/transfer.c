@@ -1,5 +1,6 @@
 #include "transfer.h"
 
+#include <altivec.h>
 #include <math.h>
 #include <string.h>
 
@@ -25,10 +26,18 @@ enum {
 	ROWS = 3,
 	// D24's largest value, depth 1.
 	DEPTH_MAX = 0xFFFFFF,
+	// An indexed instanced draw's copies of its indices at most, which met step 1's cost targets on the console
+	// (xsdk:docs/HARDWARE.md, "Instancing on the console, milestone 47 step 1").
+	INDEX_COPIES = 64,
+	// The bits of an index the GPU takes (xenia:src/xenia/gpu/dxbc_shader_translator.cc:346-374).
+	INDEX_MASK = 0xFFFFFF,
+	QUAD_BYTES = 16,
 };
 
 // Rows of texels on their way between images; the queue is externally synchronized, so one set will do.
 static uint8_t rows[ROWS][ROW_BYTES] __attribute__((aligned(16)));
+// A draw's indices on their way into their copies, likewise.
+static uint32_t indices[V4X_MAX_DRAW_VERTICES];
 
 static uint32_t level_size(uint32_t size, uint32_t level)
 {
@@ -370,4 +379,59 @@ void v4x_transfer_copy_queries(VkQueue queue, const QueryCopy *copy)
 			put_result(out, 1, available, wide);
 	}
 	buffer_written(copy->address, copy->count * copy->stride_bytes);
+}
+
+// The app's indices as the GPU takes them, into indices. Mapped memory is write-combined, so where they're aligned
+// they're read 16 bytes a load: 80 MB/s, against 21 a word at a time (xsdk:docs/HARDWARE.md, "Instancing on the
+// console, milestone 47 step 1").
+static void read_indices(volatile const uint8_t *from, bool is_32_bit, uint32_t count)
+{
+	const uint32_t index_bytes = is_32_bit ? 4 : 2;
+	const uint32_t per_quad = QUAD_BYTES / index_bytes;
+	uint32_t quad[QUAD_BYTES / 4] __attribute__((aligned(16)));
+	for (uint32_t i = 0; i < count;) {
+		volatile const uint8_t *const at = from + i * index_bytes;
+		if ((uintptr_t)at % QUAD_BYTES || count - i < per_quad) {
+			indices[i++] = (is_32_bit ? *(volatile const uint32_t *)at : *(volatile const uint16_t *)at) & INDEX_MASK;
+			continue;
+		}
+		vec_st(vec_ld(0, (const vector unsigned int *)(uintptr_t)at), 0, (vector unsigned int *)quad);
+		// 16-bit indices lie two to a word, the first in its high half, as the CPU stores them.
+		for (uint32_t j = 0; j < per_quad; j++)
+			indices[i++] = (is_32_bit ? quad[j] : quad[j / 2] >> (j % 2 ? 0 : 16) & 0xFFFF) & INDEX_MASK;
+	}
+}
+
+// Room for the copies in the part being filled, else in the next once the GPU is done with what the submission that
+// last filled it drew; NULL if that's this one, which can't wait for itself inside a tiled pass's recording.
+static volatile uint32_t *copy_room(VkQueue queue, uint32_t size_bytes)
+{
+	if (queue->copy_part_bytes + size_bytes > V4X_INDEX_COPY_PART_BYTES) {
+		const uint32_t next = (queue->copy_part + 1) % V4X_INDEX_COPY_PARTS;
+		if (queue->copy_serials[next] == queue->serial)
+			return NULL;
+		wait_for_serial(queue, queue->copy_serials[next], "repeated indices");
+		queue->copy_part = next;
+		queue->copy_part_bytes = 0;
+	}
+	queue->copy_serials[queue->copy_part] = queue->serial;
+	volatile uint32_t *const room =
+		queue->index_copies + (queue->copy_part * V4X_INDEX_COPY_PART_BYTES + queue->copy_part_bytes) / 4;
+	queue->copy_part_bytes += size_bytes;
+	return room;
+}
+
+bool v4x_transfer_repeat_indices(VkQueue queue, volatile const uint8_t *from, bool is_32_bit, uint32_t count,
+	uint32_t instance_count, XsdkRepeatedIndices *repeated)
+{
+	read_indices(from, is_32_bit, count);
+	const uint32_t copies = instance_count < INDEX_COPIES ? instance_count : INDEX_COPIES;
+	const uint32_t size_bytes = xsdk_gpu_repeated_index_bytes(indices, count, copies);
+	volatile uint32_t *const room = copy_room(queue, size_bytes);
+	if (!room)
+		return false;
+	xsdk_gpu_repeat_indices(repeated, room, indices, count, copies);
+	// The GPU's caches may hold what the part held before (xsdk:include/xsdk/gpu.h, xsdk_gpu_repeat_indices).
+	xsdk_gpu_invalidate(repeated->address, size_bytes);
+	return true;
 }

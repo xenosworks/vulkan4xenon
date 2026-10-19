@@ -8,6 +8,9 @@ v4x_shader_bundle, which the layer looks the SPIR-V up in.
 --optimize has xost rewrite each program's instructions first (xsdk:src/xsc_optimize.c): fewer instructions, the same
 results.
 
+Each vertex shader that doesn't read gl_InstanceIndex is built a second time with xost's instanced option, the variant
+a pipeline with a binding at the instance's rate takes; one that reads it is lowered instanced already.
+
 The layer's own shaders go in a bundle of their own, their symbols prefixed:
 
     build_shaders.py --xost ... --output src/blit_shaders --bundle v4x_blit_bundle --prefix v4x_ src/shaders/blit.*
@@ -28,7 +31,7 @@ from pathlib import Path
 RESOURCE_KINDS = {"push": "V4X_RESOURCE_PUSH_CONSTANTS", "uniform": "V4X_RESOURCE_UNIFORM_BUFFER",
                   "sampler": "V4X_RESOURCE_SAMPLER", "push_loop": "V4X_RESOURCE_PUSH_LOOP",
                   "uniform_loop": "V4X_RESOURCE_UNIFORM_LOOP", "comparison": "V4X_RESOURCE_COMPARISON",
-                  "instance": "V4X_RESOURCE_INSTANCE_INDEX", "fixed_loop": "V4X_RESOURCE_FIXED_LOOP"}
+                  "instance": "V4X_RESOURCE_INSTANCE", "fixed_loop": "V4X_RESOURCE_FIXED_LOOP"}
 DEFAULT_BUNDLE = "v4x_shader_bundle"
 FNV_OFFSET_BASIS = 0xCBF29CE484222325
 FNV_PRIME = 0x100000001B3
@@ -51,9 +54,9 @@ def compile_spirv(glslang, source, directory):
     return output.read_bytes()
 
 
-def lower(xost, spirv_bytes, source, optimize=False):
-    """The container, xost's pooled literals, where its blocks, samplers and gl_InstanceIndex landed, and the clip
-    planes it reads."""
+def lower(xost, spirv_bytes, source, optimize=False, instanced=False):
+    """The container, xost's pooled literals, where its blocks, samplers and instance group landed, and the clip
+    planes it reads; instanced lowers a vertex shader for instanced draws."""
     sys.path.insert(0, str(xost))
     from xasm.program import XSDK_REGISTERS
     from xsc import native
@@ -62,7 +65,7 @@ def lower(xost, spirv_bytes, source, optimize=False):
     # refuses a shader past its kind's share, which would hang the GPU.
     try:
         container, manifest, resources = native.compile_spirv(spirv_bytes, XSDK_REGISTERS.pixel,
-                                                              XSDK_REGISTERS.vertex, optimize)
+                                                              XSDK_REGISTERS.vertex, optimize, instanced=instanced)
     except native.CompileError as error:
         sys.exit(f"{source}: xost didn't compile it: {error}")
     # Each resource as include/vulkan4xenon.h's V4xShaderResource, a start and step of 0 but for a block loop.
@@ -116,11 +119,14 @@ def write_outputs(output, shaders, sources, bundle):
     entries = []
     for shader in shaders:
         name = shader["name"]
-        spirv_words = list(struct.unpack(f"<{len(shader['spirv']) // 4}I", shader["spirv"]))
+        # An instanced variant shares its plain shader's SPIR-V, which the app hands vkCreateShaderModule.
+        instanced = shader.get("instanced", False)
+        if not instanced:
+            spirv_words = list(struct.unpack(f"<{len(shader['spirv']) // 4}I", shader["spirv"]))
+            header.append(f"extern const uint32_t {name}_spirv[];")
+            header.append(f"enum {{ {name.upper()}_SPIRV_BYTES = {len(shader['spirv'])} }};")
+            source += words_array(f"{name}_spirv", spirv_words, "const") + [""]
         container_words = list(struct.unpack(f">{len(shader['container']) // 4}I", shader["container"]))
-        header.append(f"extern const uint32_t {name}_spirv[];")
-        header.append(f"enum {{ {name.upper()}_SPIRV_BYTES = {len(shader['spirv'])} }};")
-        source += words_array(f"{name}_spirv", spirv_words, "const") + [""]
         source += words_array(f"{name}_container", container_words) + [""]
         literals = "NULL"
         if shader["literals"]:
@@ -145,7 +151,8 @@ def write_outputs(output, shaders, sources, bundle):
             source += ["};", ""]
         entries.append(f"\t{{ 0x{shader['hash']:016X}ull, {len(shader['spirv'])}, {name}_container, "
                        f"{len(shader['container'])}, {literals}, {len(shader['literals'])}, {resources}, "
-                       f"{len(shader['resources'])}, {clip_planes}, {len(shader['clip_planes'])} }},")
+                       f"{len(shader['resources'])}, {clip_planes}, {len(shader['clip_planes'])}, "
+                       f"{'true' if instanced else 'false'} }},")
     source += ["static const V4xShader shaders[] = {"] + entries + ["};", ""]
     source.append(f"const V4xShaderBundle {bundle} = {{ shaders, {len(shaders)} }};")
     header += ["", "#endif"]
@@ -172,11 +179,16 @@ def main():
     with tempfile.TemporaryDirectory(dir="build") as directory:
         for source in args.sources:
             spirv_bytes = compile_spirv(glslang, source, directory)
-            container, literals, resources, clip_planes = lower(args.xost.resolve(), spirv_bytes, source,
-                                                                args.optimize)
-            shaders.append({"name": c_name(source, args.prefix), "spirv": spirv_bytes, "hash": fnv1a_64(spirv_bytes),
-                            "container": container, "literals": literals, "resources": resources,
-                            "clip_planes": clip_planes})
+            for instanced in (False, True):
+                container, literals, resources, clip_planes = lower(args.xost.resolve(), spirv_bytes, source,
+                                                                    args.optimize, instanced)
+                shaders.append({"name": c_name(source, args.prefix) + ("_instanced" if instanced else ""),
+                                "spirv": spirv_bytes, "hash": fnv1a_64(spirv_bytes), "container": container,
+                                "literals": literals, "resources": resources, "clip_planes": clip_planes,
+                                "instanced": instanced})
+                # A fragment shader has no variant, nor does a vertex shader already lowered instanced.
+                if source.suffix != ".vert" or any(resource[0] == "instance" for resource in resources):
+                    break
     write_outputs(args.output, shaders, args.sources, args.bundle)
 
 
