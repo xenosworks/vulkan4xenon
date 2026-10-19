@@ -493,14 +493,14 @@ static void xsdk_submit_frame(void)
 	state.fence = xsdk_gpu_fence();
 }
 
+// A look every 5 us, as looking without a break made a resolve 4.2% longer (xsdk:docs/HARDWARE.md, "Looking at a
+// fence costs the GPU"); a stopped GPU shows after the spin and as long again in 1 ms sleeps.
 static bool xsdk_wait_frame(void)
 {
-	const uint64_t start = bench_now_ns();
-	while (!xsdk_gpu_fence_done(state.fence)) {
-		if (bench_now_ns() - start > (uint64_t)FRAME_TIMEOUT_MS * 1000000)
-			return false;
-	}
-	return true;
+	xsdk_gpu_set_wait_spin(FRAME_TIMEOUT_MS * 1000);
+	const bool done = NT_SUCCESS(xsdk_gpu_wait(state.fence, FRAME_TIMEOUT_MS));
+	xsdk_gpu_set_wait_spin(0);
+	return done;
 }
 
 static void xsdk_present_frame(void)
