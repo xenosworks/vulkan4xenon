@@ -274,9 +274,9 @@ static bool build(const Harness *harness, Scene *scene)
 	return ok && make_buffers(harness, scene);
 }
 
-// Milestone 47's: instanced_places.vert's plain shader and its instanced variant compiled on the console, the strip's
-// and the 1,000 instances' pipelines, and their colours.
-static bool build_more(const Harness *harness, Scene *scene)
+// Milestone 47's: instanced_places.vert's plain shader and its instanced variant compiled on the console, the shaders
+// that compiled in compiled_here, the strip's and the 1,000 instances' pipelines, and their colours.
+static bool build_more(const Harness *harness, Scene *scene, uint32_t *compiled_here)
 {
 	memcpy(compiled_places, instanced_places_vert_spirv, sizeof compiled_places);
 	compiled_places[GENERATOR_WORD] ^= GENERATOR_CHANGE;
@@ -286,9 +286,9 @@ static bool build_more(const Harness *harness, Scene *scene)
 		memcpy(colors[i], color, sizeof color);
 	}
 	const uint32_t compiled = v4x_shader_counts().compiled;
-	return harness_ok("compiled places pipeline", create_pipeline(harness, scene, PIPELINE_SEVEN)) &&
-		v4x_shader_counts().compiled - compiled == COMPILED_HERE &&
-		harness_ok("strip pipeline", create_pipeline(harness, scene, PIPELINE_STRIP)) &&
+	const bool places = harness_ok("compiled places pipeline", create_pipeline(harness, scene, PIPELINE_SEVEN));
+	*compiled_here = v4x_shader_counts().compiled - compiled;
+	return places && harness_ok("strip pipeline", create_pipeline(harness, scene, PIPELINE_STRIP)) &&
 		harness_ok("grid pipeline", create_pipeline(harness, scene, PIPELINE_GRID)) &&
 		harness_ok("colours",
 			harness_buffer(harness, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, colors, sizeof colors, &scene->colors,
@@ -486,11 +486,13 @@ void test_instancing(const Harness *harness)
 	make_probes(&scene);
 	const bool built = build(harness, &scene);
 	check("instancing: pipelines with a binding at the instance's rate made, with and without gl_InstanceIndex", built);
-	const bool more = built && build_more(harness, &scene);
+	// A variant that didn't compile fails its check alone; the scene still draws with what was made.
+	uint32_t compiled_here = 0;
+	const bool more = built && build_more(harness, &scene, &compiled_here);
 	check(
 		"instancing: a list's pipeline from instanced_places.vert compiled on the console, its instanced variant "
 		"compiled there too, a strip's and instance_grid.vert's made",
-		more);
+		more && compiled_here == COMPILED_HERE);
 	const bool recorded = more && harness->swapchain && harness_ok("recording", record(harness, &scene));
 	uint32_t misses = 0;
 	const uint32_t frames = recorded ? harness_frames(harness, scene.commands, FRAMES, rows_hold, &scene, &misses) : 0;
