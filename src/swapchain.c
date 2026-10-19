@@ -4,6 +4,7 @@
 
 #include "host.h"
 #include "objects.h"
+#include "profile.h"
 #include "sync.h"
 #include "xsdk/gpu.h"
 #include "xsdk/log.h"
@@ -167,5 +168,6 @@ VKAPI_ATTR VkResult VKAPI_CALL vkQueuePresentKHR(VkQueue queue, const VkPresentI
 			result = presented;
 	}
 	forget_edram_after_system_draws(queue);
+	v4x_profile_present();
 	return result;
 }

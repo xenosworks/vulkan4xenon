@@ -9,6 +9,7 @@
 #include "host.h"
 #include "objects.h"
 #include "pipeline_state.h"
+#include "profile.h"
 #include "sync.h"
 #include "transfer.h"
 #include "xsdk/gpu.h"
@@ -158,10 +159,12 @@ static void apply_pipeline(const Pipeline *pipeline, const Replay *replay)
 
 static void write_constants(bool vertex, uint32_t first, const float *values, uint32_t count)
 {
+	v4x_profile_lap(V4X_PROFILE_RESOURCES);
 	if (vertex)
 		xsdk_gpu_set_vertex_constants(first, values, count);
 	else
 		xsdk_gpu_set_pixel_constants(first, values, count);
+	v4x_profile_lap(V4X_PROFILE_CONSTANTS);
 }
 
 // A uniform buffer's bytes as the block's registers, zero past the descriptor's range.
@@ -202,10 +205,12 @@ static bool load_uniform_buffer(const Replay *replay, const V4xShaderResource *r
 		descriptor->range_bytes < resource->count * 16)
 		return false;
 	const uint32_t count = (resource->count + CONSTANT_GROUP - 1) / CONSTANT_GROUP * CONSTANT_GROUP;
+	v4x_profile_lap(V4X_PROFILE_RESOURCES);
 	if (vertex)
 		xsdk_gpu_load_vertex_constants(resource->first, address, count);
 	else
 		xsdk_gpu_load_pixel_constants(resource->first, address, count);
+	v4x_profile_lap(V4X_PROFILE_CONSTANTS);
 	return true;
 }
 
@@ -987,6 +992,7 @@ static void end_pass_command(VkQueue queue, VkCommandBuffer buffer, Replay *repl
 static void prepare_draw(Replay *replay)
 {
 	const Pipeline *const pipeline = replay->pipeline;
+	v4x_profile_draw();
 	replay->queue->drawn = true;
 	if (replay->pipeline_dirty) {
 		apply_pipeline(pipeline, replay);
@@ -999,7 +1005,9 @@ static void prepare_draw(Replay *replay)
 	replay->pipeline_dirty = false;
 	replay->viewport_dirty = false;
 	replay->dynamic_dirty = false;
+	v4x_profile_lap(V4X_PROFILE_PIPELINE);
 	apply_resources(pipeline, replay);
+	v4x_profile_lap(V4X_PROFILE_RESOURCES);
 	apply_clip_planes(pipeline, replay);
 }
 
@@ -1041,7 +1049,9 @@ static void draw_instance(Replay *replay, uint32_t vertex_count, uint32_t first_
 	for (uint32_t start = 0;; start += pipeline->piece_step) {
 		point_streams(replay, (int32_t)(first_vertex + start));
 		const uint32_t left = vertex_count - start;
+		v4x_profile_lap(V4X_PROFILE_CHECKS);
 		xsdk_gpu_draw(pipeline->primitive, left < pipeline->piece_vertices ? left : pipeline->piece_vertices);
+		v4x_profile_lap(V4X_PROFILE_DRAWS);
 		if (left <= pipeline->piece_vertices)
 			break;
 	}
@@ -1058,7 +1068,9 @@ static void draw_indexed_instance(
 		const uint32_t address = replay->index_address + (first_index + start) * index_bytes;
 		const uint32_t left = count - start;
 		const uint32_t indices = left < pipeline->piece_vertices ? left : pipeline->piece_vertices;
+		v4x_profile_lap(V4X_PROFILE_CHECKS);
 		xsdk_gpu_draw_indexed(pipeline->primitive, address, indices, replay->index_32_bit);
+		v4x_profile_lap(V4X_PROFILE_DRAWS);
 		if (left <= pipeline->piece_vertices)
 			break;
 	}
@@ -1090,6 +1102,7 @@ static uint32_t instanced_list(const Pipeline *pipeline, uint32_t count)
 static void draw(
 	Replay *replay, uint32_t vertex_count, uint32_t first_vertex, uint32_t instance_count, uint32_t first_instance)
 {
+	v4x_profile_lap(V4X_PROFILE_DISPATCH);
 	if (!drawable(replay, vertex_count, instance_count))
 		return;
 	prepare_draw(replay);
@@ -1097,7 +1110,9 @@ static void draw(
 	const uint32_t whole = instanced_list(pipeline, vertex_count);
 	if (whole) {
 		point_streams(replay, (int32_t)first_vertex);
+		v4x_profile_lap(V4X_PROFILE_CHECKS);
 		xsdk_gpu_draw_instanced(pipeline->primitive, whole, first_instance, instance_count);
+		v4x_profile_lap(V4X_PROFILE_DRAWS);
 		return;
 	}
 	for (uint32_t i = 0; i < instance_count; i++)
@@ -1110,6 +1125,7 @@ static void draw(
 static void draw_indexed(Replay *replay, uint32_t count, uint32_t first_index, int32_t vertex_offset,
 	uint32_t instance_count, uint32_t first_instance)
 {
+	v4x_profile_lap(V4X_PROFILE_DISPATCH);
 	if (!drawable(replay, count, instance_count))
 		return;
 	prepare_draw(replay);
@@ -1120,7 +1136,9 @@ static void draw_indexed(Replay *replay, uint32_t count, uint32_t first_index, i
 		v4x_transfer_repeat_indices(replay->queue, replay->index_bytes + first_index * (replay->index_32_bit ? 4 : 2),
 			replay->index_32_bit, whole, instance_count, &repeated)) {
 		point_streams(replay, vertex_offset);
+		v4x_profile_lap(V4X_PROFILE_CHECKS);
 		xsdk_gpu_draw_indexed_instanced(pipeline->primitive, &repeated, first_instance, instance_count);
+		v4x_profile_lap(V4X_PROFILE_DRAWS);
 		return;
 	}
 	for (uint32_t i = 0; i < instance_count; i++)
@@ -1312,8 +1330,10 @@ static void replay_command(VkQueue queue, VkCommandBuffer buffer, Replay *replay
 			(const uint32_t *)(buffer->data + command->descriptor_set.offsets_at);
 		break;
 	case COMMAND_PUSH_CONSTANTS:
+		v4x_profile_lap(V4X_PROFILE_DISPATCH);
 		memcpy((uint8_t *)replay->push + command->push_constants.offset_bytes,
 			buffer->data + command->push_constants.data_at, command->push_constants.size_bytes);
+		v4x_profile_lap(V4X_PROFILE_PUSH);
 		break;
 	case COMMAND_COPY_BUFFER_TO_IMAGE:
 		v4x_transfer_buffer_to_image(queue, (const LevelCopy *)(buffer->data + command->state_at));
@@ -1363,6 +1383,7 @@ static void replay_command(VkQueue queue, VkCommandBuffer buffer, Replay *replay
 		break;
 	// In place, with the state the replay has bound; a secondary command buffer begins and ends no render pass.
 	case COMMAND_EXECUTE_COMMANDS:
+		v4x_profile_commands(command->secondary->count);
 		for (uint32_t c = 0; c < command->secondary->count; c++)
 			replay_command(queue, command->secondary, replay, c);
 		break;
@@ -1404,21 +1425,26 @@ static void replay_command(VkQueue queue, VkCommandBuffer buffer, Replay *replay
 		end_query(replay);
 		break;
 	}
+	// What the pushes and draws didn't charge to their own stages: the other commands, and their dispatch.
+	v4x_profile_lap(V4X_PROFILE_COMMANDS);
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit(
 	VkQueue queue, uint32_t submitCount, const VkSubmitInfo *pSubmits, VkFence fence)
 {
+	v4x_profile_submit();
 	// Drain the CPU's write-combining, so the GPU reads what the app wrote to mapped memory.
 	__asm__ volatile("sync" ::: "memory");
 	// Mapped memory is coherent, so the app may have written any of it; one invalidate covers it all, as xsdk's set-up
 	// covers memory (xsdk:src/gpu_setup.c).
 	xsdk_gpu_invalidate(0, ALL_MEMORY_BYTES);
 	queue->serial = queue->serial + 1 ? queue->serial + 1 : 1;
+	v4x_profile_lap(V4X_PROFILE_SUBMIT);
 	for (uint32_t i = 0; i < submitCount; i++) {
 		for (uint32_t j = 0; j < pSubmits[i].commandBufferCount; j++) {
 			const VkCommandBuffer buffer = pSubmits[i].pCommandBuffers[j];
 			Replay replay = { .queue = queue, .serial = queue->serial, .pipeline_dirty = true };
+			v4x_profile_commands(buffer->count);
 			for (uint32_t c = 0; c < buffer->count; c++)
 				replay_command(queue, buffer, &replay, c);
 		}
@@ -1427,6 +1453,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit(
 	const uint32_t submitted = xsdk_gpu_fence();
 	queue->submit_fences[queue->serial % V4X_SUBMIT_FENCES] = submitted;
 	v4x_sync_submitted(v4x_object(fence), submitted);
+	v4x_profile_lap(V4X_PROFILE_SUBMIT);
 	return VK_SUCCESS;
 }
 

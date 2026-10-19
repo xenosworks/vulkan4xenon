@@ -3064,6 +3064,16 @@ Done when:
 
 If step 1 shows these can't be reached by steps 2 to 5, the targets come back to the user with the measurement.
 
+**The profile build,** step 1's measurement: `make clean && make V4X_PROFILE=1` builds the layer, the test title and
+vkbench with the submit timed (src/profile.c); a normal build compiles its hooks to nothing. Each hook is a lap: it reads
+the time base and charges the time since the last lap to one stage (`V4xProfileStage`, include/vulkan4xenon.h), so the
+stages add up to the submit. The first submit times 10,000 laps back to back, to learn what one costs.
+- **vkbench** logs `vulkan4xenon: profile, <scene>:` lines after each scene's measured frames through the layer: the
+  counts, with the draws and microseconds a submit and a present, and what a lap costs; then each stage's nanoseconds a
+  draw, as timed and less what its laps cost, with its laps a draw; then `all`, their sum.
+- **Any title,** Dusklight among them, logs the same lines as `the last 10 s` at its first present after each 10
+  seconds, so its frames are presents.
+
 ## 5. The Dusklight track
 
 An outline, made precise one milestone at a time. Each starts only when agreed.

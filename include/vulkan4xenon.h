@@ -99,6 +99,46 @@ typedef struct {
 
 V4xShaderCounts v4x_shader_counts(void);
 
+// The parts of vkQueueSubmit a profile build times, made with make V4X_PROFILE=1 (docs/ROADMAP.md, milestone 29).
+typedef enum {
+	// The replay's loop and switch, from one command to the next push's copy or draw.
+	V4X_PROFILE_DISPATCH,
+	// vkCmdPushConstants' bytes copied into the replay.
+	V4X_PROFILE_PUSH,
+	// A draw's pipeline state: checking it, and setting it again when a bind or a command made it dirty.
+	V4X_PROFILE_PIPELINE,
+	// A draw's float constants through xsdk: the blocks it sets and the uniform blocks it has the GPU load.
+	V4X_PROFILE_CONSTANTS,
+	// The rest of a draw's resources: each one's kind, loops, uniform blocks read on the CPU, and textures.
+	V4X_PROFILE_RESOURCES,
+	// A draw's checks: drawable, clip planes, instances, pieces and streams.
+	V4X_PROFILE_CHECKS,
+	// xsdk's draw calls.
+	V4X_PROFILE_DRAWS,
+	// The other commands: binds, dynamic state, render passes, clears, copies, events and queries.
+	V4X_PROFILE_COMMANDS,
+	// The submit's own: draining the CPU's writes, the invalidate, and the fence that kicks the ring.
+	V4X_PROFILE_SUBMIT,
+	V4X_PROFILE_STAGES,
+} V4xProfileStage;
+
+// From the first submit: each stage's CPU time base ticks, at 49.875 MHz, and how many laps timed it, each lap adding
+// what one costs; the counts wrap, so take differences.
+typedef struct {
+	uint64_t ticks[V4X_PROFILE_STAGES];
+	uint32_t laps[V4X_PROFILE_STAGES];
+	uint32_t submits;
+	uint32_t commands;
+	uint32_t draws;
+	uint32_t presents;
+} V4xProfile;
+
+#ifdef V4X_PROFILE
+V4xProfile v4x_profile_totals(void);
+// Logs what the submits from one total to another cost: the counts, then each stage a draw, as timed and less its laps.
+void v4x_profile_log(const char *what, const V4xProfile *from, const V4xProfile *to);
+#endif
+
 #ifdef __cplusplus
 }
 #endif
