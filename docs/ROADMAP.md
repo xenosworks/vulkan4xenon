@@ -3077,6 +3077,16 @@ stages add up to the submit. The first submit times 10,000 laps back to back, to
   seconds, so its frames are presents. Then each command type that took 2% of the submit or more, and the replay's
   waits for the GPU (step 6), each in microseconds and times a present; a wait is counted in its stage as well.
 
+**Closed on 2026-10-19 short of its targets, by the user's choice** (results/2026-10-19-milestone-29/):
+- `draws_4000`'s submit costs 0.575 us a draw and `states_1000`'s 0.93 to 0.97. Most of what's left is xsdk's own
+  constant setters, which cost the same through xsdk itself.
+- vkbench's pictures and vulkan4xenon_test pass, and Dusklight's title scene runs as before.
+- The two waits step 1 found outside the draw are gone:
+  - xsdk keeps 64 resolve rectangles, which took Dusklight's submit from 10.5 to 11.9 ms a frame to about 1 ms;
+  - the movie's uploads are faster, 460 to 544 us a frame from 2.35 ms.
+
+Milestone 29 is done.
+
 ## 5. The Dusklight track
 
 An outline, made precise one milestone at a time. Each starts only when agreed.

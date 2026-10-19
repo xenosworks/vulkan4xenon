@@ -76,3 +76,19 @@ instance, piece and stream checks.
 **Against the targets:** `draws_4000`'s submit is 0.575 us a draw against 0.40, and `states_1000`'s 0.97 against
 0.90. What's left is mostly xsdk's own constant setters, 229 ns for the two blocks a cube writes, and the replay's
 dispatch.
+
+## Step 6: uploads
+
+The profile build counts the replay's waits for the GPU now (src/transfer.c, src/profile.c). Dusklight's attract movie
+(`step6_dusklight_profile.log`) waited for none: Aurora uploads each video frame into a new image, so its copies'
+time, about 2.35 ms a frame, was the CPU writing the texels into Xenos's tiled layout. In its place, xsdk's tiled
+uploads put a row's whole tiles at once (xsdk:results/2026-10-19-tiled-uploads): the movie's copies took 460 to 544 us
+a frame (`step6_dusklight_profile_uploads.log`), and vulkan4xenon_test passed 492 of 492 against it.
+
+## Closed
+
+On 2026-10-19 the user closed the milestone at these numbers: `draws_4000`'s submit 0.575 us a draw against the
+target's 0.40, from 0.671, and `states_1000`'s 0.93 to 0.97 against 0.90, from 1.27. What's left is mostly xsdk's own
+constant setters, which cost the same through xsdk itself, and the replay's dispatch. For Dusklight the gains that
+mattered were outside the draw: xsdk's resolve rectangles (10.5 to 11.9 ms a frame of submit down to about 1 ms) and
+the tiled uploads.
