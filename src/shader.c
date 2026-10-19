@@ -110,7 +110,7 @@ static uint8_t resource_kind(XsdkXscResourceKind kind)
 		return V4X_RESOURCE_UNIFORM_BUFFER;
 	case XSDK_XSC_COMPARISON:
 		return V4X_RESOURCE_COMPARISON;
-	case XSDK_XSC_INSTANCE_INDEX:
+	case XSDK_XSC_INSTANCE:
 		return V4X_RESOURCE_INSTANCE_INDEX;
 	default:
 		return V4X_RESOURCE_SAMPLER;

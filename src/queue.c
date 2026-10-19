@@ -1022,14 +1022,14 @@ static void point_streams(Replay *replay, int32_t first_vertex, uint32_t instanc
 	}
 }
 
-// The instance's index in every component, for a vertex shader that reads gl_InstanceIndex (xost:docs/xsc.md,
-// "Interface conventions"); a float holds it exactly up to 2^24.
+// The instance group of a vertex shader that reads gl_InstanceIndex, for a draw of one instance: 1/S, 0.5/S and S 0,
+// so its prologue keeps the vertex's index and takes the instance from w (xost:docs/xsc.md, "Interface conventions");
+// a float holds it exactly up to 2^24.
 static void write_instance_index(const Pipeline *pipeline, uint32_t instance)
 {
 	if (!pipeline->reads_instance_index)
 		return;
-	const float index = (float)instance;
-	const float values[4] = { index, index, index, index };
+	const float values[4] = { 0.0f, 0.0f, 0.0f, (float)instance };
 	xsdk_gpu_set_vertex_constants(pipeline->instance_index_constant, values, 1);
 }
 

@@ -27,7 +27,8 @@ enum {
 	V4X_RESOURCE_UNIFORM_LOOP,
 	// A sampler2DShadow's comparison: the float constant its sampler's compare op is written to.
 	V4X_RESOURCE_COMPARISON,
-	// A vertex shader's gl_InstanceIndex: a float constant the layer writes each instance's index into.
+	// A vertex shader's gl_InstanceIndex: the float constant of its instance group, which the layer writes each
+	// instance's index into, in w (xost:docs/xsc.md, "Interface conventions").
 	V4X_RESOURCE_INSTANCE_INDEX,
 	// Loops whose count is data, the third loop kind, last so the kinds before keep their numbers: loop constant count,
 	// which runs first passes, 255 (xsdk:include/xsdk/xsc.h, XSDK_XSC_FIXED_LOOP).
