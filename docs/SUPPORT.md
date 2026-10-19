@@ -501,7 +501,9 @@ Some are there to refuse, as the features they need aren't reported. Each logs w
     covers it, which buffers and offsets of 256 make the usual case (milestone 7).
   - Otherwise the CPU reads it, 16 bytes at a time where it can, and bytes past the descriptor's range read as 0.
     Mapped memory isn't cached, so each read goes to memory.
-- Push constants are copied in the same way, from what `vkCmdPushConstants` recorded.
+- Push constants are copied in the same way, from what `vkCmdPushConstants` recorded. A stage's push block writes only
+  the registers its stage's ranges cover, from the lowest range's offset to the highest's end, as a stage may read only
+  the push constants in its own ranges (milestone 29).
 
 ## Commands
 

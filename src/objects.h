@@ -305,12 +305,19 @@ typedef struct {
 	const DescriptorSetLayout *sets[V4X_MAX_DESCRIPTOR_SETS];
 	uint32_t set_count;
 	VkShaderStageFlags push_stages;
+	// The push constant bytes the vertex stage's ranges reach, then the fragment stage's: from the lowest offset to the
+	// highest end.
+	uint32_t push_offsets[2];
+	uint32_t push_ends[2];
 } PipelineLayout;
 
-// A shader resource with the stage it's for.
+// A shader resource with the stage it's for; a push block's registers that its stage's ranges cover, push_count from
+// push_first past the block's first, each 16 bytes of the push constants.
 typedef struct {
 	V4xShaderResource resource;
 	bool vertex;
+	uint8_t push_first;
+	uint8_t push_count;
 } StageResource;
 
 typedef struct {

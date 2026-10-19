@@ -19,6 +19,15 @@ enum {
 	STREAMS_A_SLOT = 3,
 };
 
+// Widens the push constant bytes a stage's ranges reach, vertex 0 or fragment 1, to take in a range of its.
+static void widen_push(PipelineLayout *layout, uint32_t stage, const VkPushConstantRange *range)
+{
+	if (range->offset < layout->push_offsets[stage])
+		layout->push_offsets[stage] = range->offset;
+	if (range->offset + range->size > layout->push_ends[stage])
+		layout->push_ends[stage] = range->offset + range->size;
+}
+
 VKAPI_ATTR VkResult VKAPI_CALL vkCreatePipelineLayout(VkDevice device, const VkPipelineLayoutCreateInfo *pCreateInfo,
 	const VkAllocationCallbacks *pAllocator, VkPipelineLayout *pPipelineLayout)
 {
@@ -36,8 +45,15 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreatePipelineLayout(VkDevice device, const VkP
 	layout->set_count = pCreateInfo->setLayoutCount;
 	for (uint32_t i = 0; i < pCreateInfo->setLayoutCount; i++)
 		layout->sets[i] = v4x_object(pCreateInfo->pSetLayouts[i]);
-	for (uint32_t i = 0; i < pCreateInfo->pushConstantRangeCount; i++)
-		layout->push_stages |= pCreateInfo->pPushConstantRanges[i].stageFlags;
+	layout->push_offsets[0] = layout->push_offsets[1] = V4X_MAX_PUSH_CONSTANT_BYTES;
+	for (uint32_t i = 0; i < pCreateInfo->pushConstantRangeCount; i++) {
+		const VkPushConstantRange *const range = &pCreateInfo->pPushConstantRanges[i];
+		layout->push_stages |= range->stageFlags;
+		if (range->stageFlags & VK_SHADER_STAGE_VERTEX_BIT)
+			widen_push(layout, 0, range);
+		if (range->stageFlags & VK_SHADER_STAGE_FRAGMENT_BIT)
+			widen_push(layout, 1, range);
+	}
 	*pPipelineLayout = v4x_handle(layout);
 	return VK_SUCCESS;
 }
@@ -165,6 +181,22 @@ static bool layout_has(const PipelineLayout *layout, const V4xShaderResource *re
 		binding->type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
 }
 
+// A stage reads only the push constants in its own ranges (Vulkan 1.0 spec, "Push Constant Interface"), so its
+// push block writes only the registers they cover, xost's register first + n holding bytes 16n to 16n + 15
+// (xsdk:src/xsc_resolve.c, assign_blocks); false when they cover none.
+static bool trim_push(const PipelineLayout *layout, StageResource *stage_resource)
+{
+	const uint32_t stage = stage_resource->vertex ? 0 : 1;
+	const uint32_t first = layout->push_offsets[stage] / 16;
+	const uint32_t covered = (layout->push_ends[stage] + 15) / 16;
+	const uint32_t end = covered < stage_resource->resource.count ? covered : stage_resource->resource.count;
+	if (end <= first)
+		return false;
+	stage_resource->push_first = (uint8_t)first;
+	stage_resource->push_count = (uint8_t)(end - first);
+	return true;
+}
+
 // Each stage's resources, checked against the layout and the GPU's constants: a fragment shader's stay below the group
 // xsdk keeps for gl_FragCoord (xsdk:include/xsdk/gpu.h, XSDK_PIXEL_CONSTANTS).
 static VkResult gather_resources(const PipelineLayout *layout, const V4xShader *shader, bool vertex, Pipeline *pipeline)
@@ -204,8 +236,11 @@ static VkResult gather_resources(const PipelineLayout *layout, const V4xShader *
 				(resource->kind == V4X_RESOURCE_PUSH_LOOP && resource->first + 4u > V4X_MAX_PUSH_CONSTANT_BYTES)))
 			return v4x_host_unsupported(
 				"a loop counted past the push constants or the loop constants, past 255 passes, or with no step");
+		StageResource stage_resource = { .resource = *resource, .vertex = vertex };
+		if (resource->kind == V4X_RESOURCE_PUSH_CONSTANTS && !trim_push(layout, &stage_resource))
+			continue;
 		pipeline->loop_count += loop;
-		pipeline->resources[pipeline->resource_count++] = (StageResource){ .resource = *resource, .vertex = vertex };
+		pipeline->resources[pipeline->resource_count++] = stage_resource;
 	}
 	return VK_SUCCESS;
 }

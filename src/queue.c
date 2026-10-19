@@ -316,10 +316,12 @@ static void apply_resources(const Pipeline *pipeline, Replay *replay)
 	if (pipeline->loop_count)
 		apply_loops(pipeline, replay);
 	for (uint32_t i = 0; i < pipeline->resource_count; i++) {
-		const V4xShaderResource *const resource = &pipeline->resources[i].resource;
-		const bool vertex = pipeline->resources[i].vertex;
+		const StageResource *const stage_resource = &pipeline->resources[i];
+		const V4xShaderResource *const resource = &stage_resource->resource;
+		const bool vertex = stage_resource->vertex;
 		if (resource->kind == V4X_RESOURCE_PUSH_CONSTANTS) {
-			write_constants(vertex, resource->first, replay->push, resource->count);
+			write_constants(vertex, resource->first + stage_resource->push_first,
+				&replay->push[4 * stage_resource->push_first], stage_resource->push_count);
 			continue;
 		}
 		if (resource->kind == V4X_RESOURCE_PUSH_LOOP || resource->kind == V4X_RESOURCE_UNIFORM_LOOP ||
