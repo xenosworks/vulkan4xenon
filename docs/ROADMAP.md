@@ -3002,6 +3002,61 @@ several queries' copies, which needs the ids to rotate and a measured need; and 
 
 Milestone 28 is done.
 
+### Milestone 29: the submit's cost of a draw
+
+Agreed on 2026-10-19.
+
+**Why.** Measured with vkbench on the console on 2026-10-19 (vulkan4xenon `d55706f`, xsdk `b150d87`), a cube costs the
+CPU 0.966 us a draw through the layer and 0.289 through xsdk. Of the layer's cost, recording is 0.295 us and the submit
+0.670. In `draws_4000` the submit takes 2,684 us a frame, and in `states_1000`, 1,268 us.
+
+Each cube records two `vkCmdPushConstants` and a `vkCmdDrawIndexed`. At submit, for each draw:
+- `replay_command` takes each command through its switch.
+- The pushed bytes are copied into the replay's push array (src/queue.c:1314-1317), then read back out of it into
+  constant groups.
+- `apply_resources` loops over the pipeline's resources, working out each one's kind (src/queue.c:309-339).
+- The fragment shader's push block is written whole, constants 0 to 4 (bench/shaders.c:57), the matrix among them,
+  though mesh.frag reads only its tint at 4.
+- The instance, piece and stream checks run before xsdk's draw.
+
+When a pipeline is bound, `apply_pipeline` sets viewport, scissor, blend, raster and depth-stencil again, though they
+haven't changed (src/queue.c:149-157, 1297-1300).
+
+Milestone 8 found that a pushed draw writing three quarters fewer dwords cost the submit no less, so the dwords aren't
+the cost (section 7). So the time is measured first.
+
+1. **Measurement.**
+   - A probe build of vkbench times each stage of the submit with the time base, in `draws_4000`, `states_1000` and
+     `uniforms_1000`: the dispatch, the push copies, the resources, the constants, the draw's checks and xsdk's calls.
+   - Dusklight's title scene logs its draws and submit time a frame, to weigh what a real title gains.
+   - vkbench's xsdk backend waits as `xsdk_gpu_wait` does, a look every 5 us, instead of reading its fence without a
+     break. Reading it without a break made a resolve 4.2% longer on the GPU (xsdk:docs/HARDWARE.md, "Looking at a
+     fence costs the GPU").
+   - The steps below are done in the order the measurement ranks them.
+2. **A shader's push block covers only its stage's range.** Pipeline layouts keep their push constant ranges, so
+   mesh.frag's block becomes its tint alone. The Vulkan spec lets a stage read only the push constants in its own
+   range.
+3. **Pushed constants read where they were recorded.** Pushes are 16-byte aligned in the command buffer's data and
+   read from there, not copied into the replay first. Unaligned or partial pushes keep the copy, and so do the readers
+   that need the values on the CPU (clip planes, loop counts).
+4. **A draw plan made with the pipeline.**
+   - At pipeline creation, flat lists of what each draw writes replace working out each resource's kind every draw.
+   - A draw of one instance in one piece skips the instance, piece and stream checks.
+5. **Pipeline state applied only when it changed.** Binding the pipeline that's bound already does nothing.
+   Viewport, scissor, blend, raster and depth-stencil are compared with what was last applied. Render passes, blits
+   and clears still force them again, as `pipeline_dirty` does now.
+
+Left out: translating a pass into an xsdk recording when it's recorded. A pass's begin and end depend on what eDRAM
+holds at submit, the CPU's reads of uniform buffers happen at submit, indirect draws are known only at submit, and
+recordings can't nest inside the tiled passes'.
+
+Done when:
+- `draws_4000`'s submit costs at most 0.40 us a draw, from 0.670, and `states_1000`'s at most 0.90, from 1.27;
+- every vkbench picture is as before, and vulkan4xenon_test passes twice;
+- Dusklight's title scene runs as before.
+
+If step 1 shows these can't be reached by steps 2 to 5, the targets come back to the user with the measurement.
+
 ## 5. The Dusklight track
 
 An outline, made precise one milestone at a time. Each starts only when agreed.
