@@ -1426,7 +1426,7 @@ static void replay_command(VkQueue queue, VkCommandBuffer buffer, Replay *replay
 		break;
 	}
 	// What the pushes and draws didn't charge to their own stages: the other commands, and their dispatch.
-	v4x_profile_lap(V4X_PROFILE_COMMANDS);
+	v4x_profile_command(command->type);
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit(
