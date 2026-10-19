@@ -403,9 +403,14 @@ static void read_indices(volatile const uint8_t *from, bool is_32_bit, uint32_t 
 }
 
 // Room for the copies in the part being filled, else in the next once the GPU is done with what the submission that
-// last filled it drew; NULL if that's this one, which can't wait for itself inside a tiled pass's recording.
+// last filled it drew; NULL if that's this one, which can't wait for itself inside a tiled pass's recording, or if
+// the memory, taken at the first such draw so other apps don't pay for it, can't be had.
 static volatile uint32_t *copy_room(VkQueue queue, uint32_t size_bytes)
 {
+	if (!queue->index_copies)
+		queue->index_copies = xsdk_gpu_alloc(V4X_INDEX_COPY_PARTS * V4X_INDEX_COPY_PART_BYTES);
+	if (!queue->index_copies)
+		return NULL;
 	if (queue->copy_part_bytes + size_bytes > V4X_INDEX_COPY_PART_BYTES) {
 		const uint32_t next = (queue->copy_part + 1) % V4X_INDEX_COPY_PARTS;
 		if (queue->copy_serials[next] == queue->serial)
