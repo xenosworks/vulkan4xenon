@@ -15,7 +15,7 @@ INCLUDES := -Iinclude -Ithird_party/vulkan-headers/include -I$(XSDK)/include
 CFLAGS := -mcpu=cell -fno-pic -std=gnu17 -O2 -g $(WARNINGS) $(INCLUDES) -MMD -MP
 LDFLAGS := -static -nostdlib -T $(XSDK)/src/xsdk.ld
 XSDK_LIBRARY := $(XSDK)/build/libxsdk.a
-LIBS := -Wl,--start-group $(BUILD)/libvulkan4xenon.a $(XSDK_LIBRARY) -lstdc++ -lc -lm -lgcc -Wl,--end-group
+LIBS := -Wl,--start-group $(BUILD)/libvulkan4xenon.a -lstdc++ $(XSDK_LIBRARY) -lc -lm -lgcc -Wl,--end-group
 
 LAYER_SOURCES := src/host.c src/proc_addr.c src/instance.c src/physical_device.c src/display.c src/device.c \
 	src/memory.c src/shader.c src/pipeline.c src/render_pass.c src/command_buffer.c src/queue.c src/transfer.c src/sync.c \
