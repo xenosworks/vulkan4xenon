@@ -295,10 +295,20 @@ static void make_state(void)
 		.address_u = XSDK_ADDRESS_WRAP,
 		.address_v = XSDK_ADDRESS_WRAP };
 	xsdk_texture_sampler_state(&state.sampler, &sampler);
-	const XsdkBlend opaque = { XSDK_BLEND_ONE, XSDK_BLEND_ZERO, XSDK_BLEND_OP_ADD, XSDK_BLEND_ONE, XSDK_BLEND_ZERO,
-		XSDK_BLEND_OP_ADD, XSDK_WRITE_ALL };
-	const XsdkBlend alpha = { XSDK_BLEND_SRC_ALPHA, XSDK_BLEND_ONE_MINUS_SRC_ALPHA, XSDK_BLEND_OP_ADD, XSDK_BLEND_ONE,
-		XSDK_BLEND_ONE_MINUS_SRC_ALPHA, XSDK_BLEND_OP_ADD, XSDK_WRITE_ALL };
+	const XsdkBlend opaque = { .color_source = XSDK_BLEND_ONE,
+		.color_dest = XSDK_BLEND_ZERO,
+		.color_op = XSDK_BLEND_OP_ADD,
+		.alpha_source = XSDK_BLEND_ONE,
+		.alpha_dest = XSDK_BLEND_ZERO,
+		.alpha_op = XSDK_BLEND_OP_ADD,
+		.write_mask = XSDK_WRITE_ALL };
+	const XsdkBlend alpha = { .color_source = XSDK_BLEND_SRC_ALPHA,
+		.color_dest = XSDK_BLEND_ONE_MINUS_SRC_ALPHA,
+		.color_op = XSDK_BLEND_OP_ADD,
+		.alpha_source = XSDK_BLEND_ONE,
+		.alpha_dest = XSDK_BLEND_ONE_MINUS_SRC_ALPHA,
+		.alpha_op = XSDK_BLEND_OP_ADD,
+		.write_mask = XSDK_WRITE_ALL };
 	xsdk_gpu_blend_state(&state.opaque, &opaque);
 	xsdk_gpu_blend_state(&state.alpha, &alpha);
 	const XsdkDepthStencil depth_test = { .depth_test = true, .depth_write = true, .depth_compare = XSDK_COMPARE_LESS };
