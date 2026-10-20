@@ -10,6 +10,7 @@ builds.sh builds each set into a title of its own, v4x_m17b_<set>.xex. Each set 
 - drawback1: the load's draw-back skipped in bands after the first.
 - depth_last: xsdk's band resolves run in the order given, so the depth resolve the layer lists last clears depth.
 - hiz_off: a control, not a break: the hierarchical buffer off in every tiled pass, failing nothing.
+- depth_sample1: xsdk's depth resolves copying sample 1 at 2 and 4 samples, so vkCmdResolveImage of depth does.
 """
 import pathlib
 import sys
@@ -25,6 +26,8 @@ MSAA_FRAMES = [f"tiles: 3 frames at {name} of passes past eDRAM storing and load
                "screen" for name in MSAA]
 MSAA_TEXELS = [f"tiles: {name} past eDRAM at 1280x720, every texel of the resolve attachment after a pass clearing "
                "colour and depth and one loading both, edges at the samples' steps" for name in MSAA]
+DEPTH_RESOLVES = [f"tiles: {name} past eDRAM at 1280x720, vkCmdResolveImage of its depth after both passes, every "
+                  "texel sample 0's" for name in MSAA]
 
 # The first part's checks these breaks fail too (results/2026-10-18-milestone-17-part-1/breaks.py).
 FOUR = ("tiles: four attachments past eDRAM at 1280x720, attachment {}, every texel after a pass clearing all and one "
@@ -80,6 +83,12 @@ SETS = {
     ],
     "hiz_off": [
         ("xsdk", "src/gpu_tiles.c", "if (pass.depth && !pass.depth_whole && pass.count)", "if (false)", []),
+    ],
+    # The 4-sample pass's stored depth, drawn back by the next, is sample 1's too; its quads' edges lie between pixels,
+    # where every sample agrees, so only the triangle's edges, which the depth resolve checks, tell.
+    "depth_sample1": [
+        ("xsdk", "src/gpu_draw.c", "return depth ? 0 : copy_sample_selects[samples_log2(target_samples)];",
+         "return depth ? target_samples > 1 : copy_sample_selects[samples_log2(target_samples)];", DEPTH_RESOLVES),
     ],
 }
 

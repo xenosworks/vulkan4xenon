@@ -23,3 +23,10 @@ clears it, as xsdk_test's bands always had. The run at `38c0278`, xsdk `e0e0921`
 
 So a band's clear on a depth resolve leaves the hierarchical buffer wrong for the next band's draws
 (xsdk:docs/HARDWARE.md, "A band's depth clear goes on a colour resolve, milestone 44 step 5").
+
+## Added after the run
+
+The layer's resolve of a multisampled depth image, `vkCmdResolveImage` taking sample 0 for Aurora's depth copies
+(xsdk:docs/scope/44-tiling-and-msaa.md, step 5), with two vulkan4xenon_test checks, "tiles: ... vkCmdResolveImage of
+its depth after both passes, every texel sample 0's" at 2 and 4 samples, and the break set `depth_sample1`, which
+should fail those two alone. Neither has run on the console yet.
