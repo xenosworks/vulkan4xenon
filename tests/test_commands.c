@@ -172,13 +172,9 @@ static VkResult record(VkCommandBuffer commands, uint32_t which)
 		vkCmdDispatchIndirect(commands, VK_NULL_HANDLE, 0);
 		break;
 	case 2:
-		vkCmdResolveImage(
-			commands, VK_NULL_HANDLE, VK_IMAGE_LAYOUT_GENERAL, VK_NULL_HANDLE, VK_IMAGE_LAYOUT_GENERAL, 0, NULL);
-		break;
-	case 3:
 		vkCmdSetDepthBounds(commands, 0.0f, 1.0f);
 		break;
-	case 4:
+	case 3:
 		vkCmdSetLineWidth(commands, 2.0f);
 		break;
 	default:
@@ -188,7 +184,8 @@ static VkResult record(VkCommandBuffer commands, uint32_t which)
 	return vkEndCommandBuffer(commands);
 }
 
-// The first five fail their command buffer; a line width of 1 doesn't.
+// The first four fail their command buffer; a line width of 1 doesn't. vkCmdResolveImage resolves since milestone 17
+// (test_multisample.c).
 static void check_recorded(const Harness *harness)
 {
 	const VkCommandBufferAllocateInfo allocate = {
@@ -201,9 +198,9 @@ static void check_recorded(const Harness *harness)
 	const bool made =
 		harness_ok("vkAllocateCommandBuffers", vkAllocateCommandBuffers(harness->device, &allocate, &commands));
 	bool refused = made;
-	for (uint32_t i = 0; i < 5 && made; i++)
+	for (uint32_t i = 0; i < 4 && made; i++)
 		refused = refused && record(commands, i) == VK_ERROR_FEATURE_NOT_PRESENT;
-	check("commands: dispatches, resolves, depth bounds and a line width of 2 fail their command buffer", refused);
+	check("commands: dispatches, depth bounds and a line width of 2 fail their command buffer", refused);
 	VkPipelineLayout layout = VK_NULL_HANDLE;
 	VkRenderPass render_pass = VK_NULL_HANDLE;
 	VkFramebuffer framebuffers[HARNESS_MAX_IMAGES] = { VK_NULL_HANDLE };
@@ -229,7 +226,7 @@ static void check_recorded(const Harness *harness)
 	};
 	ok = ok && harness_ok("dynamic line width pipeline", harness_pipeline(harness, &spec, render_pass, &pipeline));
 	check("commands: a pipeline of dynamic line width ignores its own, and takes 1 from vkCmdSetLineWidth",
-		ok && record(commands, 5) == VK_SUCCESS);
+		ok && record(commands, 4) == VK_SUCCESS);
 	vkDestroyPipeline(harness->device, pipeline, NULL);
 	if (render_pass)
 		harness_destroy_render_pass(harness, render_pass, framebuffers);

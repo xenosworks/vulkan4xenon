@@ -8,9 +8,9 @@ either.
 
 docs/SUPPORT.md says exactly what the layer does; this page sums it up against Direct3D 9. Milestones 20 to 28 in
 docs/ROADMAP.md close the gaps. Each row says whether Xenos has it, whether xsdk drives it (xost, for shaders), and
-whether the layer exposes it. As of 2026-10-19.
+whether the layer exposes it. As of 2026-10-20.
 
-Of the 47 rows, the layer has 38, part of 8 and none of 1.
+Of the 47 rows, the layer has 40 and part of 7.
 Xenos has all but three: its occlusion queries tell only whether draws rasterized anything, its gamma only approximates
 sRGB, and whether it compares depth in a fetch hasn't been checked, which xost's comparison after the fetch doesn't
 need. Every other gap is software.
@@ -67,8 +67,8 @@ need. Every other gap is software.
 | Render to texture | Yes | Yes | Yes |
 | Float, 10-bit and 64-bit targets | Yes (xenia:src/xenia/gpu/xenos.h:299-313) | Yes but 16_16, 32_32_FLOAT and gamma, at 1 sample; the float targets don't blend (xsdk:TODO.md, "More target formats") | Partial: `A2B10G10R10_UNORM_PACK32`, `R16G16_SFLOAT`, `R16G16B16A16_SFLOAT` and `R32_SFLOAT` attachments, the floats unblended, as Xenos doesn't blend them; 7e3 and 16-bit fixed point have no Vulkan format (SUPPORT.md, Formats) |
 | Four render targets at once | Yes, each blended on its own (xenia:src/xenia/gpu/register_table.inc:481, 483-485, 537-547) | Yes, xost's outputs at locations 0 to 3, not yet on the console | Yes, with `independentBlend` (milestone 25) |
-| 2x and 4x multisampling, alpha to coverage | Yes (xenia:src/xenia/gpu/registers.h:687) | Multisampling only | No (milestone 17) |
-| Targets past eDRAM: 720p multisampled, a big shadow map | Yes, by predicated tiling | Partial: tiled passes at one sample, on the console (xsdk:docs/HARDWARE.md, "Tiled passes at one sample, milestone 44 step 2"); multisampled ones still to come | Partial: yes at one sample, a render pass past eDRAM drawn as a tiled pass, framebuffers to 4096x4096, not yet confirmed on the console (milestone 17's first part; SUPPORT.md, Render passes); multisampled still to come |
+| 2x and 4x multisampling, alpha to coverage | Yes (xenia:src/xenia/gpu/registers.h:687) | Yes: 2 and 4 samples in 8_8_8_8, 2_10_10_10, its 7e3 float and 16_16_16_16, the 16- and 32-bit floats refused as they don't average, and alpha to coverage, on the console (xsdk:docs/HARDWARE.md, "Multisampled formats and targets, milestone 44 step 3" and "Alpha to coverage, milestone 44 step 4") | Yes: attachments at 2 and 4 samples in `R8G8B8A8_UNORM`, `B8G8R8A8_UNORM`, `A2B10G10R10_UNORM_PACK32` and D24S8, resolve attachments, `vkCmdResolveImage` and `alphaToCoverageEnable`, on the console (milestone 17); a stored attachment keeps its samples' average, drawn back into every sample when loaded, a deviation; no sample masks, sample shading or sampled multisampled images (SUPPORT.md, Render passes and Images) |
+| Targets past eDRAM: 720p multisampled, a big shadow map | Yes, by predicated tiling | Yes: tiled passes at 1, 2 and 4 samples, on the console (xsdk:docs/HARDWARE.md, "Tiled passes at one sample, milestone 44 step 2" and "Multisampled formats and targets, milestone 44 step 3") | Yes: a render pass past eDRAM drawn as a tiled pass at 1, 2 and 4 samples, framebuffers to 4096x4096, on the console (milestone 17; SUPPORT.md, Render passes) |
 | D24S8, depth bias, one-sided stencil | Yes | Yes | Yes |
 | Two-sided stencil | Yes (xenia:src/xenia/gpu/registers.h:808) | Yes, not yet confirmed on the console (xsdk:include/xsdk/gpu.h, `two_sided`) | Yes, not yet confirmed on the console (milestone 26) |
 | Alpha test | Yes (xenia:src/xenia/gpu/registers.h:685-686) | No | Yes, through `discard`, as Vulkan has it |
@@ -89,12 +89,11 @@ need. Every other gap is software.
 
 ## Where the gaps lie
 
-- **The layer alone,** as xsdk has it: multisampling. DXT, which most PC ports ship, the 16-bit and half-float texture
-  formats, and the vertex formats came with milestone 20.
+- **The layer alone,** as xsdk has it: nothing left. Multisampling came with milestone 17; DXT, which most PC ports
+  ship, the 16-bit and half-float texture formats, and the vertex formats with milestone 20.
 - **xost:** a `discard` or `return` inside a loop, still refused (xost:docs/xsc.md, "Loops a block counts"). Its loops
   otherwise came with xsdk milestone 46, one running at most 255 passes as one of Shader Model 3's does.
-- **xsdk, then the layer:** targets past eDRAM multisampled, and a volume texture's mips. Float targets blending
-  waits on the console.
+- **xsdk, then the layer:** a volume texture's mips. Float targets blending waits on the console.
 
 ## Past Direct3D 9, for older consoles' ports
 

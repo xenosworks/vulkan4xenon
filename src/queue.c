@@ -455,11 +455,11 @@ static void set_depth_clear(VkQueue queue, float depth, uint32_t stencil)
 }
 
 // The colour targets one after another from tile 0 (render_pass.c), and depth where place_depth put it
-// (docs/ROADMAP.md, milestones 4, 14 and 25).
+// (docs/ROADMAP.md, milestones 4, 14 and 25), at the pass's samples.
 static void set_target(const Replay *replay)
 {
 	const Framebuffer *const framebuffer = replay->framebuffer;
-	xsdk_gpu_set_targets(framebuffer->width, framebuffer->height, framebuffer->targets,
+	xsdk_gpu_set_targets_samples(framebuffer->width, framebuffer->height, framebuffer->samples, framebuffer->targets,
 		replay->render_pass->color_count, replay->depth_tile);
 }
 
@@ -467,7 +467,8 @@ static void set_target(const Replay *replay)
 static void set_one_target(const Replay *replay, uint32_t i)
 {
 	const Framebuffer *const framebuffer = replay->framebuffer;
-	xsdk_gpu_set_targets(framebuffer->width, framebuffer->height, &framebuffer->targets[i], 1, replay->depth_tile);
+	xsdk_gpu_set_targets_samples(
+		framebuffer->width, framebuffer->height, framebuffer->samples, &framebuffer->targets[i], 1, replay->depth_tile);
 }
 
 static VkRect2D whole(const Framebuffer *framebuffer)
@@ -513,9 +514,11 @@ static void resolve(
 	attachment->used_serial = replay->serial;
 }
 
+// Laid out alike: the same size and samples.
 static bool same_size(const EdramPart *part, const Framebuffer *framebuffer)
 {
-	return part->width == framebuffer->width && part->height == framebuffer->height;
+	return part->width == framebuffer->width && part->height == framebuffer->height &&
+		part->samples == framebuffer->samples;
 }
 
 static EdramPart cleared_color(const Framebuffer *framebuffer, uint32_t target, const float rgba[4], VkRect2D area)
@@ -523,6 +526,7 @@ static EdramPart cleared_color(const Framebuffer *framebuffer, uint32_t target, 
 	EdramPart part = { .contents = EDRAM_CLEARED,
 		.width = framebuffer->width,
 		.height = framebuffer->height,
+		.samples = framebuffer->samples,
 		.tile = framebuffer->targets[target].tile,
 		.format = framebuffer->targets[target].format,
 		.area = area };
@@ -536,6 +540,7 @@ static EdramPart cleared_depth(
 	return (EdramPart){ .contents = EDRAM_CLEARED,
 		.width = framebuffer->width,
 		.height = framebuffer->height,
+		.samples = framebuffer->samples,
 		.depth = depth,
 		.stencil = stencil,
 		.tile = tile,
@@ -547,6 +552,7 @@ static EdramPart holding(const Image *image, uint32_t tile, VkRect2D area)
 	return (EdramPart){ .contents = EDRAM_IMAGE,
 		.width = image->width,
 		.height = image->height,
+		.samples = image->samples,
 		.image = image,
 		.tile = tile,
 		.area = area };
@@ -600,7 +606,7 @@ static bool depth_ready(const EdramPart *depth, const Replay *replay)
 static bool part_overlaps(const EdramPart *part, uint32_t first, uint32_t tiles)
 {
 	return part->contents != EDRAM_UNKNOWN && part->tile < first + tiles &&
-		first < part->tile + xsdk_gpu_target_tiles(part->width, part->height);
+		first < part->tile + xsdk_gpu_target_sample_tiles(part->width, part->height, part->samples);
 }
 
 // Whether tiles first to first + tiles stay above the pass's colour and miss every depth image eDRAM holds.
@@ -638,7 +644,7 @@ static void place_depth(VkQueue queue, Replay *replay)
 {
 	const RenderPass *const render_pass = replay->render_pass;
 	const Framebuffer *const framebuffer = replay->framebuffer;
-	const uint32_t tiles = xsdk_gpu_target_tiles(framebuffer->width, framebuffer->height);
+	const uint32_t tiles = xsdk_gpu_target_sample_tiles(framebuffer->width, framebuffer->height, framebuffer->samples);
 	const uint32_t color_tiles = framebuffer->color_tiles;
 	uint32_t part = V4X_EDRAM_DEPTHS;
 	for (uint32_t i = 0; i < V4X_EDRAM_DEPTHS && render_pass->has_depth; i++) {
@@ -786,7 +792,7 @@ static bool end_color_clear(const Replay *replay, uint32_t target, const Command
 	const Framebuffer *const framebuffer = next->begin.framebuffer;
 	const XsdkColorTarget *const own = &replay->framebuffer->targets[target];
 	if (framebuffer->width != replay->framebuffer->width || framebuffer->height != replay->framebuffer->height ||
-		!contains(&replay->area, next_area))
+		framebuffer->samples != replay->framebuffer->samples || !contains(&replay->area, next_area))
 		return false;
 	for (uint32_t i = 0; i < pass->color_count; i++) {
 		if (framebuffer->targets[i].tile != own->tile || framebuffer->targets[i].format != own->format)
@@ -813,8 +819,8 @@ static bool end_depth_clear(const Replay *replay, const Command *next, const Pas
 	*depth = next_clears->depth;
 	*stencil = next_clears->stencil;
 	return next->begin.render_pass->clears_depth && framebuffer->width == replay->framebuffer->width &&
-		framebuffer->height == replay->framebuffer->height && contains(&replay->area, next_area) &&
-		contains(next_area, &replay->area);
+		framebuffer->height == replay->framebuffer->height && framebuffer->samples == replay->framebuffer->samples &&
+		contains(&replay->area, next_area) && contains(next_area, &replay->area);
 }
 
 // A sampled depth attachment the pass leaves to be read goes into its texture first, clearing nothing, so the colour's
@@ -834,7 +840,8 @@ static VkRect2D stored_area(const EdramPart *color, const Image *image, const Vk
 }
 
 // Each stored target's area is resolved into its attachment, the first of them clearing depth for the next pass too; a
-// sampled depth image takes the whole of eDRAM's depth, which holds it all.
+// sampled depth image takes the whole of eDRAM's depth, which holds it all. A multisampled target's average goes into
+// its resolve attachment first, clearing nothing if its own image takes it too.
 static void end_render_pass(
 	VkQueue queue, Replay *replay, const Command *next, const PassClears *next_clears, const VkRect2D *next_area)
 {
@@ -849,7 +856,9 @@ static void end_render_pass(
 	uint32_t stencil = 0;
 	bool clear_depth = end_depth_clear(replay, next, next_clears, next_area, &depth, &stencil);
 	for (uint32_t i = 0; i < render_pass->color_count; i++) {
-		if (render_pass->store_ops[i] != VK_ATTACHMENT_STORE_OP_STORE) {
+		Image *const resolved = framebuffer->resolves[i];
+		const bool stores = render_pass->store_ops[i] == VK_ATTACHMENT_STORE_OP_STORE;
+		if (!stores && !resolved) {
 			queue->colors[i] = (EdramPart){ .contents = EDRAM_UNKNOWN };
 			continue;
 		}
@@ -858,7 +867,10 @@ static void end_render_pass(
 		if (clear_depth)
 			set_depth_clear(queue, depth, stencil);
 		const VkRect2D stored = stored_area(&queue->colors[i], framebuffer->attachments[i], &replay->area);
-		resolve(framebuffer->attachments[i], i, replay, clear_color, clear_depth, rgba);
+		if (resolved)
+			resolve(resolved, i, replay, clear_color && !stores, clear_depth && !stores, rgba);
+		if (stores)
+			resolve(framebuffer->attachments[i], i, replay, clear_color, clear_depth, rgba);
 		queue->colors[i] =
 			clear_color ? cleared_color(framebuffer, i, rgba, replay->area) : holding_color(framebuffer, i, stored);
 		if (clear_depth)
@@ -870,7 +882,8 @@ static void end_render_pass(
 // Where a tiled pass keeps a whole depth: ending at eDRAM's top (render_pass.c, tile_targets).
 static uint32_t top_depth_tile(const Framebuffer *framebuffer)
 {
-	return XSDK_EDRAM_TILES - xsdk_gpu_target_tiles(framebuffer->width, framebuffer->height);
+	return XSDK_EDRAM_TILES -
+		xsdk_gpu_target_sample_tiles(framebuffer->width, framebuffer->height, framebuffer->samples);
 }
 
 // A tiled pass's bands reach every tile but its whole depth's, so eDRAM keeps the depth part holding the pass's own
@@ -989,22 +1002,33 @@ static void begin_tiled_pass(VkQueue queue, Replay *replay)
 	queue->loops_written = false;
 }
 
-// Each colour attachment is resolved a band at a time, which clears it to its clear for the next band, one drawn back
-// left out of band 0's clear; so is depth, as resolves_depth says. eDRAM then holds the last band, which no untiled
-// pass uses, and a whole depth at the top.
+// Colour target i's band into an image, clearing the target to its clear for the next band; one drawn back is left out
+// of band 0's clear.
+static void add_band_resolve(const Replay *replay, uint32_t i, Image *image, XsdkTileResolve *resolve)
+{
+	*resolve = (XsdkTileResolve){ .target = i,
+		.texture = &image->texture,
+		.drawn_back = replay->render_pass->load_ops[i] == VK_ATTACHMENT_LOAD_OP_LOAD };
+	memcpy(resolve->clear_rgba, replay->clears->colors[i], sizeof resolve->clear_rgba);
+	image->used_serial = replay->serial;
+}
+
+// Each colour attachment is resolved a band at a time, into its image whatever its store op, as the resolve clears the
+// band, but for one not stored whose resolve attachment takes it; into its resolve attachment too, which xsdk lets
+// clear it alone (xsdk:include/xsdk/gpu.h, xsdk_gpu_end_tiles). So is depth, as resolves_depth says. eDRAM then holds
+// the last band, which no untiled pass uses, and a whole depth at the top.
 static void end_tiled_pass(VkQueue queue, Replay *replay)
 {
 	const RenderPass *const render_pass = replay->render_pass;
 	const Framebuffer *const framebuffer = replay->framebuffer;
-	XsdkTileResolve resolves[V4X_MAX_COLOR_ATTACHMENTS + 1];
+	XsdkTileResolve resolves[2 * V4X_MAX_COLOR_ATTACHMENTS + 1];
 	uint32_t count = 0;
 	for (uint32_t i = 0; i < render_pass->color_count; i++) {
-		Image *const image = framebuffer->attachments[i];
-		resolves[count] = (XsdkTileResolve){ .target = i,
-			.texture = &image->texture,
-			.drawn_back = render_pass->load_ops[i] == VK_ATTACHMENT_LOAD_OP_LOAD };
-		memcpy(resolves[count++].clear_rgba, replay->clears->colors[i], sizeof resolves[0].clear_rgba);
-		image->used_serial = replay->serial;
+		Image *const resolved = framebuffer->resolves[i];
+		if (render_pass->store_ops[i] == VK_ATTACHMENT_STORE_OP_STORE || !resolved)
+			add_band_resolve(replay, i, framebuffer->attachments[i], &resolves[count++]);
+		if (resolved)
+			add_band_resolve(replay, i, resolved, &resolves[count++]);
 	}
 	Image *const depth = framebuffer->depth;
 	if (resolves_depth(render_pass, framebuffer)) {

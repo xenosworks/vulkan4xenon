@@ -9,7 +9,8 @@
 // Each subpass draws into one to four colour attachments, and a depth attachment if it has one, and is replayed as a
 // render pass of its own. They live in eDRAM during it, each colour a target of its own; the colours are resolved at
 // its end, and depth stays (docs/ROADMAP.md, milestones 4, 19 and 25). Past eDRAM's tiles, the subpass is a tiled pass,
-// drawn a band of rows at a time (milestone 17).
+// drawn a band of rows at a time; at 2 or 4 samples, each colour's average goes into its image and its resolve
+// attachment (milestone 17).
 
 // The subpasses an attachment is first and last used in, so the ones between keep it.
 typedef struct {
@@ -30,10 +31,19 @@ static const VkAttachmentReference *depth_of(const VkSubpassDescription *subpass
 	return depth && depth->attachment != VK_ATTACHMENT_UNUSED ? depth : NULL;
 }
 
-// Each colour attachment its own, apart from the others and from the depth.
+// The subpass's samples, its first colour attachment's, which every attachment takes (Vulkan 1.0 spec,
+// VkSubpassDescription).
+static VkSampleCountFlagBits samples_of(const VkRenderPassCreateInfo *info, const VkSubpassDescription *subpass)
+{
+	return info->pAttachments[subpass->pColorAttachments[0].attachment].samples;
+}
+
+// Each colour attachment its own, apart from the others and from the depth, at samples its format takes.
 static VkResult check_colors(const VkRenderPassCreateInfo *info, const VkSubpassDescription *subpass)
 {
 	const VkAttachmentReference *const depth = depth_of(subpass);
+	if (subpass->pColorAttachments[0].attachment >= info->attachmentCount)
+		return v4x_host_unsupported("subpasses' colour attachments unused, or in the depth's attachment");
 	for (uint32_t i = 0; i < subpass->colorAttachmentCount; i++) {
 		const uint32_t color = subpass->pColorAttachments[i].attachment;
 		if (color >= info->attachmentCount || (depth && depth->attachment == color))
@@ -43,8 +53,28 @@ static VkResult check_colors(const VkRenderPassCreateInfo *info, const VkSubpass
 				return v4x_host_unsupported("subpasses naming one colour attachment twice");
 		}
 		const VkAttachmentDescription *const target = &info->pAttachments[color];
-		if (!v4x_attachment_format(target->format) || target->samples != VK_SAMPLE_COUNT_1_BIT)
-			return v4x_host_unsupported("colour attachments of formats xsdk's targets don't draw, or multisampled");
+		if (!v4x_attachment_format(target->format) || !(target->samples & v4x_sample_counts(target->format)) ||
+			target->samples != samples_of(info, subpass))
+			return v4x_host_unsupported(
+				"colour attachments of formats xsdk's targets don't draw, or at samples their format doesn't take");
+	}
+	return VK_SUCCESS;
+}
+
+// A resolve attachment takes a multisampled colour attachment's average at the subpass's end: one sample, the colour's
+// format (Vulkan 1.0 spec, VkSubpassDescription).
+static VkResult check_resolves(const VkRenderPassCreateInfo *info, const VkSubpassDescription *subpass)
+{
+	for (uint32_t i = 0; subpass->pResolveAttachments && i < subpass->colorAttachmentCount; i++) {
+		const uint32_t resolve = subpass->pResolveAttachments[i].attachment;
+		if (resolve == VK_ATTACHMENT_UNUSED)
+			continue;
+		const VkAttachmentDescription *const color = &info->pAttachments[subpass->pColorAttachments[i].attachment];
+		if (resolve >= info->attachmentCount || color->samples == VK_SAMPLE_COUNT_1_BIT ||
+			info->pAttachments[resolve].samples != VK_SAMPLE_COUNT_1_BIT ||
+			info->pAttachments[resolve].format != color->format)
+			return v4x_host_unsupported(
+				"resolve attachments other than one sample of a multisampled colour attachment's format");
 	}
 	return VK_SUCCESS;
 }
@@ -54,19 +84,21 @@ static VkResult check_subpass(const VkRenderPassCreateInfo *info, uint32_t index
 {
 	const VkSubpassDescription *const subpass = &info->pSubpasses[index];
 	if (subpass->pipelineBindPoint != VK_PIPELINE_BIND_POINT_GRAPHICS || subpass->inputAttachmentCount ||
-		!subpass->colorAttachmentCount || subpass->colorAttachmentCount > V4X_MAX_COLOR_ATTACHMENTS ||
-		subpass->pResolveAttachments)
+		!subpass->colorAttachmentCount || subpass->colorAttachmentCount > V4X_MAX_COLOR_ATTACHMENTS)
 		return v4x_host_unsupported(
-			"subpasses other than one to four colour attachments and a depth attachment, and input attachments");
+			"subpasses other than one to four colour attachments, their resolve attachments "
+			"and a depth attachment, and input attachments");
 	const VkAttachmentReference *const depth = depth_of(subpass);
 	if (depth && depth->attachment >= info->attachmentCount)
 		return v4x_host_unsupported("subpasses' depth past the render pass's attachments");
-	const VkResult result = check_colors(info, subpass);
+	VkResult result = check_colors(info, subpass);
+	if (result == VK_SUCCESS)
+		result = check_resolves(info, subpass);
 	if (result != VK_SUCCESS || !depth)
 		return result;
 	const VkAttachmentDescription *const stencil = &info->pAttachments[depth->attachment];
-	if (stencil->format != VK_FORMAT_D24_UNORM_S8_UINT || stencil->samples != VK_SAMPLE_COUNT_1_BIT)
-		return v4x_host_unsupported("depth attachments other than single-sampled D24_UNORM_S8_UINT");
+	if (stencil->format != VK_FORMAT_D24_UNORM_S8_UINT || stencil->samples != samples_of(info, subpass))
+		return v4x_host_unsupported("depth attachments other than D24_UNORM_S8_UINT at the colour's samples");
 	if (clear_and_load(stencil->loadOp, stencil->stencilLoadOp))
 		return v4x_host_unsupported("depth and stencil attachments that clear one and load the other");
 	return VK_SUCCESS;
@@ -84,9 +116,13 @@ static void find_uses(const VkRenderPassCreateInfo *info, Uses *uses)
 	for (uint32_t a = 0; a < info->attachmentCount; a++)
 		uses[a] = (Uses){ UINT32_MAX, 0 };
 	for (uint32_t s = 0; s < info->subpassCount; s++) {
-		for (uint32_t i = 0; i < info->pSubpasses[s].colorAttachmentCount; i++)
-			mark(uses, info->pSubpasses[s].pColorAttachments[i].attachment, s);
-		const VkAttachmentReference *const depth = depth_of(&info->pSubpasses[s]);
+		const VkSubpassDescription *const subpass = &info->pSubpasses[s];
+		for (uint32_t i = 0; i < subpass->colorAttachmentCount; i++) {
+			mark(uses, subpass->pColorAttachments[i].attachment, s);
+			if (subpass->pResolveAttachments && subpass->pResolveAttachments[i].attachment != VK_ATTACHMENT_UNUSED)
+				mark(uses, subpass->pResolveAttachments[i].attachment, s);
+		}
+		const VkAttachmentReference *const depth = depth_of(subpass);
 		if (depth)
 			mark(uses, depth->attachment, s);
 	}
@@ -103,7 +139,7 @@ bool v4x_read_layout(VkImageLayout layout)
 static RenderPass subpass_pass(const VkRenderPassCreateInfo *info, uint32_t index, const Uses *uses)
 {
 	const VkSubpassDescription *const subpass = &info->pSubpasses[index];
-	RenderPass pass = { .color_count = subpass->colorAttachmentCount };
+	RenderPass pass = { .color_count = subpass->colorAttachmentCount, .samples = samples_of(info, subpass) };
 	for (uint32_t i = 0; i < pass.color_count; i++) {
 		const uint32_t color = subpass->pColorAttachments[i].attachment;
 		const VkAttachmentDescription *const target = &info->pAttachments[color];
@@ -112,6 +148,8 @@ static RenderPass subpass_pass(const VkRenderPassCreateInfo *info, uint32_t inde
 		pass.load_ops[i] = uses[color].first == index ? target->loadOp : VK_ATTACHMENT_LOAD_OP_LOAD;
 		pass.store_ops[i] = uses[color].last == index ? target->storeOp : VK_ATTACHMENT_STORE_OP_STORE;
 		pass.color_indices[i] = color;
+		pass.resolve_indices[i] =
+			subpass->pResolveAttachments ? subpass->pResolveAttachments[i].attachment : VK_ATTACHMENT_UNUSED;
 	}
 	const VkAttachmentReference *const depth = depth_of(subpass);
 	if (!depth)
@@ -174,22 +212,38 @@ VKAPI_ATTR void VKAPI_CALL vkGetRenderAreaGranularity(
 	*pGranularity = (VkExtent2D){ XSDK_RESOLVE_ALIGNMENT, XSDK_RESOLVE_ALIGNMENT };
 }
 
-// A subpass's colour and depth images, each the framebuffer's size.
+// A colour or resolve attachment's image, made to be one, the framebuffer's size and at the samples wanted; NULL if
+// not.
+static Image *color_image(const VkFramebufferCreateInfo *info, uint32_t attachment, uint32_t samples)
+{
+	Image *const image = ((const ImageView *)v4x_object(info->pAttachments[attachment]))->image;
+	if (!image->is_attachment) {
+		(void)v4x_host_unsupported("colour attachments without VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT");
+		return NULL;
+	}
+	if (info->width != image->width || info->height != image->height || image->samples != samples) {
+		(void)v4x_host_unsupported("framebuffers smaller than their attachment, or of images of other samples");
+		return NULL;
+	}
+	return image;
+}
+
+// A subpass's colour, resolve and depth images, each the framebuffer's size.
 static VkResult subpass_images(const RenderPass *pass, const VkFramebufferCreateInfo *info, Framebuffer *images)
 {
-	*images = (Framebuffer){ .width = info->width, .height = info->height };
+	*images = (Framebuffer){ .width = info->width, .height = info->height, .samples = pass->samples };
 	for (uint32_t i = 0; i < pass->color_count; i++) {
-		const ImageView *const view = v4x_object(info->pAttachments[pass->color_indices[i]]);
-		if (!view->image->is_attachment)
-			return v4x_host_unsupported("colour attachments without VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT");
-		if (info->width != view->image->width || info->height != view->image->height)
-			return v4x_host_unsupported("framebuffers smaller than their attachment");
-		images->attachments[i] = view->image;
+		const uint32_t resolve = pass->resolve_indices[i];
+		images->attachments[i] = color_image(info, pass->color_indices[i], pass->samples);
+		images->resolves[i] = resolve != VK_ATTACHMENT_UNUSED ? color_image(info, resolve, 1) : NULL;
+		if (!images->attachments[i] || (resolve != VK_ATTACHMENT_UNUSED && !images->resolves[i]))
+			return VK_ERROR_FEATURE_NOT_PRESENT;
 	}
 	if (pass->has_depth) {
 		images->depth = ((const ImageView *)v4x_object(info->pAttachments[pass->depth_index]))->image;
-		if (!images->depth->is_depth || images->depth->width != info->width || images->depth->height != info->height)
-			return v4x_host_unsupported("depth attachments of another size than the colour");
+		if (!images->depth->is_depth || images->depth->width != info->width || images->depth->height != info->height ||
+			images->depth->samples != pass->samples)
+			return v4x_host_unsupported("depth attachments of another size or samples than the colour");
 	}
 	return VK_SUCCESS;
 }
@@ -202,7 +256,7 @@ static VkResult tile_targets(const RenderPass *pass, Framebuffer *images)
 	XsdkTiling *const tiling = &images->tiling;
 	*tiling = (XsdkTiling){ .width = images->width,
 		.height = images->height,
-		.samples = 1,
+		.samples = images->samples,
 		.count = pass->color_count,
 		.depth = pass->has_depth,
 		.depth_whole = pass->has_depth,
@@ -213,12 +267,13 @@ static VkResult tile_targets(const RenderPass *pass, Framebuffer *images)
 		tiling->depth_whole = tiling->depth_top = false;
 	if (!xsdk_gpu_tiling_bands(tiling)) {
 		xsdk_log_write(
-			"vulkan4xenon: not supported: a subpass's %u colour attachments%s at %ux%u, which can't be tiled",
+			"vulkan4xenon: not supported: a subpass's %u colour attachments%s at %ux%u and %u samples, which can't be "
+			"tiled",
 			(unsigned)pass->color_count, pass->has_depth ? " and depth" : "", (unsigned)images->width,
-			(unsigned)images->height);
+			(unsigned)images->height, (unsigned)images->samples);
 		return VK_ERROR_FEATURE_NOT_PRESENT;
 	}
-	// Depth in bands comes back from its image's texture, which only a sampled depth image has.
+	// Depth in bands comes back from its image's texture, which only a sampled or multisampled depth image has.
 	if (pass->has_depth && !tiling->depth_whole && pass->loads_depth && !images->depth->is_sampled_depth)
 		return v4x_host_unsupported("a subpass past eDRAM loading depth that doesn't fit whole, its image not sampled");
 	images->tiled = true;
@@ -231,10 +286,11 @@ static VkResult place_targets(const RenderPass *pass, Framebuffer *images)
 	uint32_t tile = 0;
 	for (uint32_t i = 0; i < pass->color_count; i++) {
 		images->targets[i] = (XsdkColorTarget){ .format = pass->targets[i], .tile = tile };
-		tile += xsdk_gpu_color_target_tiles(images->width, images->height, pass->targets[i]);
+		tile += xsdk_gpu_color_target_sample_tiles(images->width, images->height, pass->targets[i], pass->samples);
 	}
 	images->color_tiles = tile;
-	const uint32_t depth_tiles = pass->has_depth ? xsdk_gpu_target_tiles(images->width, images->height) : 0;
+	const uint32_t depth_tiles =
+		pass->has_depth ? xsdk_gpu_target_sample_tiles(images->width, images->height, pass->samples) : 0;
 	return tile + depth_tiles <= XSDK_EDRAM_TILES ? VK_SUCCESS : tile_targets(pass, images);
 }
 

@@ -32,7 +32,6 @@ enum {
 	MAX_LOD_BIAS = 15,
 	// xsdk sets VGT_MAX_VTX_INDX to 24 bits (xsdk:src/gpu_draw.c).
 	MAX_INDEX_VALUE = 0x00FFFFFF,
-	DEPTH_IMAGE_BYTES = 4096,
 	// The GPU clock's 64 bits, which time stamps copy (xsdk:docs/HARDWARE.md, "Queries and events").
 	TIMESTAMP_BITS = 64,
 	// A point's radius in PA_SU_POINT_MINMAX: 12.4 fixed point, 16 bits.
@@ -104,9 +103,10 @@ VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceProperties(
 			.maxFramebufferWidth = V4X_MAX_FRAMEBUFFER_SIDE,
 			.maxFramebufferHeight = V4X_MAX_FRAMEBUFFER_SIDE,
 			.maxFramebufferLayers = 1,
-			.framebufferColorSampleCounts = VK_SAMPLE_COUNT_1_BIT,
-			.framebufferDepthSampleCounts = VK_SAMPLE_COUNT_1_BIT,
-			.framebufferStencilSampleCounts = VK_SAMPLE_COUNT_1_BIT,
+			// The float formats take 1 alone (docs/SUPPORT.md, Physical device); Xenos samples no multisampled texture.
+			.framebufferColorSampleCounts = V4X_SAMPLE_COUNTS,
+			.framebufferDepthSampleCounts = V4X_SAMPLE_COUNTS,
+			.framebufferStencilSampleCounts = V4X_SAMPLE_COUNTS,
 			.maxColorAttachments = V4X_MAX_COLOR_ATTACHMENTS,
 			.sampledImageColorSampleCounts = VK_SAMPLE_COUNT_1_BIT,
 			.discreteQueuePriorities = 2,
@@ -118,7 +118,8 @@ VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceProperties(
 			.pointSizeRange = { 0.0f, MAX_POINT_RADIUS * 2.0f / SUBPIXELS },
 			.lineWidthRange = { 1.0f, 1.0f },
 			.pointSizeGranularity = 2.0f / SUBPIXELS,
-			.standardSampleLocations = VK_TRUE,
+			// Xenos's samples sit elsewhere (xsdk:docs/HARDWARE.md, "Multisampled formats and targets, milestone 44 step 3").
+			.standardSampleLocations = VK_FALSE,
 			.optimalBufferCopyOffsetAlignment = 1,
 			.optimalBufferCopyRowPitchAlignment = 1,
 			.nonCoherentAtomSize = CACHE_LINE_BYTES,
@@ -226,8 +227,8 @@ VKAPI_ATTR VkResult VKAPI_CALL vkGetPhysicalDeviceImageFormatProperties(VkPhysic
 			.maxExtent = { V4X_MAX_FRAMEBUFFER_SIDE, V4X_MAX_FRAMEBUFFER_SIDE, 1 },
 			.maxMipLevels = 1,
 			.maxArrayLayers = 1,
-			.sampleCounts = VK_SAMPLE_COUNT_1_BIT,
-			.maxResourceSize = (usage & VK_IMAGE_USAGE_SAMPLED_BIT) ? HEAP_BYTES : DEPTH_IMAGE_BYTES,
+			.sampleCounts = (usage & VK_IMAGE_USAGE_SAMPLED_BIT) ? VK_SAMPLE_COUNT_1_BIT : V4X_SAMPLE_COUNTS,
+			.maxResourceSize = HEAP_BYTES,
 		};
 		return VK_SUCCESS;
 	}
@@ -241,11 +242,14 @@ VKAPI_ATTR VkResult VKAPI_CALL vkGetPhysicalDeviceImageFormatProperties(VkPhysic
 		*pImageFormatProperties = (VkImageFormatProperties){ 0 };
 		return VK_ERROR_FORMAT_NOT_SUPPORTED;
 	}
+	// Multisampled images are optimal attachments, resolved and never sampled (image.c).
+	const bool multisampled = !linear && (usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) &&
+		!(usage & ~(VkImageUsageFlags)V4X_MULTISAMPLED_USAGE);
 	*pImageFormatProperties = (VkImageFormatProperties){
 		.maxExtent = { XSDK_TEXTURE_MAX_SIZE, XSDK_TEXTURE_MAX_SIZE, 1 },
 		.maxMipLevels = linear || (usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) ? 1 : MAX_IMAGE_LEVELS,
 		.maxArrayLayers = 1,
-		.sampleCounts = VK_SAMPLE_COUNT_1_BIT,
+		.sampleCounts = multisampled ? v4x_sample_counts(format) : VK_SAMPLE_COUNT_1_BIT,
 		.maxResourceSize = HEAP_BYTES,
 	};
 	return VK_SUCCESS;

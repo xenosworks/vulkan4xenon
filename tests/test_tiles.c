@@ -19,7 +19,10 @@
 // - a 2048x2048 shadow map, its depth in bands: stored a band at a time and read from its memory, loaded by the next
 //   pass, which draws it back, and sampled by another;
 // - what such a pass refuses, and a fragment shader's uniform block reaching c252, which xsdk keeps.
-// Each scene shows on screen in its own colours.
+// Then milestone 17's second part: a 1280x720 pass at 2 samples, its depth whole at eDRAM's top, and one at 4, its
+// depth in bands, each storing colour and depth and resolving into a resolve attachment, then a pass loading both:
+// every texel of the resolve attachment as worked out, a triangle's edges across the bands at a step of the samples'
+// blend. Each scene shows on screen in its own colours.
 
 enum {
 	FRAMES = 3,
@@ -49,8 +52,30 @@ enum {
 	TOLERANCE = 1,
 	BIG_RECTS = 4,
 	PROBES = 5,
-	SETS = 3,
+	SETS = 5,
 	LABEL_BYTES = 200,
+	// The multisampled passes: at 2 samples and at 4.
+	MSAA_CASES = 2,
+	TRIANGLE_VERTICES = 3,
+	MAX_SAMPLES = 4,
+	// A pixel's samples sit within 3/8 of a pixel of its centre (xsdk:include/xsdk/gpu.h), well inside this.
+	EDGE_DISTANCE = 1,
+};
+
+// A multisampled pass's images, in its framebuffer's order: the colour, its resolve attachment, the depth.
+enum {
+	MSAA_COLOR,
+	MSAA_RESOLVED,
+	MSAA_DEPTH,
+	MSAA_IMAGES,
+};
+
+// Where a pixel's centre lies against the triangle.
+enum {
+	PIXEL_OUTSIDE,
+	PIXEL_INSIDE,
+	// Within EDGE_DISTANCE of an edge, where its samples may differ.
+	PIXEL_EDGE,
 };
 
 // How a texel reads back.
@@ -61,11 +86,13 @@ enum {
 	KIND_FLOATS,
 };
 
-// The descriptor sets: the four attachments' first, the shadow map's colour, its depth.
+// The descriptor sets: the four attachments' first, the shadow map's colour, its depth, then each multisampled pass's
+// resolve attachment.
 enum {
 	SET_FOUR,
 	SET_BIG_COLOR,
 	SET_BIG_DEPTH,
+	SET_MSAA,
 };
 
 // Rectangles in pixels, right and bottom exclusive, and their depth.
@@ -130,6 +157,33 @@ static const float loaded_depths[2] = { 0.5f, 0.7f };
 
 static const VkClearValue screen_clear = { .color = { .float32 = RGBA(24, 24, 24) } };
 
+// The multisampled passes draw the far and near quads and the second pass's over them as the four attachments do, and a
+// triangle right of them all, across both band edges, in pixels (Vulkan's, y down); each count in colours of its own.
+typedef struct {
+	float x;
+	float y;
+} Point;
+
+static const Point corners[TRIANGLE_VERTICES] = { { 1130.3f, 100.7f }, { 1260.6f, 300.2f }, { 1150.4f, 680.9f } };
+static const float triangle_depth = 0.5f;
+
+typedef struct {
+	VkSampleCountFlagBits samples;
+	const char *name;
+	float clear[CHANNELS];
+	// The far quad's colour, the near one's, the second pass's and the triangle's.
+	float colors[4][CHANNELS];
+} MsaaCase;
+
+static const MsaaCase msaa_cases[MSAA_CASES] = {
+	{ VK_SAMPLE_COUNT_2_BIT, "2 samples, depth whole", { 0.125f, 0.125f, 0.25f, 1.0f },
+		{ { 0.25f, 0.875f, 0.25f, 1.0f }, { 0.875f, 0.25f, 0.25f, 1.0f }, { 0.25f, 0.25f, 0.875f, 1.0f },
+			{ 1.0f, 0.875f, 0.125f, 1.0f } } },
+	{ VK_SAMPLE_COUNT_4_BIT, "4 samples, depth in bands", { 0.25f, 0.125f, 0.125f, 1.0f },
+		{ { 0.125f, 0.625f, 0.625f, 1.0f }, { 0.625f, 0.125f, 0.625f, 1.0f }, { 0.625f, 0.625f, 0.125f, 1.0f },
+			{ 0.125f, 1.0f, 0.875f, 1.0f } } },
+};
+
 // Clip space, then texture coordinates: over the whole viewport from the whole image, then from the 2048x2048 image's
 // top left 1280x720, texel for texel on screen.
 #define SHOWN_U ((float)WIDTH / BIG)
@@ -166,6 +220,24 @@ static const HarnessProbe four_probes[PROBES] = {
 	{ "the second pass's quad over the clear in the last band", 800, 680, RGB(64, 64, 224), 0 },
 };
 
+// Each multisampled pass's resolve attachment after both passes, in each band.
+static const HarnessProbe msaa_probes[MSAA_CASES][PROBES] = {
+	{
+		{ "the first pass's clear", 50, 50, RGB(32, 32, 64), 0 },
+		{ "the near quad over the second pass's", 310, 250, RGB(223, 64, 64), 0 },
+		{ "the second pass's quad over the far one", 700, 600, RGB(64, 64, 223), 0 },
+		{ "the far quad in the last band", 1000, 640, RGB(64, 223, 64), 0 },
+		{ "the triangle in band 1", 1170, 400, RGB(255, 223, 32), 0 },
+	},
+	{
+		{ "the first pass's clear", 50, 50, RGB(64, 32, 32), 0 },
+		{ "the near quad over the second pass's", 310, 250, RGB(159, 32, 159), 0 },
+		{ "the second pass's quad over the far one", 700, 600, RGB(159, 159, 32), 0 },
+		{ "the far quad in the last band", 1000, 640, RGB(32, 159, 159), 0 },
+		{ "the triangle in band 1", 1170, 400, RGB(32, 255, 223), 0 },
+	},
+};
+
 // The 2048x2048 colour after the pass that loads the map, its top left on screen.
 static const HarnessProbe big_probes[PROBES] = {
 	{ "the map's clear", 50, 50, RGB(40, 160, 200), 0 },
@@ -174,6 +246,20 @@ static const HarnessProbe big_probes[PROBES] = {
 	{ "the far quad", 200, 500, RGB(40, 160, 200), 0 },
 	{ "the nearer square on it", 300, 650, RGB(220, 200, 60), 0 },
 };
+
+// A pass at 2 or 4 samples past eDRAM: its images, the pass clearing colour and depth and the one loading them, their
+// framebuffer, the pipelines writing and testing depth, and its frames.
+typedef struct {
+	VkImage images[MSAA_IMAGES];
+	VkDeviceMemory memories[MSAA_IMAGES];
+	VkImageView views[MSAA_IMAGES];
+	VkRenderPass first_pass;
+	VkRenderPass second_pass;
+	VkFramebuffer target;
+	VkPipeline write_pipeline;
+	VkPipeline test_pipeline;
+	VkCommandBuffer commands[HARNESS_MAX_IMAGES];
+} Msaa;
 
 typedef struct {
 	VkImage four[COLORS];
@@ -227,6 +313,9 @@ typedef struct {
 	VkCommandBuffer four_commands[HARNESS_MAX_IMAGES];
 	VkCommandBuffer big_commands[HARNESS_MAX_IMAGES];
 	VkCommandBuffer work;
+	Msaa msaa[MSAA_CASES];
+	VkBuffer triangle;
+	VkDeviceMemory triangle_memory;
 } Scene;
 
 static VkAttachmentDescription color_of(VkFormat format, VkAttachmentLoadOp load, VkAttachmentStoreOp store)
@@ -315,6 +404,53 @@ static VkResult make_images(const Harness *harness, Scene *s)
 		result = harness_image(harness, VK_FORMAT_D24_UNORM_S8_UINT, BIG, BIG, sampled_depth, &s->big_depth,
 			&s->big_depth_memory, &s->big_views[1]);
 	return result;
+}
+
+// A multisampled pass's colour and depth, which aren't sampled, and its resolve attachment, which is shown.
+static VkResult make_msaa_images(const Harness *harness, Msaa *m, VkSampleCountFlagBits samples)
+{
+	const VkFormat formats[MSAA_IMAGES] = { VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_R8G8B8A8_UNORM,
+		VK_FORMAT_D24_UNORM_S8_UINT };
+	const VkSampleCountFlagBits counts[MSAA_IMAGES] = { samples, VK_SAMPLE_COUNT_1_BIT, samples };
+	const VkImageUsageFlags usages[MSAA_IMAGES] = { VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+		VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+		VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT };
+	VkResult result = VK_SUCCESS;
+	for (uint32_t i = 0; i < MSAA_IMAGES && result == VK_SUCCESS; i++)
+		result = harness_multisampled_image(
+			harness, formats[i], WIDTH, HEIGHT, counts[i], usages[i], &m->images[i], &m->memories[i], &m->views[i]);
+	return result;
+}
+
+// Colour and depth at samples, loaded as asked and stored, and the colour's resolve attachment.
+static VkResult make_msaa_pass(
+	const Harness *harness, VkSampleCountFlagBits samples, VkAttachmentLoadOp load, VkRenderPass *render_pass)
+{
+	VkAttachmentDescription described[MSAA_IMAGES] = {
+		color_of(VK_FORMAT_R8G8B8A8_UNORM, load, VK_ATTACHMENT_STORE_OP_STORE),
+		color_of(VK_FORMAT_R8G8B8A8_UNORM, VK_ATTACHMENT_LOAD_OP_DONT_CARE, VK_ATTACHMENT_STORE_OP_STORE),
+		depth_of(load, VK_ATTACHMENT_STORE_OP_STORE, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL),
+	};
+	described[MSAA_COLOR].samples = samples;
+	described[MSAA_DEPTH].samples = samples;
+	const VkAttachmentReference color = { MSAA_COLOR, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL };
+	const VkAttachmentReference resolve = { MSAA_RESOLVED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL };
+	const VkAttachmentReference depth = { MSAA_DEPTH, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL };
+	const VkSubpassDescription subpass = {
+		.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
+		.colorAttachmentCount = 1,
+		.pColorAttachments = &color,
+		.pResolveAttachments = &resolve,
+		.pDepthStencilAttachment = &depth,
+	};
+	const VkRenderPassCreateInfo info = {
+		.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+		.attachmentCount = MSAA_IMAGES,
+		.pAttachments = described,
+		.subpassCount = 1,
+		.pSubpasses = &subpass,
+	};
+	return vkCreateRenderPass(harness->device, &info, NULL, render_pass);
 }
 
 static VkResult make_passes(const Harness *harness, Scene *s)
@@ -426,7 +562,8 @@ static VkResult make_sets(const Harness *harness, Scene *s)
 	};
 	if (result == VK_SUCCESS)
 		result = vkCreateDescriptorPool(harness->device, &pool_info, NULL, &s->pool);
-	const VkDescriptorSetLayout layouts[SETS] = { s->set_layout, s->set_layout, s->set_layout };
+	const VkDescriptorSetLayout layouts[SETS] = { s->set_layout, s->set_layout, s->set_layout, s->set_layout,
+		s->set_layout };
 	const VkDescriptorSetAllocateInfo allocate_info = {
 		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
 		.descriptorPool = s->pool,
@@ -435,7 +572,8 @@ static VkResult make_sets(const Harness *harness, Scene *s)
 	};
 	if (result == VK_SUCCESS)
 		result = vkAllocateDescriptorSets(harness->device, &allocate_info, s->sets);
-	const VkImageView views[SETS] = { s->four_views[0], s->big_views[0], s->big_views[1] };
+	const VkImageView views[SETS] = { s->four_views[0], s->big_views[0], s->big_views[1],
+		s->msaa[0].views[MSAA_RESOLVED], s->msaa[1].views[MSAA_RESOLVED] };
 	for (uint32_t i = 0; i < SETS && result == VK_SUCCESS; i++) {
 		const VkDescriptorImageInfo image = { s->sampler, views[i], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
 		const VkWriteDescriptorSet write = {
@@ -450,10 +588,14 @@ static VkResult make_sets(const Harness *harness, Scene *s)
 	return result;
 }
 
-// A quad pipeline of push.vert and a fragment shader of the push constants, testing depth less-than.
-static VkResult make_quad_pipeline(
-	const Harness *harness, const Scene *s, bool four, bool writes, VkRenderPass render_pass, VkPipeline *pipeline)
+// A quad pipeline of push.vert and a fragment shader of the push constants, testing depth less-than, at samples.
+static VkResult make_quad_pipeline(const Harness *harness, const Scene *s, bool four, bool writes,
+	VkRenderPass render_pass, VkSampleCountFlagBits samples, VkPipeline *pipeline)
 {
+	const VkPipelineMultisampleStateCreateInfo multisample = {
+		.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+		.rasterizationSamples = samples,
+	};
 	const VkPipelineDepthStencilStateCreateInfo depth = {
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
 		.depthTestEnable = VK_TRUE,
@@ -477,6 +619,7 @@ static VkResult make_quad_pipeline(
 		.blend = blends,
 		.blend_count = four ? COLORS : 1,
 		.dynamic_viewport = true,
+		.multisample = &multisample,
 	};
 	return harness_pipeline(harness, &spec, render_pass, pipeline);
 }
@@ -532,16 +675,64 @@ static VkResult make_readback(const Harness *harness, Scene *s)
 	return result;
 }
 
+// The triangle in clip space at 1280x720, at its depth.
+static VkResult make_triangle(const Harness *harness, Scene *s)
+{
+	float triangle[TRIANGLE_VERTICES][4];
+	for (uint32_t i = 0; i < TRIANGLE_VERTICES; i++) {
+		const float place[4] = { corners[i].x / (WIDTH / 2.0f) - 1.0f, corners[i].y / (HEIGHT / 2.0f) - 1.0f,
+			triangle_depth, 1.0f };
+		memcpy(triangle[i], place, sizeof place);
+	}
+	return harness_buffer(
+		harness, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, triangle, sizeof triangle, &s->triangle, &s->triangle_memory);
+}
+
+// Each multisampled pass's images, passes and one framebuffer for both; its pipelines write depth and test it.
+static VkResult make_msaa(const Harness *harness, Scene *s)
+{
+	VkResult result = make_triangle(harness, s);
+	for (uint32_t i = 0; i < MSAA_CASES && result == VK_SUCCESS; i++) {
+		Msaa *const m = &s->msaa[i];
+		const VkSampleCountFlagBits samples = msaa_cases[i].samples;
+		result = make_msaa_images(harness, m, samples);
+		if (result == VK_SUCCESS)
+			result = make_msaa_pass(harness, samples, VK_ATTACHMENT_LOAD_OP_CLEAR, &m->first_pass);
+		if (result == VK_SUCCESS)
+			result = make_msaa_pass(harness, samples, VK_ATTACHMENT_LOAD_OP_LOAD, &m->second_pass);
+		if (result == VK_SUCCESS)
+			result = make_framebuffer(harness, m->first_pass, m->views, MSAA_IMAGES, WIDTH, HEIGHT, &m->target);
+	}
+	return result;
+}
+
+static VkResult make_msaa_pipelines(const Harness *harness, Scene *s)
+{
+	VkResult result = VK_SUCCESS;
+	for (uint32_t i = 0; i < MSAA_CASES && result == VK_SUCCESS; i++) {
+		Msaa *const m = &s->msaa[i];
+		result = make_quad_pipeline(harness, s, false, true, m->first_pass, msaa_cases[i].samples, &m->write_pipeline);
+		if (result == VK_SUCCESS)
+			result =
+				make_quad_pipeline(harness, s, false, false, m->first_pass, msaa_cases[i].samples, &m->test_pipeline);
+	}
+	return result;
+}
+
 static bool build(const Harness *harness, Scene *s)
 {
+	const VkSampleCountFlagBits one = VK_SAMPLE_COUNT_1_BIT;
 	return harness_ok("images", make_images(harness, s)) && harness_ok("render passes", make_passes(harness, s)) &&
 		harness_ok("framebuffers past eDRAM", make_framebuffers(harness, s)) &&
+		harness_ok("multisampled passes past eDRAM", make_msaa(harness, s)) &&
 		harness_ok("layouts", make_layouts(harness, s)) && harness_ok("descriptor sets", make_sets(harness, s)) &&
+		harness_ok("four targets' pipeline",
+			make_quad_pipeline(harness, s, true, true, s->first_pass, one, &s->four_pipeline)) &&
 		harness_ok(
-			"four targets' pipeline", make_quad_pipeline(harness, s, true, true, s->first_pass, &s->four_pipeline)) &&
+			"shadow pipeline", make_quad_pipeline(harness, s, false, true, s->shadow_pass, one, &s->shadow_pipeline)) &&
 		harness_ok(
-			"shadow pipeline", make_quad_pipeline(harness, s, false, true, s->shadow_pass, &s->shadow_pipeline)) &&
-		harness_ok("test pipeline", make_quad_pipeline(harness, s, false, false, s->last_pass, &s->test_pipeline)) &&
+			"test pipeline", make_quad_pipeline(harness, s, false, false, s->last_pass, one, &s->test_pipeline)) &&
+		harness_ok("multisampled pipelines", make_msaa_pipelines(harness, s)) &&
 		harness_ok("sample pipeline", make_sample_pipeline(harness, s, s->sample_pass, &s->sample_pipeline)) &&
 		harness_ok("screen pipeline", make_sample_pipeline(harness, s, s->screen_pass, &s->screen_pipeline)) &&
 		harness_ok("unit quad", harness_quad_buffer(harness, &s->unit_quad, &s->unit_quad_memory)) &&
@@ -663,6 +854,51 @@ static void record_big(VkCommandBuffer commands, const Scene *s, uint32_t index)
 	}
 	vkCmdEndRenderPass(commands);
 	draw_shown(commands, s, index, SET_BIG_COLOR, QUAD_VERTICES);
+}
+
+// A multisampled pass's quads and triangle, each of its own colour: the far and near quads and the triangle writing
+// depth, then a pass loading colour and depth drawing the second quad, testing depth alone, and the resolve attachment
+// on screen.
+static void record_msaa(VkCommandBuffer commands, const Scene *s, uint32_t index, uint32_t which)
+{
+	const Msaa *const m = &s->msaa[which];
+	const MsaaCase *const c = &msaa_cases[which];
+	VkClearValue clears[MSAA_IMAGES];
+	memset(clears, 0, sizeof clears);
+	memcpy(clears[MSAA_COLOR].color.float32, c->clear, sizeof clears[0].color.float32);
+	clears[MSAA_DEPTH].depthStencil = (VkClearDepthStencilValue){ 1.0f, 0 };
+	const VkDeviceSize offset = 0;
+	begin_whole(commands, m->first_pass, m->target, WIDTH, HEIGHT, clears, MSAA_IMAGES);
+	vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, m->write_pipeline);
+	vkCmdBindVertexBuffers(commands, 0, 1, &s->unit_quad, &offset);
+	const HarnessQuad far = quad_of(&far_quad, c->colors[0]);
+	const HarnessQuad near = quad_of(&near_quad, c->colors[1]);
+	harness_push_quad_in(commands, s->push_layout, &far, WIDTH, HEIGHT);
+	harness_push_quad_in(commands, s->push_layout, &near, WIDTH, HEIGHT);
+	// The triangle's corners are in clip space already: push.vert's scale 1 and offset 0.
+	const float place[8] = { 1.0f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f };
+	vkCmdBindVertexBuffers(commands, 0, 1, &s->triangle, &offset);
+	vkCmdPushConstants(commands, s->push_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof place, place);
+	vkCmdPushConstants(commands, s->push_layout, VK_SHADER_STAGE_FRAGMENT_BIT, PLACE_BYTES, 16, c->colors[3]);
+	vkCmdDraw(commands, TRIANGLE_VERTICES, 1, 0, 0);
+	vkCmdEndRenderPass(commands);
+	begin_whole(commands, m->second_pass, m->target, WIDTH, HEIGHT, NULL, 0);
+	vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, m->test_pipeline);
+	vkCmdBindVertexBuffers(commands, 0, 1, &s->unit_quad, &offset);
+	const HarnessQuad second = quad_of(&second_quad, c->colors[2]);
+	harness_push_quad_in(commands, s->push_layout, &second, WIDTH, HEIGHT);
+	vkCmdEndRenderPass(commands);
+	draw_shown(commands, s, index, SET_MSAA + which, 0);
+}
+
+static void record_msaa_2(VkCommandBuffer commands, const Scene *s, uint32_t index)
+{
+	record_msaa(commands, s, index, 0);
+}
+
+static void record_msaa_4(VkCommandBuffer commands, const Scene *s, uint32_t index)
+{
+	record_msaa(commands, s, index, 1);
 }
 
 static VkResult record(
@@ -919,6 +1155,113 @@ static void check_big(const Harness *harness, const Scene *s)
 		"tiles: a 2048x2048 pass past eDRAM sampling the shadow map, every texel's red its depth", wrong_sampled == 0);
 }
 
+static float edge_side(Point a, Point b, float x, float y)
+{
+	return (x - a.x) * (b.y - a.y) - (y - a.y) * (b.x - a.x);
+}
+
+// Where pixel (x, y)'s centre, at its half in Vulkan, lies against the triangle (xsdk:tests/test_multisample.c).
+static uint32_t triangle_place(uint32_t x, uint32_t y)
+{
+	const float area = edge_side(corners[0], corners[1], corners[2].x, corners[2].y);
+	bool inside = true;
+	bool edge = false;
+	for (uint32_t i = 0; i < TRIANGLE_VERTICES; i++) {
+		const Point a = corners[i];
+		const Point b = corners[(i + 1) % TRIANGLE_VERTICES];
+		const float side = edge_side(a, b, (float)x + 0.5f, (float)y + 0.5f);
+		const float length = sqrtf((b.x - a.x) * (b.x - a.x) + (b.y - a.y) * (b.y - a.y));
+		inside = inside && side * area > 0.0f;
+		edge = edge || fabsf(side) <= EDGE_DISTANCE * length;
+	}
+	return edge ? PIXEL_EDGE : inside ? PIXEL_INSIDE : PIXEL_OUTSIDE;
+}
+
+// Off the triangle's edges, what both passes leave: as the four attachments, the triangle's colour inside it.
+static const float *msaa_texel(const MsaaCase *c, uint32_t x, uint32_t y, uint32_t place)
+{
+	if (place == PIXEL_INSIDE)
+		return c->colors[3];
+	if (inside(&second_quad, x, y) && !inside(&near_quad, x, y))
+		return c->colors[2];
+	if (inside(&near_quad, x, y))
+		return c->colors[1];
+	return inside(&far_quad, x, y) ? c->colors[0] : c->clear;
+}
+
+// Which k of samples a texel is, k samples the triangle's colour and the rest the clear; -1 for none.
+static int msaa_level(const MsaaCase *c, const uint8_t *texel)
+{
+	for (uint32_t k = 0; k <= c->samples; k++) {
+		bool matches = true;
+		for (uint32_t ch = 0; ch < 3; ch++) {
+			const float want = c->clear[ch] + (float)k * (c->colors[3][ch] - c->clear[ch]) / (float)c->samples;
+			matches = matches && fabsf(channel(&big_format, texel, ch) - want) <= big_format.tolerance;
+		}
+		if (matches)
+			return (int)k;
+	}
+	return -1;
+}
+
+static void log_msaa_miss(
+	const char *name, const char *what, uint32_t x, uint32_t y, const uint8_t *t, uint32_t *logged)
+{
+	if ((*logged)++ < MISSES_LOGGED)
+		xsdk_log_write("tiles: %s: %s (%u, %u) is %u %u %u %u", name, what, (unsigned)x, (unsigned)y, (unsigned)t[0],
+			(unsigned)t[1], (unsigned)t[2], (unsigned)t[3]);
+}
+
+// The resolve attachment after both passes: off the triangle's edges as worked out, on them a step of the samples'
+// blend, every step between seen, as xsdk_test counts edges (xsdk:tests/test_multisample.c).
+static void check_msaa(const Harness *harness, const Scene *s, uint32_t which)
+{
+	const MsaaCase *const c = &msaa_cases[which];
+	const bool read = read_back(harness, s, s->msaa[which].images[MSAA_RESOLVED], WIDTH, HEIGHT);
+	uint32_t levels[MAX_SAMPLES + 1] = { 0 };
+	uint32_t unstepped = 0;
+	uint32_t wrong = 0;
+	uint32_t logged = 0;
+	for (uint32_t y = 0; y < HEIGHT && read; y++) {
+		for (uint32_t x = 0; x < WIDTH; x++) {
+			const uint8_t *const texel = s->read + (y * WIDTH + x) * 4;
+			const uint32_t place = triangle_place(x, y);
+			const int level = place == PIXEL_EDGE ? msaa_level(c, texel) : -1;
+			if (level >= 0) {
+				levels[level]++;
+				continue;
+			}
+			if (place == PIXEL_EDGE) {
+				unstepped++;
+				log_msaa_miss(c->name, "on an edge", x, y, texel, &logged);
+				continue;
+			}
+			const float *const want = msaa_texel(c, x, y, place);
+			bool near = true;
+			for (uint32_t ch = 0; ch < 3; ch++)
+				near = near && fabsf(channel(&big_format, texel, ch) - want[ch]) <= big_format.tolerance;
+			if (near)
+				continue;
+			wrong++;
+			log_msaa_miss(c->name, "off the edges", x, y, texel, &logged);
+		}
+	}
+	bool every_step = true;
+	for (uint32_t k = 1; k < c->samples; k++)
+		every_step = every_step && levels[k] > 0;
+	xsdk_log_write(
+		"tiles: %s: edge pixels by samples covered: %u, %u, %u, %u, %u; %u between steps, %u wrong off the "
+		"edges",
+		c->name, (unsigned)levels[0], (unsigned)levels[1], (unsigned)levels[2], (unsigned)levels[3],
+		(unsigned)levels[4], (unsigned)unstepped, (unsigned)wrong);
+	char label[LABEL_BYTES];
+	snprintf(label, sizeof label,
+		"tiles: %s past eDRAM at 1280x720, every texel of the resolve attachment after a pass clearing colour "
+		"and depth and one loading both, edges at the samples' steps",
+		c->name);
+	check(label, read && every_step && !unstepped && !wrong);
+}
+
 typedef struct {
 	VkQueryPool pool;
 	uint32_t refusal;
@@ -1060,9 +1403,29 @@ static bool frames_shown(
 	return frames == FRAMES && misses == 0;
 }
 
+static void destroy_msaa(const Harness *harness, Msaa *m)
+{
+	const VkDevice device = harness->device;
+	vkFreeCommandBuffers(device, harness->pool, harness->image_count, m->commands);
+	vkDestroyPipeline(device, m->write_pipeline, NULL);
+	vkDestroyPipeline(device, m->test_pipeline, NULL);
+	vkDestroyFramebuffer(device, m->target, NULL);
+	vkDestroyRenderPass(device, m->first_pass, NULL);
+	vkDestroyRenderPass(device, m->second_pass, NULL);
+	for (uint32_t i = 0; i < MSAA_IMAGES; i++) {
+		vkDestroyImageView(device, m->views[i], NULL);
+		vkDestroyImage(device, m->images[i], NULL);
+		vkFreeMemory(device, m->memories[i], NULL);
+	}
+}
+
 static void destroy(const Harness *harness, Scene *s)
 {
 	const VkDevice device = harness->device;
+	for (uint32_t i = 0; i < MSAA_CASES; i++)
+		destroy_msaa(harness, &s->msaa[i]);
+	vkDestroyBuffer(device, s->triangle, NULL);
+	vkFreeMemory(device, s->triangle_memory, NULL);
 	vkFreeCommandBuffers(device, harness->pool, harness->image_count, s->four_commands);
 	vkFreeCommandBuffers(device, harness->pool, harness->image_count, s->big_commands);
 	vkFreeCommandBuffers(device, harness->pool, 1, &s->work);
@@ -1131,5 +1494,17 @@ void test_tiles(const Harness *harness)
 		"tiles: a fragment shader's uniform block reaching c252, which xsdk keeps, refused, and maxUniformBufferRange "
 		"4032",
 		built && high_block_refused(harness, s));
+	void (*const msaa_records[MSAA_CASES])(VkCommandBuffer, const Scene *, uint32_t) = { record_msaa_2, record_msaa_4 };
+	for (uint32_t i = 0; i < MSAA_CASES; i++) {
+		const bool recorded =
+			built && harness_ok("recording", record(harness, s, msaa_records[i], s->msaa[i].commands));
+		char label[LABEL_BYTES];
+		snprintf(label, sizeof label,
+			"tiles: 3 frames at %s of passes past eDRAM storing and loading colour and depth, resolved and on screen",
+			msaa_cases[i].name);
+		check(label, recorded && frames_shown(harness, s->msaa[i].commands, msaa_probes[i], "tiles: multisampled"));
+		if (recorded)
+			check_msaa(harness, s, i);
+	}
 	destroy(harness, s);
 }

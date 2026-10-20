@@ -52,6 +52,7 @@ int main(void)
 		test_clears(&harness);
 		test_subpasses(&harness);
 		test_targets(&harness);
+		test_multisample(&harness);
 		test_tiles(&harness);
 		test_render_areas(&harness);
 		test_gpu_blits(&harness);

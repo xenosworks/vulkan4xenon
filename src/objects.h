@@ -86,11 +86,12 @@ typedef enum {
 
 // What a colour target's tiles of eDRAM, or a depth and stencil's, hold between render passes (docs/ROADMAP.md,
 // milestones 4, 25 and 27), and over which rectangle of the framebuffer, as a pass clears, loads and stores its render
-// area alone; its first tile, and a colour's xsdk target format.
+// area alone; its first tile, and a colour's xsdk target format. A framebuffer's size and samples lay it out.
 typedef struct {
 	EdramContents contents;
 	uint32_t width;
 	uint32_t height;
+	uint32_t samples;
 	float rgba[4];
 	float depth;
 	uint32_t stencil;
@@ -231,11 +232,14 @@ typedef struct Image {
 	uint32_t width;
 	uint32_t height;
 	VkFormat format;
+	// 1, 2 or 4; a multisampled colour image's memory holds its samples' average (docs/SUPPORT.md, Images).
+	uint32_t samples;
 	bool is_texture;
 	// Render passes may resolve into it.
 	bool is_attachment;
 	// A depth attachment lives in eDRAM, its memory never used unless it's made to be sampled: then a render pass that
-	// stores it and leaves it to be read resolves it into its texture, D24S8.
+	// stores it and leaves it to be read resolves it into its texture, D24S8. A multisampled one has that texture too,
+	// unsampled, for a pass past eDRAM to store its depth in bands.
 	bool is_depth;
 	bool is_sampled_depth;
 	XsdkTexture texture;
@@ -399,12 +403,17 @@ typedef struct {
 // with the load and store ops they take there, an attachment's own at its first and last subpass and kept between.
 typedef struct {
 	uint32_t color_count;
+	// Every attachment's samples, 1, 2 or 4.
+	uint32_t samples;
 	VkFormat formats[V4X_MAX_COLOR_ATTACHMENTS];
 	// The xsdk target format each draws into (image.c, v4x_target_format).
 	uint32_t targets[V4X_MAX_COLOR_ATTACHMENTS];
 	VkAttachmentLoadOp load_ops[V4X_MAX_COLOR_ATTACHMENTS];
 	VkAttachmentStoreOp store_ops[V4X_MAX_COLOR_ATTACHMENTS];
 	uint32_t color_indices[V4X_MAX_COLOR_ATTACHMENTS];
+	// The attachment each multisampled colour attachment's average goes into at the subpass's end, or
+	// VK_ATTACHMENT_UNUSED.
+	uint32_t resolve_indices[V4X_MAX_COLOR_ATTACHMENTS];
 	bool has_depth;
 	uint32_t depth_index;
 	bool clears_depth;
@@ -433,9 +442,12 @@ typedef struct {
 // with the tiles they take all together; or past eDRAM's tiles, the tiled pass they draw in and its recording.
 typedef struct {
 	Image *attachments[V4X_MAX_COLOR_ATTACHMENTS];
+	// Each colour attachment's resolve attachment, or NULL.
+	Image *resolves[V4X_MAX_COLOR_ATTACHMENTS];
 	Image *depth;
 	uint32_t width;
 	uint32_t height;
+	uint32_t samples;
 	XsdkColorTarget targets[V4X_MAX_COLOR_ATTACHMENTS];
 	uint32_t color_tiles;
 	bool tiled;

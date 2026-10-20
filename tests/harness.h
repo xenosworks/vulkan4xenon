@@ -86,6 +86,8 @@ typedef struct {
 	const float *blend_constants;
 	// The render pass's subpass it draws in.
 	uint32_t subpass;
+	// NULL for one sample.
+	const VkPipelineMultisampleStateCreateInfo *multisample;
 } HarnessPipeline;
 
 // Whether an image the test drew holds what it should; failures are counted and the first few logged by the test.
@@ -101,6 +103,9 @@ VkResult harness_depth_image(const Harness *harness, VkImage *image, VkDeviceMem
 // An optimal-tiled image of one level, its memory and a view of it all.
 VkResult harness_image(const Harness *harness, VkFormat format, uint32_t width, uint32_t height,
 	VkImageUsageFlags usage, VkImage *image, VkDeviceMemory *memory, VkImageView *view);
+// The same at 1, 2 or 4 samples.
+VkResult harness_multisampled_image(const Harness *harness, VkFormat format, uint32_t width, uint32_t height,
+	VkSampleCountFlagBits samples, VkImageUsageFlags usage, VkImage *image, VkDeviceMemory *memory, VkImageView *view);
 void harness_destroy_render_pass(const Harness *harness, VkRenderPass render_pass, const VkFramebuffer *framebuffers);
 // Triangle lists over the whole screen: no culling, depth or blending.
 VkResult harness_pipeline(

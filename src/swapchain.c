@@ -40,9 +40,12 @@ static VkResult check_create_info(const VkSwapchainCreateInfoKHR *info)
 // it's sampled as one when a render pass loads it.
 static void describe_image(Image *image, uint32_t address, uint32_t width, uint32_t height)
 {
-	*image = (Image){
-		.address = address, .width = width, .height = height, .format = VK_FORMAT_B8G8R8A8_UNORM, .is_attachment = true
-	};
+	*image = (Image){ .address = address,
+		.width = width,
+		.height = height,
+		.format = VK_FORMAT_B8G8R8A8_UNORM,
+		.samples = 1,
+		.is_attachment = true };
 	const NTSTATUS status = xsdk_texture_init(&image->texture, XSDK_FORMAT_B8G8R8A8, width, height, 1, true);
 	assert(NT_SUCCESS(status) && image->texture.size_bytes == xsdk_gpu_resolve_bytes(width, height));
 	(void)status;

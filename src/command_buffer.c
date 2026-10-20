@@ -275,7 +275,8 @@ static bool in_tiled_pass(VkCommandBuffer commandBuffer)
 }
 
 // xsdk resolves a rectangle of target 0 alone, in 8_8_8_8 (xsdk:include/xsdk/gpu.h, xsdk_gpu_resolve_texture_rect), so
-// an area smaller than the framebuffer needs each subpass to draw one colour attachment of 8 bits a channel.
+// an area smaller than the framebuffer needs each subpass to draw one colour attachment of 8 bits a channel, at one
+// sample, as the console has resolved rectangles of no multisampled target.
 static bool area_resolvable(
 	const RenderPassSubpasses *render_pass, const FramebufferSubpasses *framebuffer, const VkRect2D *area)
 {
@@ -283,7 +284,7 @@ static bool area_resolvable(
 		return true;
 	for (uint32_t i = 0; i < render_pass->subpass_count; i++) {
 		const RenderPass *const subpass = &render_pass->subpasses[i];
-		if (subpass->color_count != 1 || subpass->targets[0] != XSDK_TARGET_8_8_8_8)
+		if (subpass->color_count != 1 || subpass->targets[0] != XSDK_TARGET_8_8_8_8 || subpass->samples != 1)
 			return false;
 	}
 	return true;
@@ -308,7 +309,7 @@ VKAPI_ATTR void VKAPI_CALL vkCmdBeginRenderPass(
 	}
 	if (!area_resolvable(render_pass, framebuffer, area)) {
 		commandBuffer->result = v4x_host_unsupported(
-			"render areas smaller than the framebuffer but for one 8-bit RGBA or BGRA colour attachment");
+			"render areas smaller than the framebuffer but for one 8-bit RGBA or BGRA colour attachment at one sample");
 		return;
 	}
 	if (!record_data(commandBuffer, area, sizeof *area, &commandBuffer->area_at))
@@ -817,14 +818,15 @@ VKAPI_ATTR void VKAPI_CALL vkCmdFillBuffer(
 
 // Replay is in order and copies wait for the GPU, so barriers need nothing. But a sampled depth image's depth reaches
 // its texture only from a render pass that leaves it to be read (render_pass.c), so a barrier that moves it from an
-// attachment to be read is refused rather than sampling what it held before.
+// attachment to be read is refused rather than sampling what it held before; a multisampled one is never sampled.
 static void check_image_barriers(
 	VkCommandBuffer commandBuffer, uint32_t imageMemoryBarrierCount, const VkImageMemoryBarrier *pImageMemoryBarriers)
 {
 	for (uint32_t i = 0; i < imageMemoryBarrierCount; i++) {
 		const VkImageMemoryBarrier *const barrier = &pImageMemoryBarriers[i];
 		const Image *const image = v4x_object(barrier->image);
-		if (image->is_sampled_depth && barrier->oldLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL &&
+		if (image->is_sampled_depth && image->samples == 1 &&
+			barrier->oldLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL &&
 			v4x_read_layout(barrier->newLayout)) {
 			commandBuffer->result = v4x_host_unsupported(
 				"barriers moving a sampled depth image from an attachment to be read; a render pass must leave it so");
@@ -1091,18 +1093,28 @@ VKAPI_ATTR void VKAPI_CALL vkCmdDispatchIndirect(VkCommandBuffer commandBuffer, 
 	commandBuffer->result = v4x_host_unsupported("compute dispatches");
 }
 
-// Images have one sample (docs/SUPPORT.md, Images), so there's none to resolve.
+// A multisampled image's memory holds its samples' average, as the pass that stored it resolved them (docs/SUPPORT.md,
+// Render passes), so a resolve copies that, whole, as vkCmdCopyImage copies a level.
 VKAPI_ATTR void VKAPI_CALL vkCmdResolveImage(VkCommandBuffer commandBuffer, VkImage srcImage,
 	VkImageLayout srcImageLayout, VkImage dstImage, VkImageLayout dstImageLayout, uint32_t regionCount,
 	const VkImageResolve *pRegions)
 {
-	(void)srcImage;
 	(void)srcImageLayout;
-	(void)dstImage;
 	(void)dstImageLayout;
-	(void)regionCount;
-	(void)pRegions;
-	commandBuffer->result = v4x_host_unsupported("resolving multisampled images");
+	Image *const source = v4x_object(srcImage);
+	Image *const destination = v4x_object(dstImage);
+	for (uint32_t i = 0; i < regionCount; i++) {
+		const VkImageResolve *const region = &pRegions[i];
+		Slices from;
+		Slices to;
+		if (!whole_level(source, &region->srcSubresource, region->srcOffset, region->extent, &from) ||
+			!whole_level(destination, &region->dstSubresource, region->dstOffset, region->extent, &to) ||
+			source->format != destination->format) {
+			commandBuffer->result = v4x_host_unsupported("resolves of less than a whole image, or between formats");
+			return;
+		}
+		record_image_copy(commandBuffer, COMMAND_COPY_IMAGE, source, 0, from, destination, 0, to, false);
+	}
 }
 
 VKAPI_ATTR void VKAPI_CALL vkCmdBindIndexBuffer(

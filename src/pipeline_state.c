@@ -263,9 +263,9 @@ static VkResult attachment_blend(const VkPipelineColorBlendAttachmentState *atta
 }
 
 // Each of the subpass's colour attachments blends on its own, as Xenos's targets do (xsdk:include/xsdk/gpu.h,
-// xsdk_gpu_set_blends), which is independentBlend.
-static VkResult blend_state(
-	const VkPipelineColorBlendStateCreateInfo *state, const RenderPass *render_pass, Pipeline *pipeline)
+// xsdk_gpu_set_blends), which is independentBlend; the first's blend state takes alpha to coverage, as xsdk does.
+static VkResult blend_state(const VkPipelineColorBlendStateCreateInfo *state, const RenderPass *render_pass,
+	bool alpha_to_coverage, Pipeline *pipeline)
 {
 	if (state->logicOpEnable || state->attachmentCount != render_pass->color_count)
 		return v4x_host_unsupported("logic ops, and blend states other than one for each colour attachment");
@@ -275,6 +275,7 @@ static VkResult blend_state(
 		const VkResult result = attachment_blend(&state->pAttachments[i], render_pass->formats[i], &setting);
 		if (result != VK_SUCCESS)
 			return result;
+		setting.alpha_to_coverage = i == 0 && alpha_to_coverage;
 		pipeline->blends_by_constants = pipeline->blends_by_constants || constant_factor(setting.color_source) ||
 			constant_factor(setting.color_dest) || constant_factor(setting.alpha_source) ||
 			constant_factor(setting.alpha_dest);
@@ -330,13 +331,25 @@ const float *v4x_pipeline_blend_constants(const Pipeline *pipeline, const Dynami
 	return takes(pipeline, VK_DYNAMIC_STATE_BLEND_CONSTANTS) ? dynamic->blend_constants : pipeline->blend_constants;
 }
 
+// The subpass's samples, every one of them drawn; sample masks, sample shading and alpha to one aren't built
+// (docs/SUPPORT.md, Pipelines).
+static VkResult multisample_state(const VkPipelineMultisampleStateCreateInfo *state, const RenderPass *render_pass)
+{
+	const VkSampleMask all = (1u << state->rasterizationSamples) - 1;
+	if (state->rasterizationSamples != render_pass->samples || state->sampleShadingEnable || state->alphaToOneEnable ||
+		(state->pSampleMask && (state->pSampleMask[0] & all) != all))
+		return v4x_host_unsupported(
+			"multisampling other than the subpass's samples, all of them: sample masks, sample shading or alpha to "
+			"one");
+	return VK_SUCCESS;
+}
+
 VkResult v4x_pipeline_state(const VkGraphicsPipelineCreateInfo *info, const RenderPass *render_pass, Pipeline *pipeline)
 {
 	const VkPipelineMultisampleStateCreateInfo *const multisample = info->pMultisampleState;
-	if (multisample->rasterizationSamples != VK_SAMPLE_COUNT_1_BIT || multisample->sampleShadingEnable ||
-		multisample->alphaToCoverageEnable || multisample->alphaToOneEnable)
-		return v4x_host_unsupported("multisampling");
-	VkResult result = topology(info->pInputAssemblyState, pipeline);
+	VkResult result = multisample_state(multisample, render_pass);
+	if (result == VK_SUCCESS)
+		result = topology(info->pInputAssemblyState, pipeline);
 	if (result == VK_SUCCESS)
 		result = dynamic_state(info->pDynamicState, pipeline);
 	if (result == VK_SUCCESS)
@@ -348,6 +361,6 @@ VkResult v4x_pipeline_state(const VkGraphicsPipelineCreateInfo *info, const Rend
 	if (result == VK_SUCCESS)
 		result = depth_stencil_state(render_pass->has_depth ? info->pDepthStencilState : NULL, pipeline);
 	if (result == VK_SUCCESS)
-		result = blend_state(info->pColorBlendState, render_pass, pipeline);
+		result = blend_state(info->pColorBlendState, render_pass, multisample->alphaToCoverageEnable, pipeline);
 	return result;
 }

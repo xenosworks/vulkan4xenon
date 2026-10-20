@@ -62,6 +62,16 @@ bool v4x_blend_format(VkFormat format)
 	return info && (info->features & VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BLEND_BIT);
 }
 
+// D24S8 and the colour formats whose targets average their samples on the console take 2 and 4; the floats resolve
+// between them (xsdk:docs/HARDWARE.md, "Multisampled formats and targets, milestone 44 step 3").
+VkSampleCountFlags v4x_sample_counts(VkFormat format)
+{
+	const uint32_t target = v4x_target_format(format);
+	const bool takes =
+		format == VK_FORMAT_D24_UNORM_S8_UINT || target == XSDK_TARGET_8_8_8_8 || target == XSDK_TARGET_2_10_10_10;
+	return takes ? V4X_SAMPLE_COUNTS : VK_SAMPLE_COUNT_1_BIT;
+}
+
 // A signed format reads every channel signed, an sRGB one its colours through gamma; each sign is for the xsdk channel
 // the Vulkan one is (xsdk_texture_signs).
 static void sign_channels(XsdkTexture *texture, const V4xFormat *format)
@@ -81,15 +91,18 @@ static void sign_channels(XsdkTexture *texture, const V4xFormat *format)
 	xsdk_texture_signs(texture, signs);
 }
 
+// A multisampled depth image isn't sampled, as sampledImageDepthSampleCounts is 1, but has a texture all the same.
 static VkResult check_depth_create_info(const VkImageCreateInfo *info)
 {
-	if (info->mipLevels != 1 || info->samples != VK_SAMPLE_COUNT_1_BIT || info->tiling != VK_IMAGE_TILING_OPTIMAL ||
-		!(info->usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) || (info->usage & ~V4X_DEPTH_IMAGE_USAGE))
-		return v4x_host_unsupported("depth images other than a single-sampled attachment of one level, sampled or not");
+	const bool multisampled = info->samples != VK_SAMPLE_COUNT_1_BIT;
+	if (info->mipLevels != 1 || !(info->samples & V4X_SAMPLE_COUNTS) || info->tiling != VK_IMAGE_TILING_OPTIMAL ||
+		!(info->usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) || (info->usage & ~V4X_DEPTH_IMAGE_USAGE) ||
+		(multisampled && (info->usage & VK_IMAGE_USAGE_SAMPLED_BIT)))
+		return v4x_host_unsupported("depth images other than an attachment of one level, sampled at one sample or not");
 	// A resolve writes from the corner, so the texture's base can't sit in the packed tail (xsdk:src/gpu_resolve.c).
-	if ((info->usage & VK_IMAGE_USAGE_SAMPLED_BIT) &&
+	if (((info->usage & VK_IMAGE_USAGE_SAMPLED_BIT) || multisampled) &&
 		(info->extent.width <= V4X_PACKED_SIDE || info->extent.height <= V4X_PACKED_SIDE))
-		return v4x_host_unsupported("sampled depth images of 16 texels or less on a side");
+		return v4x_host_unsupported("sampled or multisampled depth images of 16 texels or less on a side");
 	return VK_SUCCESS;
 }
 
@@ -122,15 +135,19 @@ static VkResult check_create_info(const VkImageCreateInfo *info)
 		return v4x_host_unsupported("images other than 2D with one layer, cubes and 3D images");
 	if (info->format == VK_FORMAT_D24_UNORM_S8_UINT)
 		return check_depth_create_info(info);
-	if (!v4x_image_format(info->format, &format) || info->samples != VK_SAMPLE_COUNT_1_BIT)
-		return v4x_host_unsupported("image formats docs/SUPPORT.md doesn't list, or multisampled images");
+	if (!v4x_image_format(info->format, &format) || !(info->samples & v4x_sample_counts(info->format)))
+		return v4x_host_unsupported("image formats docs/SUPPORT.md doesn't list, or samples their format doesn't take");
 	// A linear image's memory is the host's to read and write, and compressed blocks are swapped as they're copied.
 	if (info->tiling == VK_IMAGE_TILING_LINEAR &&
 		(info->mipLevels != 1 || (info->usage & ~(VkImageUsageFlags)V4X_LINEAR_IMAGE_USAGE) ||
 			v4x_format(info->format)->compressed))
 		return v4x_host_unsupported("linear images other than one uncompressed level, only copied to and from");
-	if (info->usage & ~(VkImageUsageFlags)V4X_IMAGE_USAGE)
-		return v4x_host_unsupported("image usages other than sampling, copying in and colour attachments");
+	const bool multisampled = info->samples != VK_SAMPLE_COUNT_1_BIT;
+	if ((info->usage & ~(VkImageUsageFlags)(multisampled ? V4X_MULTISAMPLED_USAGE : V4X_IMAGE_USAGE)) ||
+		(multisampled && !(info->usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)))
+		return v4x_host_unsupported(
+			"image usages other than sampling, copying and colour attachments; multisampled, other than drawn and "
+			"resolved");
 	if ((info->usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) && !v4x_attachment_format(info->format))
 		return v4x_host_unsupported(
 			"colour attachments of formats xsdk's targets don't draw (docs/SUPPORT.md, Formats)");
@@ -167,8 +184,9 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateImage(
 	image->width = pCreateInfo->extent.width;
 	image->height = pCreateInfo->extent.height;
 	image->format = pCreateInfo->format;
+	image->samples = pCreateInfo->samples;
 	const bool is_depth = pCreateInfo->format == VK_FORMAT_D24_UNORM_S8_UINT;
-	if (is_depth && !(pCreateInfo->usage & VK_IMAGE_USAGE_SAMPLED_BIT)) {
+	if (is_depth && !(pCreateInfo->usage & VK_IMAGE_USAGE_SAMPLED_BIT) && image->samples == VK_SAMPLE_COUNT_1_BIT) {
 		image->is_depth = true;
 		*pImage = v4x_handle(image);
 		return VK_SUCCESS;

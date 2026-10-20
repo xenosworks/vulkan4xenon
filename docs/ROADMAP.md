@@ -1593,7 +1593,9 @@ the frame has to be drawn in tiles, as Xenos's predicated tiling does (xsdk:SCOP
 **Scope (agreed 2026-10-17):** xsdk:docs/scope/44-tiling-and-msaa.md, its vulkan4xenon part, in two: render passes past
 eDRAM at one sample once xsdk milestone 44's step 2 is done, then multisampling after its steps 3 and 4.
 
-**The first part, render passes past eDRAM at one sample** (built 2026-10-18; not yet run on the console):
+**The first part, render passes past eDRAM at one sample** (built 2026-10-18; on the console 2026-10-18, `c33a664`,
+`results/2026-10-18-milestone-17-part-1/`: vulkan4xenon_test 439 of 439 twice, each of five break sets failing the
+checks it names and no others; xsdk:docs/HARDWARE.md, "Render passes past eDRAM in the layer, milestone 44"):
 - A subpass past eDRAM's tiles is xsdk's tiled pass: its commands are replayed once into a recording each band runs,
   its loads drawn back at the recording's start, its stores each band's resolves, its depth whole at eDRAM's top where
   it fits, else in bands, stored into a sampled depth image's texture and drawn back through the pixel shader, its
@@ -1608,6 +1610,42 @@ eDRAM at one sample once xsdk milestone 44's step 2 is done, then multisampling 
   each break and the checks it should fail, and `builds.sh` builds them.
 - **Not in it:** multisampled images, resolve attachments, alpha to coverage, Aurora and Dusklight, the second part;
   subpasses without colour attachments, still refused.
+
+**The second part, multisampling** (the layer's part of xsdk milestone 44's step 5; built 2026-10-20 on xsdk's step 3
+and 4 results, not yet run on the console):
+- **Images:** `R8G8B8A8_UNORM`, `B8G8R8A8_UNORM`, `A2B10G10R10_UNORM_PACK32` and D24S8 at 2 and 4 samples, the
+  formats whose targets averaged on resolve on the console; the half and 32-bit floats take one, as their `sampleCounts`
+  say (xsdk:docs/HARDWARE.md, "Multisampled formats and targets, milestone 44 step 3"). The framebuffer sample counts
+  are 1, 2 and 4, the sampled ones 1, as Xenos samples no multisampled texture, and `standardSampleLocations` is false.
+  A multisampled image is drawn into and resolved from, never sampled; its memory holds a texture at one sample.
+- **Pipelines:** `rasterizationSamples` at the subpass's count; `alphaToCoverageEnable` through
+  `XsdkBlend.alpha_to_coverage`, n of N samples from alpha (4n - 2) / 4N (xsdk:docs/HARDWARE.md, "Alpha to coverage,
+  milestone 44 step 4"); sample masks other than all ones, alpha to one and sample shading refused.
+- **Render passes:** a resolve attachment takes its colour's average at the subpass's end; storing a multisampled
+  attachment stores the average into its image's memory and loading it draws that average back into every sample, a
+  deviation (docs/SUPPORT.md, Render passes); `vkCmdResolveImage` copies that stored average. Render areas smaller than
+  the framebuffer stay at one sample.
+- **Past eDRAM at 2 and 4 samples** as xsdk's tiled passes at that count: at 1280x720 one colour attachment and depth
+  take 3 bands, depth whole at 2 samples and in bands at 4, where a multisampled depth image keeps sample 0's depth in
+  its texture and a pass loading it draws it back as one depth a pixel. A stored attachment with a resolve attachment is
+  two resolves of one target a band, so xsdk clears a target resolved twice at its last resolve
+  (xsdk:include/xsdk/gpu.h, `xsdk_gpu_end_tiles`).
+- **New test:** tests/test_multisample.c: a triangle's edges at 2 and 4 samples in both colour formats that take them,
+  through a resolve attachment, counted as xsdk_test counts them; `vkCmdResolveImage` of each stored attachment; a pass
+  loading each, drawn back; alpha to coverage's steps at 1, 2 and 4 samples; the formats' sample counts, the limits
+  and the refusals. **Extended:** tests/test_tiles.c, passes at 1280x720 at 2 samples, depth whole, and at 4, depth in
+  bands, each clearing colour and depth and a second loading both, every texel of the resolve attachment checked.
+- **Broken on purpose:** `results/2026-10-20-milestone-17-part-2/breaks.py` names each break and the checks it should
+  fail, and `builds.sh` builds them: resolves copying sample 0, the tiled pass's window offset left at 0,
+  `alphaToCoverageEnable` ignored, and the load's draw-back skipped in bands after the first.
+- **What the console must settle:** that a pixel shader's exported depth reaches every sample at 2 and 4 samples (the
+  4-sample tiled pass's second pass, whose quad would show where the near quad's depth is missing); that drawing an
+  image back at 2 and 4 samples writes every sample (the second passes of test_multisample, and the tiled passes'); and
+  that a band's resolve that doesn't clear leaves the target for the next resolve (both tiled passes' resolve
+  attachments, which would show the clear).
+- **Not in it:** Aurora's backend and Dusklight's sample count, which come next in step 5; samples stored apart,
+  sampled multisampled images, sample masks, sample shading, alpha to one and multisampled render areas
+  (xsdk:docs/scope/44-tiling-and-msaa.md, "Not in it").
 
 ### Milestone 18: every GX pipeline in GLSL
 

@@ -94,6 +94,13 @@ VkResult harness_depth_image(const Harness *harness, VkImage *image, VkDeviceMem
 VkResult harness_image(const Harness *harness, VkFormat format, uint32_t width, uint32_t height,
 	VkImageUsageFlags usage, VkImage *image, VkDeviceMemory *memory, VkImageView *view)
 {
+	return harness_multisampled_image(
+		harness, format, width, height, VK_SAMPLE_COUNT_1_BIT, usage, image, memory, view);
+}
+
+VkResult harness_multisampled_image(const Harness *harness, VkFormat format, uint32_t width, uint32_t height,
+	VkSampleCountFlagBits samples, VkImageUsageFlags usage, VkImage *image, VkDeviceMemory *memory, VkImageView *view)
+{
 	const VkImageCreateInfo info = {
 		.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
 		.imageType = VK_IMAGE_TYPE_2D,
@@ -101,7 +108,7 @@ VkResult harness_image(const Harness *harness, VkFormat format, uint32_t width, 
 		.extent = { width, height, 1 },
 		.mipLevels = 1,
 		.arrayLayers = 1,
-		.samples = VK_SAMPLE_COUNT_1_BIT,
+		.samples = samples,
 		.tiling = VK_IMAGE_TILING_OPTIMAL,
 		.usage = usage,
 	};
@@ -217,7 +224,7 @@ static VkResult create_pipeline(const Harness *harness, const HarnessPipeline *s
 		.pInputAssemblyState = spec->assembly ? spec->assembly : &triangle_list,
 		.pViewportState = &viewport_state,
 		.pRasterizationState = spec->raster ? spec->raster : &plain,
-		.pMultisampleState = &multisample,
+		.pMultisampleState = spec->multisample ? spec->multisample : &multisample,
 		.pDepthStencilState = spec->depth_stencil,
 		.pColorBlendState = &blend,
 		.pDynamicState = dynamic_count ? &dynamic : NULL,

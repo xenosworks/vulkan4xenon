@@ -43,7 +43,6 @@ Some are there to refuse, as the features they need aren't reported. Each logs w
 - compute: `vkCreateComputePipelines`, which sets each pipeline to `VK_NULL_HANDLE`, `vkCmdDispatch` and
   `vkCmdDispatchIndirect` (Device);
 - `vkCreateBufferView`, as no format has texel buffer features (Formats), so `vkDestroyBufferView` has nothing to do;
-- `vkCmdResolveImage`, as images have one sample;
 - `vkCmdSetDepthBounds`, with no depth bounds test (Pipelines);
 - `vkCreateQueryPool` for pipeline statistics queries, and `vkCmdBeginQuery` with `VK_QUERY_CONTROL_PRECISE_BIT` or
   outside a render pass (Queries);
@@ -225,8 +224,15 @@ Some are there to refuse, as the features they need aren't reported. Each logs w
   - every other dynamic state of Vulkan 1.0's but depth bounds, the pipeline's own value then ignored (Dynamic
     state);
   - polygons filled, or as lines or points with `fillModeNonSolid`; line width 1; no depth clamp;
-  - one sample;
+  - the subpass's samples, 1, 2 or 4, each sample drawn (milestone 17's second part); a `pSampleMask` other than all
+    ones, `alphaToOneEnable` and `sampleShadingEnable` return `VK_ERROR_FEATURE_NOT_PRESENT`, as `alphaToOne` and
+    `sampleRateShading` aren't reported;
   - a blend state for each of the subpass's colour attachments, up to four.
+- **Alpha to coverage** (milestone 17's second part): `alphaToCoverageEnable` has the first colour attachment's alpha
+  pick the share of each pixel's samples drawn, xsdk's `XsdkBlend.alpha_to_coverage`: n of N samples from an alpha of
+  (4n - 2) / 4N, a tie rounding up, alike in every pixel of a quad, and at one sample from 1/2, as the console covered
+  them (xsdk:docs/HARDWARE.md, "Alpha to coverage, milestone 44 step 4"). Vulkan leaves the share to the
+  implementation.
 - **Rasterization:**
   - culling front or back faces, or none; culling both returns `VK_ERROR_FEATURE_NOT_PRESENT`;
   - `polygonMode` `LINE` and `POINT` (milestone 26): xsdk's fill, `PA_SU_SC_MODE_CNTL`'s `poly_mode` in dual mode with
@@ -298,31 +304,53 @@ Some are there to refuse, as the features they need aren't reported. Each logs w
 ## Render passes
 
 - Up to 8 subpasses over up to 8 attachments. Each subpass has one to four colour attachments, of the formats that
-  are colour attachments (Formats), one sample, and optionally a depth attachment, `VK_FORMAT_D24_UNORM_S8_UINT`;
-  none, unused colour attachments, and input and resolve attachments return `VK_ERROR_FEATURE_NOT_PRESENT`.
-- **A subpass past eDRAM is a tiled pass** (milestone 17's first part): one whose colour targets and depth pass eDRAM's
-  2048 tiles at the framebuffer's size, a 64-bit target taking twice a 32-bit one's tiles
-  (`xsdk_gpu_color_target_tiles`), is drawn as xsdk's tiled pass (xsdk:include/xsdk/gpu.h, `xsdk_gpu_begin_tiles`). At
-  1280x720 one 32-bit colour attachment and depth fit, or one 64-bit one without, or two 32-bit ones without; more
-  tiles. Past eDRAM, at one sample:
+  are colour attachments (Formats), and optionally a depth attachment, `VK_FORMAT_D24_UNORM_S8_UINT`, every one at the
+  same samples, 1, 2 or 4, as their formats take them (Images); at 2 or 4 each colour attachment may have a resolve
+  attachment. None, unused colour attachments, and input attachments return `VK_ERROR_FEATURE_NOT_PRESENT`.
+- **Multisampled attachments** (milestone 17's second part) draw into xsdk's targets at 2 or 4 samples
+  (`xsdk_gpu_set_targets_samples`), which take 2 or 4 times the tiles, a pixel's 2 samples two rows of eDRAM and its 4
+  a square of two by two (xsdk:include/xsdk/gpu.h; xenia:src/xenia/gpu/shaders/edram.xesli:27-32):
+  - **A resolve attachment** takes the samples' average at the subpass's end (`xsdk_gpu_resolve_target`), before the
+    attachment's own store, if it has one, which then clears eDRAM for the next pass as a store does.
+  - **Deviation: storing** a multisampled attachment stores its samples' average into its image's memory, and loading
+    it, where eDRAM no longer holds it, draws that average back into every sample, as a load draws a one-sample image
+    back. The samples aren't kept apart: an edge drawn before keeps its blend as one colour, and the next pass's draws
+    make edges of their own. Where eDRAM still holds the attachment, a load finds its samples as they were. Storing
+    each sample apart would mean a resolve of each, drawn back under `PA_SC_AA_MASK`, at two or four times the cost
+    (xsdk:docs/scope/44-tiling-and-msaa.md, "Not in it").
+  - Depth resolves copy sample 0 (xsdk:docs/HARDWARE.md, "Multisampled formats and targets, milestone 44 step 3"),
+    which only a pass past eDRAM storing depth in bands does, as a multisampled depth image isn't sampled (Images).
+  - A render area smaller than the framebuffer fails the command buffer, as the console has resolved a rectangle of no
+    multisampled target.
+- **A subpass past eDRAM is a tiled pass** (milestone 17): one whose colour targets and depth pass eDRAM's 2048 tiles
+  at the framebuffer's size and samples, a 64-bit target taking twice a 32-bit one's tiles
+  (`xsdk_gpu_color_target_sample_tiles`), is drawn as xsdk's tiled pass (xsdk:include/xsdk/gpu.h,
+  `xsdk_gpu_begin_tiles`). At 1280x720 and one sample, one 32-bit colour attachment and depth fit, or one 64-bit one
+  without, or two 32-bit ones without; more tiles. At 2 samples one 32-bit colour attachment fits alone, and with depth
+  takes 3 bands, its depth whole; at 4 samples it takes 3 bands with depth in bands. Past eDRAM, at 1, 2 or 4 samples:
   - **Its commands are replayed once,** at `vkQueueSubmit`, into a recording that each band of rows runs, as few bands
     as fit, each moved to eDRAM's top (xsdk:docs/HARDWARE.md, "Tiled passes at one sample, milestone 44 step 2").
   - **Stores:** each colour attachment is resolved a band at a time into its image, whatever its store op, which clears
-    it to its clear value for the next band.
+    it to its clear value for the next band; and into its resolve attachment, if it has one. A multisampled attachment
+    that isn't stored, with a resolve attachment, is resolved into that alone. xsdk clears a target resolved twice in a
+    band at its last resolve (xsdk:include/xsdk/gpu.h, `xsdk_gpu_end_tiles`).
   - **Loads:** each load op's image is drawn back at the recording's start, so each band draws its own rows, into its
     target alone by the write masks, as a band's targets can't be set one at a time. The resolve that clears band 0
     before the first band leaves those images alone (`XsdkTileResolve`'s `drawn_back`). A clear needs nothing more.
   - **Depth stays whole** in eDRAM, ending at its top, wherever it fits beside a band of colour, so it lasts between
     passes as an untiled pass keeps it, tiled and untiled passes taking it from each other (`XsdkTiling`'s
-    `depth_top`). Every subpass up to 1280x720 fits. Resolves don't clear it, so a pass that clears it draws its clear
-    first, unless eDRAM holds that clear already; one left to be read is resolved into its texture a band at a time.
+    `depth_top`). Every subpass up to 1280x720 fits at 1 and 2 samples. Resolves don't clear it, so a pass that clears
+    it draws its clear first, unless eDRAM holds that clear already; one left to be read is resolved into its texture a
+    band at a time.
   - **Otherwise depth is in bands:** each band's is cleared with it and, if the pass stores depth, resolved into the
     depth image's texture a band at a time. A pass that loads it draws that texture's depth back first, through the
-    pixel shader, which takes a depth image made with `VK_IMAGE_USAGE_SAMPLED_BIT`: with any other,
-    `vkCreateFramebuffer` returns `VK_ERROR_FEATURE_NOT_PRESENT`. The texture holds what the last pass that stored the
-    depth in bands, or left it to be read, put there. **Deviation:** stencil doesn't come back, as Xenos exports none
-    from a pixel shader, and the layer logs that once; the depth comes back through a texture fetch, which xsdk_test
-    finds within 2 in 2^24 of what was stored (xsdk:tests/test_tiles.c, `DEPTH_24_TOLERANCE`).
+    pixel shader, which takes a depth image made with `VK_IMAGE_USAGE_SAMPLED_BIT`, or a multisampled one, whose
+    texture the layer keeps for this (Images): with any other, `vkCreateFramebuffer` returns
+    `VK_ERROR_FEATURE_NOT_PRESENT`. The texture holds what the last pass that stored the depth in bands, or left it to
+    be read, put there. **Deviation:** stencil doesn't come back, as Xenos exports none from a pixel shader, and the
+    layer logs that once; the depth comes back through a texture fetch, which xsdk_test finds within 2 in 2^24 of what
+    was stored (xsdk:tests/test_tiles.c, `DEPTH_24_TOLERANCE`). **Deviation:** at 2 and 4 samples the depth stored is
+    sample 0's, and it comes back as one depth a pixel in every sample, as the pixel shader exports one.
   - **Refused inside it:** queries and time stamps, as each band would run them; `vkEndCommandBuffer` returns
     `VK_ERROR_FEATURE_NOT_PRESENT`, and one in a secondary command buffer is dropped at replay and logged. A render area
     smaller than the framebuffer fails the command buffer the same way, as each band resolves all its rows.
@@ -379,7 +407,8 @@ Some are there to refuse, as the features they need aren't reported. Each logs w
     so the draws after it skip no hidden pixels early.
 - How an untiled pass maps (docs/ROADMAP.md, milestones 4, 25 and 27):
   - the pass draws into eDRAM, each colour attachment a colour target of its own in its format, one after another
-    from tile 0 (`xsdk_gpu_set_targets`), and depth where eDRAM holds its image's, or the clear it wants at its size;
+    from tile 0 at the subpass's samples (`xsdk_gpu_set_targets_samples`), and depth where eDRAM holds its image's, or
+    the clear it wants at its size and samples;
     a depth eDRAM doesn't hold goes ending at tile 2048, or just under a depth image eDRAM holds there when that stays
     above the pass's colour, so a pass with a smaller depth of its own leaves the earlier one alone, as a pass without
     depth does (milestone 14). Up to four depths are tracked, each lost when a pass's colour or depth reaches its
@@ -402,7 +431,8 @@ Some are there to refuse, as the features they need aren't reported. Each logs w
 
 ## Images
 
-- 2D, one layer, one sample, optimal tiling, used for sampling, copying to and from and as colour attachments; cubes and
+- 2D, one layer, one sample, optimal tiling, used for sampling, copying to and from and as colour attachments, transient
+  or not; multisampled images, below; cubes and
   3D images, below; anything else returns `VK_ERROR_FEATURE_NOT_PRESENT`. Mip levels down to 1x1. None is sparse, so
   `vkGetImageSparseMemoryRequirements` and `vkGetPhysicalDeviceSparseImageFormatProperties` find nothing.
 - Formats: each on the xsdk format that holds its bits as Vulkan does (Formats, "On xsdk").
@@ -439,6 +469,18 @@ Some are there to refuse, as the features they need aren't reported. Each logs w
   `R16G16B16A16_SFLOAT` into 16_16_16_16_FLOAT and `R32_SFLOAT` into 32_FLOAT (xenia:src/xenia/gpu/xenos.h:299-313).
   Xenos's 7e3 float, 2_10_10_10_FLOAT, and its 16_16 and 16_16_16_16 fixed point from -32 to 32 have no Vulkan
   format, so they aren't offered.
+- **Multisampled images** (milestone 17's second part): 2D, one level and one layer, optimal tiling, both sides over 16
+  texels, at 2 or 4 samples, in `R8G8B8A8_UNORM`, `B8G8R8A8_UNORM`, `A2B10G10R10_UNORM_PACK32` and
+  `D24_UNORM_S8_UINT`: the formats whose targets drew, blended and averaged on resolve at 2 and 4 samples on the
+  console. `R16G16_SFLOAT`, `R16G16B16A16_SFLOAT` and `R32_SFLOAT` resolved between the samples' steps there, so they
+  take one sample alone (xsdk:docs/HARDWARE.md, "Multisampled formats and targets, milestone 44 step 3"), as their
+  `sampleCounts` say. A colour one is a colour attachment, transient or not, and a transfer source for
+  `vkCmdResolveImage`; a depth one is a depth attachment, cleared by `vkCmdClearDepthStencilImage` if it's made a
+  transfer destination. **Deviation:** neither is sampled, as Xenos samples no multisampled texture
+  (xsdk:docs/scope/44-tiling-and-msaa.md, "Not in it"), so a multisampled image made with `VK_IMAGE_USAGE_SAMPLED_BIT`
+  returns `VK_ERROR_FEATURE_NOT_PRESENT` and `sampleCounts` is 1 for that usage. Each needs a texture of its format at
+  one sample in its memory: a colour one's holds its samples' average once a pass stores it (Render passes), and a depth
+  one's D24S8 its sample 0's depth when a pass past eDRAM stores it in bands.
 - Optimal tiling is Xenos's tiled layout, with mips as xsdk milestones 15 and 16 settled.
 - Memory requirements: the texture's size, 4 KB aligned, as a fetch constant holds its address in 4 KB units. Binding
   places the texels at the memory (`xsdk_texture_attach`).
@@ -537,6 +579,9 @@ Some are there to refuse, as the features they need aren't reported. Each logs w
 - `vkCmdCopyImage` copies whole levels of one size between formats of one texel size, the bits as they are, a row at a
   time, as many of a cube's layers or a 3D image's slices as the other gives. A copy between a compressed and an
   uncompressed format, which Vulkan allows, fails the command buffer, as their 16-bit words lie in different orders.
+- `vkCmdResolveImage` copies a multisampled image's memory, its samples' average as the pass that stored it left it
+  (Render passes), into an image of its format at one sample, the whole image alone, as `vkCmdCopyImage` copies
+  (milestone 17's second part).
 - **`vkCmdBlitImage` drawn on the GPU** (milestone 27), so the replay doesn't wait for it: between two 2D images of
   `VK_FORMAT_R8G8B8A8_UNORM` or `B8G8R8A8_UNORM`, one format both, from level 0 of an optimal source to level 0 of
   another optimal image, over 16 texels a side and within eDRAM's 2048 tiles, its destination region any on the
@@ -820,17 +865,25 @@ hasn't been measured (xsdk:TODO.md).
 | `minTexelBufferOffsetAlignment`, `minUniformBufferOffsetAlignment`, `minStorageBufferOffsetAlignment` | 256 |
 | `maxFramebufferWidth`, `maxFramebufferHeight` | 4096 |
 | `maxFramebufferLayers` | 1 |
-| `framebufferColorSampleCounts`, `framebufferDepthSampleCounts`, `framebufferStencilSampleCounts`, `sampledImageColorSampleCounts` | 1 |
+| `framebufferColorSampleCounts`, `framebufferDepthSampleCounts`, `framebufferStencilSampleCounts` | 1, 2 and 4 |
+| `sampledImageColorSampleCounts` | 1 |
 | `discreteQueuePriorities` | 2 |
 | `maxClipDistances`, `maxCombinedClipAndCullDistances` | 6 |
 | `pointSizeRange` | 0, 8191.875 |
 | `pointSizeGranularity` | 0.125 |
 | `lineWidthRange` | 1, 1 |
-| `standardSampleLocations` | true |
+| `standardSampleLocations` | false |
 | `optimalBufferCopyOffsetAlignment`, `optimalBufferCopyRowPitchAlignment` | 1 |
 | `nonCoherentAtomSize` | 128 |
 | `timestampComputeAndGraphics` | true |
 | `timestampPeriod` | 2.005 ns |
+
+`standardSampleLocations` is false, as Xenos's samples sit elsewhere than Vulkan's: in 16ths of a pixel across, then
+down, from its centre, at 2 samples sample 0 at (-4, 4) and 1 at (4, -4), at 4 samples 0 at (-2, -2), 1 at (2, 2), 2 at
+(-6, 6) and 3 at (6, -6) (xsdk:docs/HARDWARE.md, "Multisampled formats and targets, milestone 44 step 3").
+**Deviation:** `framebufferColorSampleCounts` takes 2 and 4, though `R16G16_SFLOAT`, `R16G16B16A16_SFLOAT` and
+`R32_SFLOAT` take one sample alone (Images), where Vulkan has each colour format's `sampleCounts` take the limit's at
+least; leaving 2 and 4 out of the limit would hide them from the formats that take them.
 
 Set limits below Vulkan 1.0's minimum:
 
@@ -839,6 +892,7 @@ Set limits below Vulkan 1.0's minimum:
 | `maxVertexInputAttributeOffset` 1016, `maxVertexInputBindingStride` 1020 (2047, 2048) | A fetch's stride is 8 bits of dwords (xsdk:src/shader.c). |
 | `maxFramebufferLayers` 1 (256) | No layered rendering. |
 | `maxImageArrayLayers` 6 (256) | A cube's six layers; arrays of images aren't built yet. |
+| `sampledImageColorSampleCounts` 1 (1 and 4) | Xenos samples no multisampled texture (Images). |
 | `maxUniformBufferRange` 4032 (16384) | A block is copied into a stage's float constants of 16 bytes, a fragment shader's 252 below the 4 xsdk keeps (Shaders). |
 | `maxPerStageResources` 28 (128) | 12 uniform buffers and 16 samplers: a stage's constants, and the fetch constants the two stages share with the vertex streams (Pipelines). |
 | `maxClipDistances`, `maxCombinedClipAndCullDistances` 6 (8) | Xenos clips against six planes (xenia:src/xenia/gpu/registers.h:539-544). |
