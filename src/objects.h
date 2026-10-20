@@ -552,6 +552,9 @@ typedef struct {
 			// The render area, a VkRect2D in the command buffer's data.
 			uint32_t area_at;
 		} begin;
+		// A pass's end: the depth image a vkCmdResolveImage right after takes its multisampled depth's sample 0 into,
+		// or NULL.
+		Image *resolved_depth;
 		const Pipeline *pipeline;
 		struct {
 			uint32_t binding;

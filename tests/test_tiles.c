@@ -22,7 +22,8 @@
 // Then milestone 17's second part: a 1280x720 pass at 2 samples, its depth whole at eDRAM's top, and one at 4, its
 // depth in bands, each storing colour and depth and resolving into a resolve attachment, then a pass loading both:
 // every texel of the resolve attachment as worked out, a triangle's edges across the bands at a step of the samples'
-// blend. Each scene shows on screen in its own colours.
+// blend; and vkCmdResolveImage of the depth after it: every texel sample 0's depth. Each scene shows on screen in its
+// own colours.
 
 enum {
 	FRAMES = 3,
@@ -166,6 +167,12 @@ typedef struct {
 
 static const Point corners[TRIANGLE_VERTICES] = { { 1130.3f, 100.7f }, { 1260.6f, 300.2f }, { 1150.4f, 680.9f } };
 static const float triangle_depth = 0.5f;
+// Samples 0 and 1 from a pixel's centre at 2 and 4 samples, in pixels, y down (xsdk:include/xsdk/gpu.h).
+static const Point sample_places[MSAA_CASES][2] = { { { -0.25f, 0.25f }, { 0.25f, -0.25f } },
+	{ { -0.125f, -0.125f }, { 0.125f, 0.125f } } };
+// A sample this near an edge may land either side: vertices snap to 16ths of a pixel, as xsdk's PA_SU_VTX_CNTL asks
+// (xenia:src/xenia/gpu/xenos.h:877-878).
+static const float sample_margin = 0.125f;
 
 typedef struct {
 	VkSampleCountFlagBits samples;
@@ -259,6 +266,10 @@ typedef struct {
 	VkPipeline write_pipeline;
 	VkPipeline test_pipeline;
 	VkCommandBuffer commands[HARNESS_MAX_IMAGES];
+	// What vkCmdResolveImage takes the depth into after both passes.
+	VkImage depth_copy;
+	VkDeviceMemory depth_copy_memory;
+	VkImageView depth_copy_view;
 } Msaa;
 
 typedef struct {
@@ -419,6 +430,10 @@ static VkResult make_msaa_images(const Harness *harness, Msaa *m, VkSampleCountF
 	for (uint32_t i = 0; i < MSAA_IMAGES && result == VK_SUCCESS; i++)
 		result = harness_multisampled_image(
 			harness, formats[i], WIDTH, HEIGHT, counts[i], usages[i], &m->images[i], &m->memories[i], &m->views[i]);
+	if (result == VK_SUCCESS)
+		result = harness_image(harness, VK_FORMAT_D24_UNORM_S8_UINT, WIDTH, HEIGHT,
+			VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+			&m->depth_copy, &m->depth_copy_memory, &m->depth_copy_view);
 	return result;
 }
 
@@ -888,6 +903,13 @@ static void record_msaa(VkCommandBuffer commands, const Scene *s, uint32_t index
 	const HarnessQuad second = quad_of(&second_quad, c->colors[2]);
 	harness_push_quad_in(commands, s->push_layout, &second, WIDTH, HEIGHT);
 	vkCmdEndRenderPass(commands);
+	const VkImageResolve region = {
+		.srcSubresource = { VK_IMAGE_ASPECT_DEPTH_BIT, 0, 0, 1 },
+		.dstSubresource = { VK_IMAGE_ASPECT_DEPTH_BIT, 0, 0, 1 },
+		.extent = { WIDTH, HEIGHT, 1 },
+	};
+	vkCmdResolveImage(commands, m->images[MSAA_DEPTH], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, m->depth_copy,
+		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 	draw_shown(commands, s, index, SET_MSAA + which, 0);
 }
 
@@ -1262,6 +1284,83 @@ static void check_msaa(const Harness *harness, const Scene *s, uint32_t which)
 	check(label, read && every_step && !unstepped && !wrong);
 }
 
+// Whether a point lies inside the triangle, and whether it's clear of the lines through its edges by sample_margin.
+static bool triangle_covers(float x, float y, bool *clear)
+{
+	const float area = edge_side(corners[0], corners[1], corners[2].x, corners[2].y);
+	bool inside = true;
+	*clear = true;
+	for (uint32_t i = 0; i < TRIANGLE_VERTICES; i++) {
+		const Point a = corners[i];
+		const Point b = corners[(i + 1) % TRIANGLE_VERTICES];
+		const float side = edge_side(a, b, x, y);
+		const float length = sqrtf((b.x - a.x) * (b.x - a.x) + (b.y - a.y) * (b.y - a.y));
+		inside = inside && side * area > 0.0f;
+		*clear = *clear && fabsf(side) > sample_margin * length;
+	}
+	return inside;
+}
+
+// The depth both passes leave off the triangle: the near quad's, the far one's or the clear's, as the second pass's
+// quad writes none.
+static float msaa_depth_at(uint32_t x, uint32_t y)
+{
+	if (inside(&near_quad, x, y))
+		return near_quad.depth;
+	return inside(&far_quad, x, y) ? far_quad.depth : 1.0f;
+}
+
+// The depth image vkCmdResolveImage took the pass's depth into: every texel sample 0's depth above stencil 0, as xsdk's
+// depth resolve copies sample 0 (xsdk:docs/HARDWARE.md, "Multisampled formats and targets, milestone 44 step 3"), some
+// of them where samples 0 and 1 lie either side of the triangle's edges. At 4 samples the second pass drew back the
+// first pass's sample 0, stored a band at a time, into every sample. Copied out first, as count_wrong_depth does.
+static void check_depth_resolve(const Harness *harness, const Scene *s, uint32_t which)
+{
+	const Msaa *const m = &s->msaa[which];
+	VkMemoryRequirements requirements;
+	vkGetImageMemoryRequirements(harness->device, m->depth_copy, &requirements);
+	void *mapped = NULL;
+	const bool read = requirements.size <= READBACK_BYTES &&
+		harness_ok("vkMapMemory", vkMapMemory(harness->device, m->depth_copy_memory, 0, VK_WHOLE_SIZE, 0, &mapped));
+	if (read) {
+		memcpy(s->read, mapped, requirements.size);
+		vkUnmapMemory(harness->device, m->depth_copy_memory);
+	}
+	const Point zero = sample_places[which][0];
+	const Point one = sample_places[which][1];
+	const uint32_t *const words = (const uint32_t *)s->read;
+	uint32_t wrong = 0;
+	uint32_t split = 0;
+	for (uint32_t y = 0; y < HEIGHT && read; y++) {
+		for (uint32_t x = 0; x < WIDTH; x++) {
+			const float cx = (float)x + 0.5f;
+			const float cy = (float)y + 0.5f;
+			bool zero_clear;
+			bool one_clear;
+			const bool zero_in = triangle_covers(cx + zero.x, cy + zero.y, &zero_clear);
+			const bool one_in = triangle_covers(cx + one.x, cy + one.y, &one_clear);
+			if (!zero_clear)
+				continue;
+			split += one_clear && zero_in != one_in;
+			const float depth = zero_in ? triangle_depth : msaa_depth_at(x, y);
+			const uint32_t want = (uint32_t)(depth * (double)DEPTH_24_MAX + 0.5);
+			const uint32_t word = words[tiled_index(x, y, WIDTH)];
+			if (difference(word >> 8, want) <= DEPTH_24_TOLERANCE && (word & 0xFF) == 0)
+				continue;
+			if (wrong++ < MISSES_LOGGED)
+				xsdk_log_write("tiles: %s: the depth resolve's (%u, %u) holds %08X, for depth %06X",
+					msaa_cases[which].name, (unsigned)x, (unsigned)y, (unsigned)word, (unsigned)want);
+		}
+	}
+	xsdk_log_write("tiles: %s: the depth resolve: %u texels wrong, %u where samples 0 and 1 differ",
+		msaa_cases[which].name, (unsigned)wrong, (unsigned)split);
+	char label[LABEL_BYTES];
+	snprintf(label, sizeof label,
+		"tiles: %s past eDRAM at 1280x720, vkCmdResolveImage of its depth after both passes, every texel sample 0's",
+		msaa_cases[which].name);
+	check(label, read && split && !wrong);
+}
+
 typedef struct {
 	VkQueryPool pool;
 	uint32_t refusal;
@@ -1417,6 +1516,9 @@ static void destroy_msaa(const Harness *harness, Msaa *m)
 		vkDestroyImage(device, m->images[i], NULL);
 		vkFreeMemory(device, m->memories[i], NULL);
 	}
+	vkDestroyImageView(device, m->depth_copy_view, NULL);
+	vkDestroyImage(device, m->depth_copy, NULL);
+	vkFreeMemory(device, m->depth_copy_memory, NULL);
 }
 
 static void destroy(const Harness *harness, Scene *s)
@@ -1505,6 +1607,8 @@ void test_tiles(const Harness *harness)
 		check(label, recorded && frames_shown(harness, s->msaa[i].commands, msaa_probes[i], "tiles: multisampled"));
 		if (recorded)
 			check_msaa(harness, s, i);
+		if (recorded)
+			check_depth_resolve(harness, s, i);
 	}
 	destroy(harness, s);
 }

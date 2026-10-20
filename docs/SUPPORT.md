@@ -319,7 +319,8 @@ Some are there to refuse, as the features they need aren't reported. Each logs w
     each sample apart would mean a resolve of each, drawn back under `PA_SC_AA_MASK`, at two or four times the cost
     (xsdk:docs/scope/44-tiling-and-msaa.md, "Not in it").
   - Depth resolves copy sample 0 (xsdk:docs/HARDWARE.md, "Multisampled formats and targets, milestone 44 step 3"),
-    which only a pass past eDRAM storing depth in bands does, as a multisampled depth image isn't sampled (Images).
+    which only a pass past eDRAM storing depth in bands and a `vkCmdResolveImage` of depth do, as a multisampled
+    depth image isn't sampled (Images; Commands).
   - A render area smaller than the framebuffer fails the command buffer, as the console has resolved a rectangle of no
     multisampled target.
 - **A subpass past eDRAM is a tiled pass** (milestone 17): one whose colour targets and depth pass eDRAM's 2048 tiles
@@ -476,7 +477,7 @@ Some are there to refuse, as the features they need aren't reported. Each logs w
   take one sample alone (xsdk:docs/HARDWARE.md, "Multisampled formats and targets, milestone 44 step 3"), as their
   `sampleCounts` say. A colour one is a colour attachment, transient or not, and a transfer source for
   `vkCmdResolveImage`; a depth one is a depth attachment, cleared by `vkCmdClearDepthStencilImage` if it's made a
-  transfer destination. **Deviation:** neither is sampled, as Xenos samples no multisampled texture
+  transfer destination, and resolved by `vkCmdResolveImage` if it's made a transfer source (Commands). **Deviation:** neither is sampled, as Xenos samples no multisampled texture
   (xsdk:docs/scope/44-tiling-and-msaa.md, "Not in it"), so a multisampled image made with `VK_IMAGE_USAGE_SAMPLED_BIT`
   returns `VK_ERROR_FEATURE_NOT_PRESENT` and `sampleCounts` is 1 for that usage. Each needs a texture of its format at
   one sample in its memory: a colour one's holds its samples' average once a pass stores it (Render passes), and a depth
@@ -582,6 +583,13 @@ Some are there to refuse, as the features they need aren't reported. Each logs w
 - `vkCmdResolveImage` copies a multisampled image's memory, its samples' average as the pass that stored it left it
   (Render passes), into an image of its format at one sample, the whole image alone, as `vkCmdCopyImage` copies
   (milestone 17's second part).
+- **A multisampled depth image's `vkCmdResolveImage` takes sample 0** (milestone 17's second part): the whole of it,
+  into a depth image of its size at one sample made with `VK_IMAGE_USAGE_SAMPLED_BIT`, recorded right after the
+  render pass that drew it. That pass's end resolves eDRAM's depth into the destination's texture on the GPU, a band
+  at a time in a pass past eDRAM, before the colour and clearing nothing, as xsdk's depth resolve copies sample 0 at
+  2 and 4 samples (xsdk:docs/HARDWARE.md, "Multisampled formats and targets, milestone 44 step 3"), so the replay
+  doesn't wait for it. **Deviation:** Vulkan 1.0 resolves colour alone; this is the sample-zero mode of Vulkan 1.2's
+  depth resolve. Any other resolve of depth fails the command buffer.
 - **`vkCmdBlitImage` drawn on the GPU** (milestone 27), so the replay doesn't wait for it: between two 2D images of
   `VK_FORMAT_R8G8B8A8_UNORM` or `B8G8R8A8_UNORM`, one format both, from level 0 of an optimal source to level 0 of
   another optimal image, over 16 texels a side and within eDRAM's 2048 tiles, its destination region any on the

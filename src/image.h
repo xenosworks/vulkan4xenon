@@ -20,10 +20,10 @@ enum {
 	// Cube and 3D images are sampled and copied to and from, not drawn into (docs/ROADMAP.md, milestone 23).
 	V4X_CUBE_AND_3D_USAGE =
 		VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-	// What depth images may be used for: attachments, sampled after a pass stores them and leaves them to be read, and
-	// cleared by vkCmdClearDepthStencilImage.
+	// What depth images may be used for: attachments, sampled after a pass stores them and leaves them to be read,
+	// cleared by vkCmdClearDepthStencilImage, and a multisampled one resolved by vkCmdResolveImage.
 	V4X_DEPTH_IMAGE_USAGE = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT |
-		VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+		VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
 	// A base level this many texels or fewer on a side sits in the packed mip tail, where a resolve can't write
 	// (xsdk:src/gpu_resolve.c, xsdk_gpu_resolve_texture).
 	V4X_PACKED_SIDE = 16,

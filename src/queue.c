@@ -824,7 +824,7 @@ static bool end_depth_clear(const Replay *replay, const Command *next, const Pas
 }
 
 // A sampled depth attachment the pass leaves to be read goes into its texture first, clearing nothing, so the colour's
-// resolve clears as it would.
+// resolve clears as it would; so does a vkCmdResolveImage's destination, sample 0 at 2 and 4 samples.
 static void resolve_depth(Image *depth, uint32_t serial)
 {
 	xsdk_gpu_set_resolve_clears(false, false);
@@ -842,8 +842,8 @@ static VkRect2D stored_area(const EdramPart *color, const Image *image, const Vk
 // Each stored target's area is resolved into its attachment, the first of them clearing depth for the next pass too; a
 // sampled depth image takes the whole of eDRAM's depth, which holds it all. A multisampled target's average goes into
 // its resolve attachment first, clearing nothing if its own image takes it too.
-static void end_render_pass(
-	VkQueue queue, Replay *replay, const Command *next, const PassClears *next_clears, const VkRect2D *next_area)
+static void end_render_pass(VkQueue queue, Replay *replay, Image *resolved_depth, const Command *next,
+	const PassClears *next_clears, const VkRect2D *next_area)
 {
 	const RenderPass *const render_pass = replay->render_pass;
 	const Framebuffer *const framebuffer = replay->framebuffer;
@@ -852,6 +852,8 @@ static void end_render_pass(
 		*depth_part = holding(framebuffer->depth, replay->depth_tile, whole(framebuffer));
 	if (render_pass->has_depth && render_pass->leaves_depth_to_read && framebuffer->depth->is_sampled_depth)
 		resolve_depth(framebuffer->depth, replay->serial);
+	if (resolved_depth)
+		resolve_depth(resolved_depth, replay->serial);
 	float depth = 0.0f;
 	uint32_t stencil = 0;
 	bool clear_depth = end_depth_clear(replay, next, next_clears, next_area, &depth, &stencil);
@@ -1017,11 +1019,11 @@ static void add_band_resolve(const Replay *replay, uint32_t i, Image *image, Xsd
 // band, but for one not stored whose resolve attachment takes it; into its resolve attachment too, which xsdk lets
 // clear it alone (xsdk:include/xsdk/gpu.h, xsdk_gpu_end_tiles). So is depth, as resolves_depth says. eDRAM then holds
 // the last band, which no untiled pass uses, and a whole depth at the top.
-static void end_tiled_pass(VkQueue queue, Replay *replay)
+static void end_tiled_pass(VkQueue queue, Replay *replay, Image *resolved_depth)
 {
 	const RenderPass *const render_pass = replay->render_pass;
 	const Framebuffer *const framebuffer = replay->framebuffer;
-	XsdkTileResolve resolves[2 * V4X_MAX_COLOR_ATTACHMENTS + 1];
+	XsdkTileResolve resolves[2 * V4X_MAX_COLOR_ATTACHMENTS + 2];
 	uint32_t count = 0;
 	for (uint32_t i = 0; i < render_pass->color_count; i++) {
 		Image *const resolved = framebuffer->resolves[i];
@@ -1036,6 +1038,13 @@ static void end_tiled_pass(VkQueue queue, Replay *replay)
 			.target = XSDK_TILE_DEPTH, .texture = &depth->texture, .drawn_back = draws_depth_back(replay)
 		};
 		depth->used_serial = replay->serial;
+	}
+	// Left out of band 0's clear, which would copy junk into it and could clear depth on a depth resolve
+	// (xsdk:docs/HARDWARE.md, "A band's depth clear goes on a colour resolve, milestone 44 step 5").
+	if (resolved_depth) {
+		resolves[count++] =
+			(XsdkTileResolve){ .target = XSDK_TILE_DEPTH, .texture = &resolved_depth->texture, .drawn_back = true };
+		resolved_depth->used_serial = replay->serial;
 	}
 	replay->tiling = false;
 	if (!NT_SUCCESS(xsdk_gpu_end_tiles(resolves, count)))
@@ -1105,13 +1114,14 @@ static const VkRect2D *area_of(VkCommandBuffer buffer, const Command *begin)
 // The pass ends before the next one in the command buffer begins, which its resolves clear for.
 static void end_pass_command(VkQueue queue, VkCommandBuffer buffer, Replay *replay, uint32_t index)
 {
+	Image *const resolved_depth = buffer->commands[index].resolved_depth;
 	if (replay->framebuffer->tiled) {
-		end_tiled_pass(queue, replay);
+		end_tiled_pass(queue, replay, resolved_depth);
 		return;
 	}
 	const Command *const next = next_render_pass(buffer, index);
 	const PassClears *const next_clears = next ? (const PassClears *)(buffer->data + next->begin.clears_at) : NULL;
-	end_render_pass(queue, replay, next, next_clears, next ? area_of(buffer, next) : NULL);
+	end_render_pass(queue, replay, resolved_depth, next, next_clears, next ? area_of(buffer, next) : NULL);
 }
 
 static void prepare_draw(Replay *replay)

@@ -324,17 +324,24 @@ VKAPI_ATTR void VKAPI_CALL vkCmdBeginRenderPass(
 	record_subpass(commandBuffer);
 }
 
+static void record_end(VkCommandBuffer commandBuffer)
+{
+	Command *const command = record(commandBuffer, COMMAND_END_RENDER_PASS);
+	if (command)
+		command->resolved_depth = NULL;
+}
+
 VKAPI_ATTR void VKAPI_CALL vkCmdNextSubpass(VkCommandBuffer commandBuffer, VkSubpassContents contents)
 {
 	(void)contents;
-	(void)record(commandBuffer, COMMAND_END_RENDER_PASS);
+	record_end(commandBuffer);
 	commandBuffer->subpass++;
 	record_subpass(commandBuffer);
 }
 
 VKAPI_ATTR void VKAPI_CALL vkCmdEndRenderPass(VkCommandBuffer commandBuffer)
 {
-	(void)record(commandBuffer, COMMAND_END_RENDER_PASS);
+	record_end(commandBuffer);
 	commandBuffer->render_pass = NULL;
 }
 
@@ -1093,6 +1100,27 @@ VKAPI_ATTR void VKAPI_CALL vkCmdDispatchIndirect(VkCommandBuffer commandBuffer, 
 	commandBuffer->result = v4x_host_unsupported("compute dispatches");
 }
 
+// A multisampled depth image's sample 0, the whole of it, into a depth image of its size with a texture, taken out of
+// eDRAM at the end of the render pass just before, which drew it, as xsdk's depth resolve copies sample 0
+// (xsdk:docs/HARDWARE.md, "Multisampled formats and targets, milestone 44 step 3").
+static void record_depth_resolve(
+	VkCommandBuffer commandBuffer, const Image *source, Image *destination, const VkImageResolve *region)
+{
+	Command *const end = commandBuffer->count ? &commandBuffer->commands[commandBuffer->count - 1] : NULL;
+	const bool after_pass = end && end->type == COMMAND_END_RENDER_PASS && !end->resolved_depth &&
+		commandBuffer->framebuffer && commandBuffer->framebuffer->subpasses[commandBuffer->subpass].depth == source;
+	const bool whole = !region->srcOffset.x && !region->srcOffset.y && !region->dstOffset.x && !region->dstOffset.y &&
+		region->extent.width == source->width && region->extent.height == source->height;
+	if (!after_pass || !whole || source->samples == VK_SAMPLE_COUNT_1_BIT || !destination->is_sampled_depth ||
+		destination->samples != VK_SAMPLE_COUNT_1_BIT || destination->width != source->width ||
+		destination->height != source->height) {
+		commandBuffer->result =
+			v4x_host_unsupported("depth resolves but a multisampled one's, whole, into a sampled one, after its pass");
+		return;
+	}
+	end->resolved_depth = destination;
+}
+
 // A multisampled image's memory holds its samples' average, as the pass that stored it resolved them (docs/SUPPORT.md,
 // Render passes), so a resolve copies that, whole, as vkCmdCopyImage copies a level.
 VKAPI_ATTR void VKAPI_CALL vkCmdResolveImage(VkCommandBuffer commandBuffer, VkImage srcImage,
@@ -1105,6 +1133,10 @@ VKAPI_ATTR void VKAPI_CALL vkCmdResolveImage(VkCommandBuffer commandBuffer, VkIm
 	Image *const destination = v4x_object(dstImage);
 	for (uint32_t i = 0; i < regionCount; i++) {
 		const VkImageResolve *const region = &pRegions[i];
+		if (source->is_depth) {
+			record_depth_resolve(commandBuffer, source, destination, region);
+			continue;
+		}
 		Slices from;
 		Slices to;
 		if (!whole_level(source, &region->srcSubresource, region->srcOffset, region->extent, &from) ||
