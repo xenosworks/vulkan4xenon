@@ -27,6 +27,11 @@ ifeq ($(V4X_PROFILE),1)
 CFLAGS += -DV4X_PROFILE
 LAYER_SOURCES += src/profile.c
 endif
+# make V4X_FORCE_BANDS=n draws every subpass with depth in n bands (src/render_pass.c), to measure what banding costs;
+# make clean first, as for V4X_PROFILE.
+ifneq ($(V4X_FORCE_BANDS),)
+CFLAGS += -DV4X_FORCE_BANDS=$(V4X_FORCE_BANDS)
+endif
 LAYER_OBJECTS := $(patsubst src/%.c,$(BUILD)/src/%.o,$(LAYER_SOURCES))
 
 # tests/shaders.c and src/blit_shaders.c come from tools/build_shaders.py, run by hand where glslang and xost are.

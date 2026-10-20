@@ -12,6 +12,13 @@
 // drawn a band of rows at a time; at 2 or 4 samples, each colour's average goes into its image and its resolve
 // attachment (milestone 17).
 
+// make V4X_FORCE_BANDS=n draws every subpass with depth over 32 rows as a tiled pass of n bands, as 2 and 4 samples
+// tile the passes with depth, to measure what banding alone costs (xsdk:docs/scope/44-tiling-and-msaa.md, step 5).
+// Normal builds leave it 0: only subpasses past eDRAM are tiled.
+#ifndef V4X_FORCE_BANDS
+#define V4X_FORCE_BANDS 0
+#endif
+
 // The subpasses an attachment is first and last used in, so the ones between keep it.
 typedef struct {
 	uint32_t first;
@@ -263,6 +270,13 @@ static VkResult tile_targets(const RenderPass *pass, Framebuffer *images)
 		.depth_top = pass->has_depth };
 	for (uint32_t i = 0; i < pass->color_count; i++)
 		tiling->targets[i].format = pass->targets[i];
+#if V4X_FORCE_BANDS
+	const uint32_t forced = (images->height + V4X_FORCE_BANDS - 1) / V4X_FORCE_BANDS;
+	tiling->band_rows = (forced + XSDK_TILE_ROWS - 1) / XSDK_TILE_ROWS * XSDK_TILE_ROWS;
+	// A pass that needs more bands takes as few as fit.
+	if (!xsdk_gpu_tiling_bands(tiling))
+		tiling->band_rows = 0;
+#endif
 	if (!xsdk_gpu_tiling_bands(tiling))
 		tiling->depth_whole = tiling->depth_top = false;
 	if (!xsdk_gpu_tiling_bands(tiling)) {
@@ -291,7 +305,8 @@ static VkResult place_targets(const RenderPass *pass, Framebuffer *images)
 	images->color_tiles = tile;
 	const uint32_t depth_tiles =
 		pass->has_depth ? xsdk_gpu_target_sample_tiles(images->width, images->height, pass->samples) : 0;
-	return tile + depth_tiles <= XSDK_EDRAM_TILES ? VK_SUCCESS : tile_targets(pass, images);
+	const bool forced = V4X_FORCE_BANDS && pass->has_depth && images->height > XSDK_TILE_ROWS;
+	return tile + depth_tiles <= XSDK_EDRAM_TILES && !forced ? VK_SUCCESS : tile_targets(pass, images);
 }
 
 // A tiled pass's recording, made with its framebuffer, as recording into it at a submit would be the hot path's.
