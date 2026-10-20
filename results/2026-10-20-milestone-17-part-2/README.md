@@ -30,3 +30,11 @@ The layer's resolve of a multisampled depth image, `vkCmdResolveImage` taking sa
 (xsdk:docs/scope/44-tiling-and-msaa.md, step 5), with two vulkan4xenon_test checks, "tiles: ... vkCmdResolveImage of
 its depth after both passes, every texel sample 0's" at 2 and 4 samples, and the break set `depth_sample1`, which
 should fail those two alone. Neither has run on the console yet.
+
+## Depth resolved for Aurora, and Dusklight
+
+At `d435434`, xsdk `17c6e91` (local/m44c, xsdk:results/2026-10-20-milestone-44-step-5/): vkCmdResolveImage of a
+multisampled depth image takes sample 0 on the GPU; vulkan4xenon_test 517 of 517 twice, its depth resolves 0 texels
+wrong where samples 0 and 1 differ in 298 pixels at 2 samples and 20 at 4; `depth_sample1`, xsdk's depth resolves
+copying sample 1, failed those two checks alone. vkbench 17 of 17. Aurora's EFB at 2 and 4 samples, and what Dusklight
+costs there, are in xsdk's record.

@@ -1611,8 +1611,9 @@ checks it names and no others; xsdk:docs/HARDWARE.md, "Render passes past eDRAM 
 - **Not in it:** multisampled images, resolve attachments, alpha to coverage, Aurora and Dusklight, the second part;
   subpasses without colour attachments, still refused.
 
-**The second part, multisampling** (the layer's part of xsdk milestone 44's step 5; built 2026-10-20 on xsdk's step 3
-and 4 results, not yet run on the console):
+**The second part, multisampling** (the layer's part of xsdk milestone 44's step 5; built and run on the console
+2026-10-20, `results/2026-10-20-milestone-17-part-2/`, and xsdk:results/2026-10-20-milestone-44-step-5/:
+vulkan4xenon_test 517 of 517 twice, each break failing the checks it names; done with xsdk's milestone 44):
 - **Images:** `R8G8B8A8_UNORM`, `B8G8R8A8_UNORM`, `A2B10G10R10_UNORM_PACK32` and D24S8 at 2 and 4 samples, the
   formats whose targets averaged on resolve on the console; the half and 32-bit floats take one, as their `sampleCounts`
   say (xsdk:docs/HARDWARE.md, "Multisampled formats and targets, milestone 44 step 3"). The framebuffer sample counts
@@ -1638,12 +1639,17 @@ and 4 results, not yet run on the console):
 - **Broken on purpose:** `results/2026-10-20-milestone-17-part-2/breaks.py` names each break and the checks it should
   fail, and `builds.sh` builds them: resolves copying sample 0, the tiled pass's window offset left at 0,
   `alphaToCoverageEnable` ignored, and the load's draw-back skipped in bands after the first.
-- **What the console must settle:** that a pixel shader's exported depth reaches every sample at 2 and 4 samples (the
-  4-sample tiled pass's second pass, whose quad would show where the near quad's depth is missing); that drawing an
-  image back at 2 and 4 samples writes every sample (the second passes of test_multisample, and the tiled passes'); and
-  that a band's resolve that doesn't clear leaves the target for the next resolve (both tiled passes' resolve
-  attachments, which would show the clear).
-- **Not in it:** Aurora's backend and Dusklight's sample count, which come next in step 5; samples stored apart,
+- **What the console settled:** exported depth reaches every sample, a draw-back writes every sample, and a band's
+  resolve that doesn't clear leaves the target for the next. The 4-sample pass with depth in bands went wrong from band 1
+  on until xsdk resolved a band's depth before its colour, so the band's clear, and the hierarchical buffer's, went on
+  a colour resolve (xsdk:docs/HARDWARE.md, "A band's depth clear goes on a colour resolve, milestone 44 step 5").
+- **Depth resolved for Aurora:** `vkCmdResolveImage` of a multisampled depth image right after the pass that drew it
+  takes sample 0 on the GPU, as xsdk's depth resolves do, a deviation (docs/SUPPORT.md, Commands); `make
+  V4X_FORCE_BANDS=n` forces every pass with depth into n bands, for measuring.
+- **Aurora and Dusklight:** Aurora's backend draws the EFB at its configured count (aurora-xenon `acbb442`); Dusklight
+  takes `DUSK_XSDK_MSAA` and stays at 1, as 2 samples dips under 30 fps in the title scene and Ordon
+  (xsdk:docs/HARDWARE.md, "Multisampling's cost, and Dusklight at 2 and 4 samples, milestone 44 step 5").
+- **Not in it:** samples stored apart,
   sampled multisampled images, sample masks, sample shading, alpha to one and multisampled render areas
   (xsdk:docs/scope/44-tiling-and-msaa.md, "Not in it").
 
