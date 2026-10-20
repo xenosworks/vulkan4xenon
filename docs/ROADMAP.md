@@ -1640,9 +1640,9 @@ vulkan4xenon_test 517 of 517 twice, each break failing the checks it names; done
   fail, and `builds.sh` builds them: resolves copying sample 0, the tiled pass's window offset left at 0,
   `alphaToCoverageEnable` ignored, and the load's draw-back skipped in bands after the first.
 - **What the console settled:** exported depth reaches every sample, a draw-back writes every sample, and a band's
-  resolve that doesn't clear leaves the target for the next. The 4-sample pass with depth in bands went wrong from band 1
-  on until xsdk resolved a band's depth before its colour, so the band's clear, and the hierarchical buffer's, went on
-  a colour resolve (xsdk:docs/HARDWARE.md, "A band's depth clear goes on a colour resolve, milestone 44 step 5").
+  resolve that doesn't clear leaves the target for the next. The 4-sample pass with depth in bands went wrong from
+  band 1 on until xsdk resolved a band's depth before its colour, so the band's clear, and the hierarchical buffer's,
+  went on a colour resolve (xsdk:docs/HARDWARE.md, "A band's depth clear goes on a colour resolve, milestone 44 step 5").
 - **Depth resolved for Aurora:** `vkCmdResolveImage` of a multisampled depth image right after the pass that drew it
   takes sample 0 on the GPU, as xsdk's depth resolves do, a deviation (docs/SUPPORT.md, Commands); `make
   V4X_FORCE_BANDS=n` forces every pass with depth into n bands, for measuring.
