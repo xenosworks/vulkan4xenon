@@ -3,11 +3,13 @@ breaks.py --list; breaks.py --xsdk SET, which succeeds if the set breaks xsdk; b
 it to those copies.
 
 Each break is a small source change that should fail the vulkan4xenon_test checks named beside it, and no others;
-builds.sh builds each set into a title of its own, v4x_m17b_<set>.xex. Each set is one break, as two of them break xsdk.
+builds.sh builds each set into a title of its own, v4x_m17b_<set>.xex. Each set is one break, as four of them break xsdk.
 - resolve0: xsdk's resolves copying sample 0, so resolve attachments do.
 - offset0: xsdk's tiled pass leaving the window offset at 0, so every band draws band 0's rows.
 - atoc_off: alphaToCoverageEnable ignored.
 - drawback1: the load's draw-back skipped in bands after the first.
+- depth_last: xsdk's band resolves run in the order given, so the depth resolve the layer lists last clears depth.
+- hiz_off: a control, not a break: the hierarchical buffer off in every tiled pass, failing nothing.
 """
 import pathlib
 import sys
@@ -68,6 +70,16 @@ SETS = {
         ("layer", "src/queue.c", DRAW_BACK,
          "\txsdk_gpu_set_draw_rows(0, 1);\n" + DRAW_BACK + "\txsdk_gpu_set_draw_rows(0, framebuffer->height);\n",
          [FOUR_FRAMES] + ATTACHMENTS + MSAA_FRAMES + MSAA_TEXELS),
+    ],
+    # Only the 4-sample pass keeps the hierarchical buffer on in its bands: 1280 wide, 256 rows times 4 samples
+    # (xsdk:src/gpu_draw.c, xsdk_gpu_hiz_fits); the 2048x2048 map is too wide and the rest keep depth whole.
+    "depth_last": [
+        ("xsdk", "src/gpu_tiles.c",
+         "return (r->target == XSDK_TILE_DEPTH) == (k < count) && !(before && r->drawn_back);",
+         "return k >= count && !(before && r->drawn_back);", [MSAA_FRAMES[1], MSAA_TEXELS[1]]),
+    ],
+    "hiz_off": [
+        ("xsdk", "src/gpu_tiles.c", "if (pass.depth && !pass.depth_whole && pass.count)", "if (false)", []),
     ],
 }
 
