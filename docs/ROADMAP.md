@@ -3134,7 +3134,9 @@ Milestone 29 is done.
 
 ### Milestone 30: tiled passes that don't wait for the GPU
 
-Proposed on 2026-10-20, for the user to agree.
+Agreed on 2026-10-20, with each decision below taken as recommended: measure first; the 2 MB space in the layer, 1 MB a
+pass; Dusklight at 2 samples in this milestone if both scenes hold the bar; if the bar is missed, the GPU's part a
+milestone of its own, a probe first; 4 samples measured, not a default.
 
 **Why.** xsdk milestone 44 step 5 left Dusklight at 1 sample: at 2 samples its title scene ran 28.8 to 29.9 fps and
 Ordon's village 27 to 28, under the 29.5 fps bar, where 1 sample runs 29.7 to 29.9 and 29 to 30 (xsdk:docs/HARDWARE.md,
@@ -3228,7 +3230,7 @@ xsdk's calls instead, that's an xsdk change, scoped with the user then.
 
 If the replay comes down and the frame rate still misses the bar, the milestone closes with the replay's cost and the
 GPU's time a frame at 1 and 2 samples recorded, Dusklight stays at 1 sample, and the GPU's part comes back to the user
-(For you to decide, 4).
+(Decisions, 4).
 
 **Left out:**
 - Translating a tiled pass when it's recorded, or keeping its recording from one submission to the next: the draws'
@@ -3238,9 +3240,9 @@ GPU's time a frame at 1 and 2 samples recorded, Dusklight stays at 1 sample, and
 - Spinning in the wait instead (`xsdk_gpu_set_wait_spin`): the CPU would still keep step with the GPU pass by pass, and
   spinning slowed the thread sharing the waiter's core in Dusklight (xsdk:docs/HARDWARE.md, "Milestones 30 to 35
   together, and fence waits that sleep again").
-- The GPU's extra work at 2 samples (For you to decide, 4), and 4 samples by default.
+- The GPU's extra work at 2 samples (Decisions, 4), and 4 samples by default.
 
-**For you to decide,** each with a recommendation:
+**Decisions,** each taken as recommended on 2026-10-20:
 1. **Measure first, or build step 2 straight away.** Step 1 is a few lines of the profile build and one run by the
    agent, and the waits are inferred from the begins' cost, not timed. Recommended: measure first.
 2. **Where the space lives.** In the layer, 2 MB with 1 MB a pass (recommended: no xsdk change, the limit as it is, 1 MB
