@@ -3262,12 +3262,26 @@ GPU's time a frame at 1 and 2 samples recorded, Dusklight stays at 1 sample, and
 src/render_pass.c and src/objects.h, the framebuffers' recordings taken out; the checks and breaks about 150; then the
 runs above, of which only Ordon needs the user.
 
-**Step 1's lines** (built 2026-10-20, the console's run to come): in a profile build, every `vulkan4xenon: profile,
+**Step 1's lines** (built 2026-10-20, run below): in a profile build, every `vulkan4xenon: profile,
 <what>:` group, the 10 s ones and a title's own through `v4x_profile_log`, ends with a line on passes past eDRAM when
 there were any: how many a present; their begins' waits for the GPU to finish their recording's last run, in us and
 waits a present, and the rest of their begins; their ends, the bands' runs and resolves queued; and the dwords they
 recorded, a present, a pass, and the most one pass recorded since the first submit. The waits count in `the replay's
 waits for the GPU` too, and only those that found the GPU still running the recording.
+
+**Step 1 on the console** (2026-10-20, the diagnostics builds of `6d301c6` against xsdk `abcfaa5`, run by the agent;
+`results/2026-10-20-milestone-30/step1_dusk_ms1.log` and `step1_dusk_ms2.log`): the wait is the cost.
+- **At 2 samples, the logo shot's phase 0:** 3.0 passes past eDRAM a present, the EFB's; their begins waited 10,014 us
+  a present for the GPU, in 2.0 waits, and took 36 us besides; their ends 143 us. Of the submit's 11,293 us a present,
+  the waits are 89%. The replay took 11.3 ms a frame, the GPU 17.1 ms from submit and 5.8 after the replay, 29.1 fps.
+  Phase 1, lit draws skipped: 4,091 us waiting in 2.0 waits, 48 us besides, the GPU 10.2 ms from submit and 5.1 after
+  the replay.
+- **The title scene's 10 s windows at 2 samples:** 9.6 to 14.9 ms a present waiting, in 1.7 to 2.0 waits, of
+  `vkCmdBeginRenderPass`'s 9.7 to 15.0 ms; the submit 10.7 to 15.9 ms a present.
+- **The recordings are small:** 13,928 dwords a present in phase 0, 4,643 a pass, and 20,642 at most since the first
+  submit, 81 KB, a thirteenth of a pass's 1 MB.
+- **At 1 sample** no pass is past eDRAM, so no such line; phase 0's replay took 1.0 ms, the GPU 13.2 ms from submit,
+  29.0 fps.
 
 ## 5. The Dusklight track
 
