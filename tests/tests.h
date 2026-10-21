@@ -31,6 +31,8 @@ void test_subpasses(const Harness *harness);
 void test_targets(const Harness *harness);
 // Render passes whose area is smaller than the framebuffer, each clearing, loading and storing it alone (milestone 27).
 void test_render_areas(const Harness *harness);
+// Colour attachments 16 texels or less on a side, drawn from coded sources, read back and sampled (milestone 31).
+void test_small_targets(const Harness *harness);
 // Render passes past eDRAM drawn a band of rows at a time: four attachments with depth at 1280x720 loaded and stored, a
 // 2048x2048 shadow map stored, loaded and sampled, what such a pass refuses, and 1280x720 at 2 and 4 samples, colour
 // and depth loaded across passes (milestone 17).

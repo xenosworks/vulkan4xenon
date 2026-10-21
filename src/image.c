@@ -151,9 +151,9 @@ static VkResult check_create_info(const VkImageCreateInfo *info)
 	if ((info->usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) && !v4x_attachment_format(info->format))
 		return v4x_host_unsupported(
 			"colour attachments of formats xsdk's targets don't draw (docs/SUPPORT.md, Formats)");
-	if ((info->usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) &&
-		(info->mipLevels != 1 || info->extent.width <= V4X_PACKED_SIDE || info->extent.height <= V4X_PACKED_SIDE))
-		return v4x_host_unsupported("colour attachments with mips, or 16 texels or less on a side");
+	const bool small = info->extent.width <= V4X_PACKED_SIDE || info->extent.height <= V4X_PACKED_SIDE;
+	if ((info->usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) && (info->mipLevels != 1 || (multisampled && small)))
+		return v4x_host_unsupported("colour attachments with mips, or multisampled and 16 texels or less on a side");
 	return VK_SUCCESS;
 }
 
@@ -203,6 +203,9 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateImage(
 	image->is_sampled_depth = is_depth;
 	image->is_texture = !is_depth;
 	image->is_attachment = (pCreateInfo->usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) != 0;
+	// Its base at the corner, where resolves write (xsdk:docs/HARDWARE.md, "A small base with packed mips off").
+	if (image->is_attachment)
+		xsdk_texture_base_at_corner(&image->texture);
 	*pImage = v4x_handle(image);
 	return VK_SUCCESS;
 }

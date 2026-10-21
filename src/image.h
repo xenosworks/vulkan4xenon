@@ -25,7 +25,8 @@ enum {
 	V4X_DEPTH_IMAGE_USAGE = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT |
 		VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
 	// A base level this many texels or fewer on a side sits in the packed mip tail, where a resolve can't write
-	// (xsdk:src/gpu_resolve.c, xsdk_gpu_resolve_texture).
+	// (xsdk:src/gpu_resolve.c, xsdk_gpu_resolve_texture), unless packed mips are off, as a colour attachment of one
+	// sample has them: sampled depth images, multisampled colour images and drawn blits still need both sides over it.
 	V4X_PACKED_SIDE = 16,
 };
 

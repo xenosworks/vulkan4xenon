@@ -464,9 +464,11 @@ Some are there to refuse, as the features they need aren't reported. Each logs w
   size; for an optimal image, which is invalid use, it gives zeros. `vkGetPhysicalDeviceImageFormatProperties` takes
   linear tiling for those usages alone, one level; the formats report no linear tiling features, which copies don't
   need.
-- Colour attachment images are of the formats Formats lists as colour attachments, with one level, and both sides
-  over 16 texels: a smaller base level sits in the packed mip tail, where a resolve can't write
-  (xsdk:src/gpu_resolve.c). Others return `VK_ERROR_FEATURE_NOT_PRESENT`. Each draws into the xsdk target of its
+- Colour attachment images are of the formats Formats lists as colour attachments, with one level, at any size. One
+  16 texels or less on a side has its texture's packed mips off (`xsdk_texture_base_at_corner`), so its base sits at
+  the corner, where a resolve writes and the console reads it, not in the packed mip tail, where a resolve can't write
+  (xsdk:docs/HARDWARE.md, "A small base with packed mips off"); a multisampled one still needs both sides over 16
+  texels. Others return `VK_ERROR_FEATURE_NOT_PRESENT`. Each draws into the xsdk target of its
   format and resolves into its texture (`xsdk_gpu_resolve_target`, milestone 25): `R8G8B8A8_UNORM` and
   `B8G8R8A8_UNORM` into 8_8_8_8, `A2B10G10R10_UNORM_PACK32` into 2_10_10_10, `R16G16_SFLOAT` into 16_16_FLOAT,
   `R16G16B16A16_SFLOAT` into 16_16_16_16_FLOAT and `R32_SFLOAT` into 32_FLOAT (xenia:src/xenia/gpu/xenos.h:299-313).

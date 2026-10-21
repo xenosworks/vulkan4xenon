@@ -75,7 +75,8 @@ static void check_refusals(const Harness *harness)
 		harness_shader(harness, unknown_spirv, sizeof unknown_spirv, &module) == VK_ERROR_FEATURE_NOT_PRESENT);
 }
 
-// Colour attachments of 16 texels or less on a side sit in the packed mip tail, where a resolve can't write.
+// A colour attachment 16 texels or less on a side has its base at the corner, where a resolve writes, at one sample
+// alone (milestone 31).
 static void check_attachments(const Harness *harness)
 {
 	VkFormatProperties properties;
@@ -93,13 +94,20 @@ static void check_attachments(const Harness *harness)
 		.tiling = VK_IMAGE_TILING_OPTIMAL,
 		.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
 	};
-	VkImage image;
-	const bool narrow = vkCreateImage(harness->device, &info, NULL, &image) == VK_ERROR_FEATURE_NOT_PRESENT;
+	VkImage image = VK_NULL_HANDLE;
+	const bool narrow = vkCreateImage(harness->device, &info, NULL, &image) == VK_SUCCESS;
+	vkDestroyImage(harness->device, image, NULL);
+	info.samples = VK_SAMPLE_COUNT_2_BIT;
+	const bool narrow_multisampled =
+		vkCreateImage(harness->device, &info, NULL, &image) == VK_ERROR_FEATURE_NOT_PRESENT;
+	info.samples = VK_SAMPLE_COUNT_1_BIT;
 	info.extent = (VkExtent3D){ 64, 64, 1 };
 	info.mipLevels = 2;
 	const bool mipped = vkCreateImage(harness->device, &info, NULL, &image) == VK_ERROR_FEATURE_NOT_PRESENT;
-	check("objects: R8G8B8A8_UNORM is a blendable colour attachment, but not 16 texels across or with mips",
-		(properties.optimalTilingFeatures & wanted) == wanted && narrow && mipped);
+	check(
+		"objects: R8G8B8A8_UNORM is a blendable colour attachment, 16 texels across at one sample, but not at 2 "
+		"samples or with mips",
+		(properties.optimalTilingFeatures & wanted) == wanted && narrow && narrow_multisampled && mipped);
 	const VkAttachmentDescription attachments[2] = {
 		{ .format = VK_FORMAT_B8G8R8A8_UNORM,
 			.samples = VK_SAMPLE_COUNT_1_BIT,
