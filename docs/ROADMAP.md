@@ -3333,6 +3333,184 @@ the `step2_*` and `ordon_*` logs):
 
 Milestone 30 is done.
 
+### Milestone 31: colour attachments 16 texels or less on a side
+
+Agreed with the user on 2026-10-21, with every recommendation below.
+
+**Why.** Dusklight's bloom loses its smallest copy on the console. In Ordon the layer refused one image 6 times, and
+Aurora logged it each time (xsdk:local/m30/ordon/ms1/dusk_ms1.log:741-747, 1305-1307, 2693-2695, 4630-4632,
+5512-5514; the other four logs beside it, 5 to 7 times each):
+
+```
+vulkan4xenon: not supported: colour attachments with mips, or 16 texels or less on a side
+[ERROR | aurora::vulkan4xenon] vkCreateImage: -8
+[ERROR | aurora::vulkan4xenon] No image for Resolved Texture (20x11)
+```
+
+It's the copy target milestone 11's step 1 found, the only one 16 texels or less on a side
+(results/2026-10-12-milestone-11-step-1/counts-xenia.txt:53-65), and every run since logs it ("refusing only the 20x11
+copy, as since milestone 14", milestones 19 to 28 above).
+
+- **Who asks.** Dusklight's own bloom, `BloomMode::Dusk`, the default (dusklight:src/dusk/settings.cpp:78;
+  dusklight:src/m_Do/m_Do_graphic.cpp:1701-1705). It halves the 1280x720 render size six times, down to 20x11 at
+  level 6 (m_Do_graphic.cpp:1451-1452, 1478-1523, 1634-1635), and copies with `CopyToTexObj`: RGBA8, no mipmap, clamped
+  and linear (m_Do_graphic.cpp:923-928). Two copies a frame are 20x11:
+  - going down, level 5's 40x22 into a 20x11 texture, which the blur at level 6 then samples
+    (m_Do_graphic.cpp:1647-1660);
+  - going up, level 6 into another 20x11 texture, blended into level 5 with `GX_BL_SRCALPHA, GX_BL_ONE` at an alpha of
+    0.25^(1/5), 0.76 at the default multiplier (m_Do_graphic.cpp:1666-1674; settings.cpp:79).
+
+  Depth of field's chain stops at 80x45 (m_Do_graphic.cpp:930-1018), so nothing else is that small at 1280x720.
+- **What Aurora makes of it.** A GX copy becomes `resolve_copy_texture`
+  (aurora-xenon:lib/dolphin/gx/GXFrameBuffer.cpp:46-56), which makes a "Resolved Texture" through `new_render_texture`
+  for an RGBA8 copy (aurora-xenon:lib/gx/texture.cpp:794-796; lib/gfx/texture.cpp:141-145). The backend makes that an
+  `R8G8B8A8_UNORM` image, optimal, one level, one sample, `COLOR_ATTACHMENT | SAMPLED`
+  (aurora-xenon:lib/vulkan4xenon/backend.cpp:288-314, 327-329), and draws the copy into it as a render pass
+  (encoding.cpp:918-953). Refused, the texture has no image: the copy returns before drawing (encoding.cpp:931-934)
+  and draws that sample it get the empty texture, all zeros (backend.cpp:112, 159-160). So the blur at level 6 reads
+  black and the up chain adds nothing from it: bloom's widest level is missing. Carried up through alphas 0.76, 0.71,
+  0.63 and 0.5 (m_Do_graphic.cpp:1668), it would reach the quarter-size bloom at about 0.17 of its own brightness.
+- **Why the layer refuses.** xsdk lays out every texture with the fetch constant's packed mips on
+  (xsdk:src/texture.c:89-90, 279), as libxenon does (libxenon:libxenon/drivers/xenos/xe.c:1207, dword 5's 0xA00). A
+  base 16 texels or less on a side then sits in the packed tail (xsdk:src/texture_layout.c:55-59), at (0, 16) for a
+  wide one like 20x11 and at (16, 0) for a square or tall one (xsdk:src/texture_layout.c:79-98), where the console
+  reads it (xsdk:docs/HARDWARE.md, "A small texture's mips share its base's tail" and "A 2x1 texture's tail"). A
+  resolve copies the target's rectangle into the same texels of the texture, from its corner
+  (xsdk:src/gpu_resolve.c:451-466; the destination's offset is the source's, xenia:src/xenia/gpu/draw_util.cc:1015-1031;
+  on the console, xsdk:docs/HARDWARE.md, "Resolving part of a target, vulkan4xenon milestone 27"). It can't reach
+  (0, 16) from a 20x11 target at (0, 0), so xsdk asserts the base isn't in the tail
+  (xsdk:src/gpu_resolve.c:456-457, 494, 510), and the layer refuses such attachments
+  (src/image.c:154-156; docs/SUPPORT.md:467-469). Let through, the resolve would write rows 0 to 10 and the GPU would
+  sample rows 16 to 26.
+- **Every case seen.** In the 1,131 logs under xsdk:local, xsdk:results and results/ that hold either line, the "No
+  image for" lines are 1,149, every one `Resolved Texture (20x11)`. A log's refusals equal its 20x11 lines (504 logs),
+  or exceed them by exactly 2 (610 logs): vulkan4xenon_test's own check, which makes a 16x64 attachment and a 64x64 one
+  with 2 levels to see them refused (tests/test_objects.c:78-102). 17 logs fall 2 short: Dusklight's own log files
+  from Xenia recordings, which carry Aurora's line and not the layer's. So Dusklight asks for one size, 20x11, and
+  never for mips: the backend makes every copy, conversion and render target with one level and gives `desc.mips`
+  only to sampled images (backend.cpp:305-314).
+- **What isn't known.** The fetch constant's packed mips is a bit of its own (xenia:src/xenia/gpu/xenos.h:1281). In
+  Xenia's model a texture without it has no tail and its base sits at the corner, whatever its size
+  (xenia:src/xenia/gpu/texture_util.cc:251-253; texture_util.h:76-77). Nothing has shown that on the console: xsdk and
+  libxenon always set it, and Xenia was wrong about small textures' tails twice before (both HARDWARE.md sections
+  above). Xenia can't settle it, as it reads the corner by its own model either way.
+
+So the fix is to give a small colour attachment a texture with packed mips off, its base at the corner where a resolve
+writes, once a probe shows the console reads it there.
+
+**What it takes.**
+1. **The probe first** (xsdk: tests/probe_mip_tail.c, about 30 lines). It already draws each level of small textures
+   one texel to a pixel from four pages whose every texel names its page and place, under two setups
+   (xsdk:results/2026-10-10-probe-mip-tail/xsdk.log; xsdk:results/2026-10-13-milestone-29/probe_mip_tail_thin.log).
+   A third setup clears packed mips in the fetch constant it builds (its `make_texture`, which already rewrites dwords
+   1 and 5, xsdk:tests/probe_mip_tail.c:110) for one-level shapes that cover each of the tail's placements: 20x11
+   (wide, Dusklight's), 11x20 (tall), 16x16 (square), 32x16 (wide, the long side over 16), 2x1 (thin, placed as a
+   square), 4x1 (thin, placed as wide) and 1x1. The two setups it has run unchanged, as the control.
+   - **Expected:** every pixel of the third setup reads its own texel (x, y) on the base page, from the corner.
+   - **One launch, by the agent.** A fetch only reads, and the probe ran six shapes, then eleven thin ones, under both
+     setups in one launch each; the four coded pages catch a read past them.
+   - **If the console reads anywhere else,** the probe's codes say where, and the milestone comes back to the user
+     (Decisions, 5) before step 2.
+2. **xsdk: a texture's base at its corner** (about 25 lines):
+   - `xsdk_texture_base_at_corner(XsdkTexture *texture)` in include/xsdk/texture.h, beside `xsdk_texture_swizzle`: for a
+     one-level 2D texture whose base would sit in the packed tail, packed mips off in its fetch constant; for any other,
+     nothing (asserted one level and 2D).
+   - The layout follows the bit: `TextureLayout` gets `packed`, from the fetch constant in `layout_of`
+     (xsdk:src/texture.c:204-214), and `xsdk_texture_place` puts level 0 in the tail only when it's set
+     (xsdk:src/texture_layout.c:123), so uploads, downloads and the layer's CPU copies read and write the corner.
+   - The resolves' four asserts take a private `xsdk_texture_base_in_tail(texture)`, false with packed mips off
+     (xsdk:src/gpu_resolve.c:456-457, 494, 510).
+   - docs/HARDWARE.md records the probe; include/xsdk/texture.h says why in one line.
+3. **The layer** (about 10 lines):
+   - src/image.c:154-156 refuses colour attachments with mips, and multisampled ones 16 texels or less on a side
+     (Decisions, 2); `vkCreateImage` calls `xsdk_texture_base_at_corner` for every colour attachment, after
+     `init_texture`, which changes only those 16 texels or less on a side.
+   - src/image.h:27-29's comment says what `V4X_PACKED_SIDE` still limits: sampled depth images, multisampled colour
+     images and drawn blits (src/image.c:102-105; src/command_buffer.c:612-619).
+   - docs/SUPPORT.md:467-469: colour attachments of one level at any size, one 16 texels or less on a side with its
+     base at the corner, packed mips off, as the console reads it (xsdk:docs/HARDWARE.md, the probe's section).
+4. **Dusklight:** no change to Aurora or Dusklight. Its builds take the new xsdk and layer, and the runs below show the
+   copies made and drawn.
+
+**New checks.**
+- **xsdk_test** (tests/test_sampling.c): a 20x11 and an 11x20 texture of one level with their bases at the corner,
+  uploaded with coded texels and drawn one texel to a pixel, every pixel its texel.
+- **vulkan4xenon_test** (new tests/test_small_targets.c, each check well under a second), on 20x11, 11x20, 16x16 and 2x1
+  `R8G8B8A8_UNORM` images of one level, each drawn texel for texel from a coded source of its own, as Aurora draws a
+  copy, so a texel from the tail or from another image shows:
+  - read back by `vkCmdCopyImageToBuffer`, every texel right: the resolve wrote where xsdk's layout reads;
+  - sampled nearest, 4 pixels a texel, into a 128x64 attachment that's then read back, every pixel its texel: the GPU
+    reads where the resolve wrote.
+- **tests/test_objects.c:78-102** changes: a 16x64 attachment at one sample is made; a 64x64 one with 2 levels, and a
+  16x64 one at 2 samples, are still refused.
+
+**Broken on purpose** (`results/<date>-milestone-31/breaks.py` and `builds.sh`, building an xsdk copy as milestone 21's
+`builds.sh` does):
+- `fetch_packed`: `xsdk_gpu_set_texture` ORs packed mips back into every fetch constant it writes
+  (xsdk:src/gpu_draw.c:612-615), so the GPU reads the tail while the resolves and the CPU use the corner:
+  vulkan4xenon_test's sampled check fails, its read-back passes; xsdk_test's new check fails.
+- `place_tail`: `xsdk_texture_place` puts level 0 in the tail whatever the bit: the read-back check fails, the sampled
+  one passes.
+
+Each touches only textures with packed mips off, so no other check should fail. Neither can hang the GPU.
+
+**Verification,** on the console, all by the agent:
+- the probe, once (step 1);
+- xsdk_test, every check passing, and `fetch_packed` failing its new check alone;
+- vulkan4xenon_test twice, every check passing, each break failing the check it names and no others;
+- vkbench's 17 checks, nothing it draws being that small;
+- Dusklight's diagnostics build, built as local/m44c's are, at the default 4 samples, against the same build without
+  the fix at the same xsdk, layer and Aurora commits otherwise:
+  - no `colour attachments with mips` and no `No image for` line anywhere in the log;
+  - phase 0's `copies` 2.0 a frame more than without the fix, at the same shot frame (12.0 in
+    results/2026-10-20-milestone-30/step2_dusk_ms1.log:986-993): the two 20x11 copies drawn
+    (xsdk:local/m44c/aurora-diag.patch:214-218 counts a copy only once it's drawn);
+  - `dusklight_shot_start.ppm` from each build, and their difference filed in results: a wide, soft glow around the
+    bright parts, and the logo's moving shine, which differs between two runs of one build too
+    (docs/ROADMAP.md:1184-1186);
+  - phase 0's fps and GPU ms a frame within the noise of the build without the fix: two 20x11 passes a frame;
+- Dusklight's plain build, the title scene's 10 s windows, with neither line.
+
+No Xenia run is needed; Xenia would pass the new checks by its own model and can't tell (Why).
+
+**Done when:**
+- the probe shows every one-level shape read from its corner with packed mips off;
+- xsdk_test and vulkan4xenon_test pass in full, vulkan4xenon_test twice, each break failing what it names alone, and
+  vkbench passes;
+- Dusklight's runs refuse no image, draw two more copies a frame, run as fast as before, and the shot shows the glow;
+- docs/HARDWARE.md, include/xsdk/texture.h and docs/SUPPORT.md say what changed.
+
+**Left out:**
+- Colour attachments with mips: resolving into a level other than 0 is new xsdk work, and Dusklight never asks.
+- Sampled depth images 16 texels or less on a side (src/image.c:102-105): Aurora makes them unsampled
+  (backend.cpp:316-319), and no log refuses one.
+- Drawn blits to or from small images (src/command_buffer.c:612-619), which stay on the CPU: Dusklight's copies are
+  draws, not blits.
+- Unpacking every one-level texture (Decisions, 1).
+
+**Decisions,** each with a recommendation:
+1. **Which textures lose packed mips.** Only colour attachments whose base would sit in the tail (recommended: the
+   change reaches nothing else, and the small sampled textures Dusklight uploads keep the layout the console has run
+   since xsdk milestone 15); or every one-level texture, which drops the tail rules for them, Xenia's 2x1 difference
+   with them, but changes every small texture Dusklight draws ahead of the beta.
+2. **Small multisampled colour images.** Still refused (recommended: Aurora's copies are one sample,
+   aurora-xenon:lib/vulkan4xenon/backend.hpp:189-191, and no check would cover them); or let through, as the same
+   resolve writes them, with a check of their own.
+3. **The xsdk call.** A setter after `xsdk_texture_init`, as `xsdk_texture_swizzle` and `xsdk_texture_signs` are
+   (recommended: the layer's `init_texture` stays as it is); or an `xsdk_texture_init` for targets.
+4. **Ordon.** Not run again (recommended: the title scene makes the same two copies every frame,
+   results/2026-10-20-milestone-30/step2_dusk_ms1.log:843-846, so no one needs to play it); or the user plays the
+   village once on the beta build.
+5. **If the probe shows the console reads a small base from the tail anyway.** Back to the user with the probe's
+   result (recommended). The likely way then is to draw such an attachment into eDRAM at its base's place in the tail
+   and resolve that rectangle, as a resolve writes the same texels it copies (Why): every draw, clear and load into it
+   offset, in the layer and in xsdk, a larger change. Leaving out bloom's level 6 in Dusklight (`divNum` 5) would
+   change the look on the PC too, and isn't recommended.
+
+**Size:** small. The probe about 30 lines and one launch; xsdk about 25 lines and a check of about 60; the layer about
+10 lines, its checks about 150 and the breaks about 60; no change to Aurora or Dusklight. Every run is the agent's,
+nothing needs the user.
+
 ## 5. The Dusklight track
 
 An outline, made precise one milestone at a time. Each starts only when agreed.
