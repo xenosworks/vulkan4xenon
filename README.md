@@ -7,18 +7,25 @@
 A Vulkan 1.0 subset for the Xbox 360, built as a static library on the xsdk homebrew SDK's GPU layer, which drives
 Xenos directly under the retail kernel.
 
-The goal is running Dusklight, a reimplementation of Twilight Princess built on encounter's Aurora, on an RGH console.
+It's measured against two things. Dusklight, a reimplementation of Twilight Princess built on encounter's Aurora, runs
+on an RGH console through it, at 1280x720 with 4 samples of multisampling
+([dusklight-xenon](https://github.com/xenosworks/dusklight-xenon)). And as ports are expected from any system up to
+the GameCube and Wii, and from PC games of the same years, Direct3D 9 is the yardstick: of docs/PARITY.md's 47 rows,
+the layer has 40 and part of 7.
 
-**Status:** milestones 1 (a triangle), 2 (textures, descriptors and push constants), 3 (pipeline state), 4 (render
-to texture), 5 (the benchmark), 6 (the replay's cost) and 7 (uniform blocks the GPU loads) passed on the console on
-2026-10-11. docs/ROADMAP.md is the plan, docs/SUPPORT.md lists what exists, and docs/PARITY.md measures it against
-Direct3D 9.
+**Status:** milestones 1 to 7 and 17 to 31 are done on the console, the last on 2026-10-21, when vulkan4xenon_test
+passed 523 of 523 checks and vkbench 17 of 17. 8 was tried and reverted; 18's last step was put off and 29 closed
+short of its targets, both by the user's choice. 9 to 15 brought Dusklight up on the console, from its boot screens to
+play in Ordon, and 16, Dusklight's menus, comes next. docs/ROADMAP.md has each milestone and how it ran, and
+docs/SUPPORT.md lists what exists.
 
 ## Shaders
 
 Apps pass standard SPIR-V to `vkCreateShaderModule`. Shaders are compiled offline into Xenos containers, bundled with
 the app and looked up by their SPIR-V. `tools/build_shaders.py` does it: GLSL → `glslang -V` → xost → a C source with
-each shader's SPIR-V and the bundle.
+each shader's SPIR-V and the bundle. SPIR-V the bundle doesn't hold is compiled on the console, through xost's
+compiler in xsdk, the first time a module is made from it, and kept in a folder the app names with
+`v4x_set_shader_cache` (docs/SUPPORT.md, Shaders).
 
 ```
 python3 tools/build_shaders.py --xost ../Xbox-360-SDK/xenos-toolchain --output tests/shaders tests/shaders/*.vert tests/shaders/*.frag
