@@ -118,6 +118,7 @@ VKAPI_ATTR void VKAPI_CALL vkDestroyDevice(VkDevice device, const VkAllocationCa
 	if (!device)
 		return;
 	xsdk_gpu_free(device->queue.index_copies);
+	xsdk_gpu_free(device->queue.tile_space);
 	v4x_blit_destroy(&device->queue.blit);
 	xsdk_splash_end();
 	const NTSTATUS status = xsdk_gpu_close();

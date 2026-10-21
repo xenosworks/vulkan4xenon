@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 #include "harness.h"
 #include "shaders.h"
@@ -23,7 +24,8 @@
 // depth in bands, each storing colour and depth and resolving into a resolve attachment, then a pass loading both:
 // every texel of the resolve attachment as worked out, a triangle's edges across the bands at a step of the samples'
 // blend; and vkCmdResolveImage of the depth after it: every texel sample 0's depth. Each scene shows on screen in its
-// own colours.
+// own colours. Then milestone 30's: many such passes at 2 samples in one submission, recorded one after another into
+// the queue's space without waiting for the GPU, the space starting again over passes the GPU may still run.
 
 enum {
 	FRAMES = 3,
@@ -61,6 +63,22 @@ enum {
 	MAX_SAMPLES = 4,
 	// A pixel's samples sit within 3/8 of a pixel of its centre (xsdk:include/xsdk/gpu.h), well inside this.
 	EDGE_DISTANCE = 1,
+	// Milestone 30's passes at 2 samples: a strip each, full height, nearer than the last, with a column of its own.
+	STACK_PASSES = 8,
+	STRIP_LEFT = 20,
+	STRIP_STEP = 100,
+	STRIP_WIDTH = 140,
+	// Passes each drawing quads off screen after their strip, so that at anything from 15 to 87 dwords a recorded quad
+	// each stays under a pass's 1 MB and the queue's 2.5 MB of space starts again over passes this submission recorded
+	// (src/objects.h); the first draws full-screen quads in the clear's colour first, so the GPU lags behind the CPU.
+	WRAP_PASSES = 12,
+	WRAP_QUADS = 3000,
+	WRAP_COVER_QUADS = 300,
+	// Passes of full-screen quads, each keeping the GPU busy some milliseconds, to time the submit against.
+	BUSY_PASSES = 8,
+	BUSY_QUADS = 16,
+	MICROSECONDS_PER_SECOND = 1000000,
+	NANOSECONDS_PER_MICROSECOND = 1000,
 };
 
 // A multisampled pass's images, in its framebuffer's order: the colour, its resolve attachment, the depth.
@@ -508,7 +526,7 @@ static VkResult make_passes(const Harness *harness, Scene *s)
 	return result;
 }
 
-// Both 1280x720 passes take one framebuffer, so the second waits for the first's recording.
+// Both 1280x720 passes take one framebuffer.
 static VkResult make_framebuffers(const Harness *harness, Scene *s)
 {
 	VkResult result =
@@ -934,9 +952,17 @@ static VkResult record(
 	return result;
 }
 
-// Records into the work command buffer, then runs it and waits.
-static bool run_work(const Harness *harness, const Scene *s, void (*each)(VkCommandBuffer, const Scene *, const void *),
-	const void *context)
+static uint64_t now_us(void)
+{
+	struct timespec now;
+	(void)clock_gettime(CLOCK_MONOTONIC, &now);
+	return (uint64_t)now.tv_sec * MICROSECONDS_PER_SECOND + (uint64_t)now.tv_nsec / NANOSECONDS_PER_MICROSECOND;
+}
+
+// Records into the work command buffer, then runs it and waits: how long vkQueueSubmit took, and until the fence.
+static bool run_timed(const Harness *harness, const Scene *s,
+	void (*each)(VkCommandBuffer, const Scene *, const void *), const void *context, uint64_t *submit_us,
+	uint64_t *done_us)
 {
 	const VkCommandBufferBeginInfo begin_info = { .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
 	const VkSubmitInfo submit = {
@@ -945,11 +971,23 @@ static bool run_work(const Harness *harness, const Scene *s, void (*each)(VkComm
 	bool ok = harness_ok("vkBeginCommandBuffer", vkBeginCommandBuffer(s->work, &begin_info));
 	if (ok)
 		each(s->work, s, context);
-	ok = ok && harness_ok("vkEndCommandBuffer", vkEndCommandBuffer(s->work)) &&
-		harness_ok("vkQueueSubmit", vkQueueSubmit(harness->queue, 1, &submit, harness->fence)) &&
+	ok = ok && harness_ok("vkEndCommandBuffer", vkEndCommandBuffer(s->work));
+	const uint64_t start = now_us();
+	ok = ok && harness_ok("vkQueueSubmit", vkQueueSubmit(harness->queue, 1, &submit, harness->fence));
+	*submit_us = now_us() - start;
+	ok = ok &&
 		harness_ok("vkWaitForFences", vkWaitForFences(harness->device, 1, &harness->fence, VK_TRUE, FENCE_TIMEOUT_NS));
+	*done_us = now_us() - start;
 	(void)vkResetFences(harness->device, 1, &harness->fence);
 	return ok;
+}
+
+static bool run_work(const Harness *harness, const Scene *s, void (*each)(VkCommandBuffer, const Scene *, const void *),
+	const void *context)
+{
+	uint64_t submit_us;
+	uint64_t done_us;
+	return run_timed(harness, s, each, context, &submit_us, &done_us);
 }
 
 typedef struct {
@@ -1361,6 +1399,145 @@ static void check_depth_resolve(const Harness *harness, const Scene *s, uint32_t
 	check(label, read && split && !wrong);
 }
 
+// Strip i of milestone 30's passes: full height, a column of its own left of the next, nearer than those before.
+static Rect strip_of(uint32_t i)
+{
+	const uint32_t left = STRIP_LEFT + STRIP_STEP * i;
+	return (Rect){ left, 0, left + STRIP_WIDTH, HEIGHT, 0.9f - 0.07f * (float)i };
+}
+
+static void strip_color(uint32_t i, float color[CHANNELS])
+{
+	color[0] = (float)(30 + 20 * i) / 255.0f;
+	color[1] = (float)(200 - 15 * i) / 255.0f;
+	color[2] = (i % 2 ? 220.0f : 40.0f) / 255.0f;
+	color[3] = 1.0f;
+}
+
+// How many passes, the quads each draws off screen after its strip, and the full-screen ones the first draws before.
+typedef struct {
+	uint32_t passes;
+	uint32_t hidden_quads;
+	uint32_t cover_quads;
+} Stack;
+
+// Passes on the 2-sample framebuffer, the first clearing colour and depth and the rest loading both: each draws its
+// strip writing depth, then its quads off screen, each in a place and shade of its own, so none is skipped as
+// unchanged. The first's cover quads test depth and write none, in the clear's colour.
+static void record_stack(VkCommandBuffer commands, const Scene *s, const void *context)
+{
+	const Stack *const stack = context;
+	const Msaa *const m = &s->msaa[0];
+	VkClearValue clears[MSAA_IMAGES];
+	memset(clears, 0, sizeof clears);
+	memcpy(clears[MSAA_COLOR].color.float32, msaa_cases[0].clear, sizeof clears[0].color.float32);
+	clears[MSAA_DEPTH].depthStencil = (VkClearDepthStencilValue){ 1.0f, 0 };
+	const VkDeviceSize offset = 0;
+	const Rect all = { 0, 0, WIDTH, HEIGHT, 0.95f };
+	const HarnessQuad cover = quad_of(&all, msaa_cases[0].clear);
+	for (uint32_t p = 0; p < stack->passes; p++) {
+		begin_whole(commands, p ? m->second_pass : m->first_pass, m->target, WIDTH, HEIGHT, p ? NULL : clears,
+			p ? 0 : MSAA_IMAGES);
+		vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, m->test_pipeline);
+		vkCmdBindVertexBuffers(commands, 0, 1, &s->unit_quad, &offset);
+		for (uint32_t q = 0; q < (p ? 0 : stack->cover_quads); q++)
+			harness_push_quad_in(commands, s->push_layout, &cover, WIDTH, HEIGHT);
+		vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, m->write_pipeline);
+		float color[CHANNELS];
+		strip_color(p, color);
+		const Rect strip = strip_of(p);
+		const HarnessQuad quad = quad_of(&strip, color);
+		harness_push_quad_in(commands, s->push_layout, &quad, WIDTH, HEIGHT);
+		for (uint32_t q = 0; q < stack->hidden_quads; q++) {
+			const Rect hidden = { 2 * WIDTH + q, 0, 2 * WIDTH + q + 1, 1, 0.5f };
+			const float shade[CHANNELS] = { (float)(q % 256) / 255.0f, 0.0f, 0.0f, 1.0f };
+			const HarnessQuad off = quad_of(&hidden, shade);
+			harness_push_quad_in(commands, s->push_layout, &off, WIDTH, HEIGHT);
+		}
+		vkCmdEndRenderPass(commands);
+	}
+}
+
+// The passes in one submission, then the resolve attachment: each texel the colour of the last strip over it, else the
+// clear, so a pass whose recording another overwrote before the GPU ran all its bands leaves its column wrong there.
+static void check_stack(const Harness *harness, const Scene *s, bool built, const Stack *stack, const char *what)
+{
+	uint64_t submit_us = 0;
+	uint64_t done_us = 0;
+	const bool read = built && run_timed(harness, s, record_stack, stack, &submit_us, &done_us) &&
+		read_back(harness, s, s->msaa[0].images[MSAA_RESOLVED], WIDTH, HEIGHT);
+	char name[LABEL_BYTES];
+	snprintf(name, sizeof name, "%u passes at 2 samples", (unsigned)stack->passes);
+	uint32_t wrong = 0;
+	uint32_t logged = 0;
+	for (uint32_t y = 0; y < HEIGHT && read; y++) {
+		for (uint32_t x = 0; x < WIDTH; x++) {
+			float want[CHANNELS];
+			memcpy(want, msaa_cases[0].clear, sizeof want);
+			for (uint32_t i = 0; i < stack->passes; i++) {
+				const Rect strip = strip_of(i);
+				if (inside(&strip, x, y))
+					strip_color(i, want);
+			}
+			const uint8_t *const texel = s->read + (y * WIDTH + x) * 4;
+			bool near = true;
+			for (uint32_t ch = 0; ch < 3; ch++)
+				near = near && fabsf(channel(&big_format, texel, ch) - want[ch]) <= big_format.tolerance;
+			if (near)
+				continue;
+			wrong++;
+			log_msaa_miss(name, "the resolve attachment's", x, y, texel, &logged);
+		}
+	}
+	xsdk_log_write("tiles: %s: vkQueueSubmit took %u us, the fence came %u us after it began; %u of %u texels wrong",
+		name, (unsigned)submit_us, (unsigned)done_us, (unsigned)wrong, (unsigned)(WIDTH * HEIGHT));
+	char label[2 * LABEL_BYTES];
+	snprintf(label, sizeof label,
+		"tiles: %u passes past eDRAM at 2 samples in one submission on one framebuffer, %s, every texel of the resolve "
+		"attachment",
+		(unsigned)stack->passes, what);
+	check(label, read && !wrong);
+}
+
+// Passes of full-screen quads on the 2-sample framebuffer, testing depth and writing none, so each quad fills it all.
+static void record_busy(VkCommandBuffer commands, const Scene *s, const void *context)
+{
+	(void)context;
+	const Msaa *const m = &s->msaa[0];
+	VkClearValue clears[MSAA_IMAGES];
+	memset(clears, 0, sizeof clears);
+	clears[MSAA_DEPTH].depthStencil = (VkClearDepthStencilValue){ 1.0f, 0 };
+	const VkDeviceSize offset = 0;
+	const Rect all = { 0, 0, WIDTH, HEIGHT, 0.5f };
+	for (uint32_t p = 0; p < BUSY_PASSES; p++) {
+		begin_whole(commands, p ? m->second_pass : m->first_pass, m->target, WIDTH, HEIGHT, p ? NULL : clears,
+			p ? 0 : MSAA_IMAGES);
+		vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, m->test_pipeline);
+		vkCmdBindVertexBuffers(commands, 0, 1, &s->unit_quad, &offset);
+		for (uint32_t q = 0; q < BUSY_QUADS; q++) {
+			const float shade[CHANNELS] = { (float)q / BUSY_QUADS, (float)p / BUSY_PASSES, 0.5f, 1.0f };
+			const HarnessQuad quad = quad_of(&all, shade);
+			harness_push_quad_in(commands, s->push_layout, &quad, WIDTH, HEIGHT);
+		}
+		vkCmdEndRenderPass(commands);
+	}
+}
+
+// The submit records each pass without waiting for the GPU to run the one before (docs/ROADMAP.md, milestone 30), where
+// waiting for each took seven eighths of the GPU's time for them.
+static void check_busy(const Harness *harness, const Scene *s, bool built)
+{
+	uint64_t submit_us = 0;
+	uint64_t done_us = 0;
+	const bool ran = built && run_timed(harness, s, record_busy, NULL, &submit_us, &done_us);
+	xsdk_log_write("tiles: %u busy passes at 2 samples: vkQueueSubmit took %u us, the fence came %u us after it began",
+		(unsigned)BUSY_PASSES, (unsigned)submit_us, (unsigned)done_us);
+	check(
+		"tiles: 8 passes past eDRAM at 2 samples, each keeping the GPU busy, return from vkQueueSubmit in under a "
+		"quarter of the time until their fence",
+		ran && submit_us * 4 < done_us);
+}
+
 typedef struct {
 	VkQueryPool pool;
 	uint32_t refusal;
@@ -1610,5 +1787,11 @@ void test_tiles(const Harness *harness)
 		if (recorded)
 			check_depth_resolve(harness, s, i);
 	}
+	const Stack stacked = { STACK_PASSES, 0, 0 };
+	check_stack(harness, s, built, &stacked, "each loading the last and adding a strip");
+	const Stack wrapping = { WRAP_PASSES, WRAP_QUADS, WRAP_COVER_QUADS };
+	check_stack(harness, s, built, &wrapping,
+		"recorded past the queue's 2.5 MB of space, so it starts again over passes the GPU may still run");
+	check_busy(harness, s, built);
 	destroy(harness, s);
 }

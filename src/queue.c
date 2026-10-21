@@ -977,26 +977,77 @@ static void load_tiles(VkQueue queue, const Replay *replay)
 	}
 }
 
+// The GPU done with a pass recorded in the queue's space, as the CPU is about to write over it.
+static void wait_for_span(const TileSpan *span)
+{
+	if (xsdk_gpu_fence_done(span->fence))
+		return;
+	v4x_profile_wait_start();
+	const NTSTATUS status = xsdk_gpu_wait(span->fence, IDLE_TIMEOUT_MS);
+	v4x_profile_wait_end();
+	if (!NT_SUCCESS(status))
+		xsdk_log_write("vulkan4xenon: a pass past eDRAM's recording didn't finish: 0x%08X", (unsigned)status);
+}
+
+// The span i after the oldest the queue keeps.
+static const TileSpan *span_at(VkQueue queue, uint32_t i)
+{
+	return &queue->tile_spans[(queue->tile_span_first + i) % V4X_TILE_SPANS];
+}
+
+// Room for a pass past eDRAM's recording: V4X_TILE_RECORDING_DWORDS from the space's next 128-byte line, or from its
+// start where they don't fit, once the GPU is done with the passes recorded there. Their fences land in order, so the
+// newest of them is the one to wait for, and the spans up to it go.
+static XsdkCommandBuffer *tile_room(VkQueue queue)
+{
+	uint32_t first = (queue->tile_write + V4X_TILE_ALIGN_DWORDS - 1) & ~(uint32_t)(V4X_TILE_ALIGN_DWORDS - 1);
+	if (first + V4X_TILE_RECORDING_DWORDS > V4X_TILE_SPACE_DWORDS)
+		first = 0;
+	uint32_t covered = 0;
+	for (uint32_t i = 0; i < queue->tile_span_count; i++) {
+		const TileSpan *const span = span_at(queue, i);
+		if (span->first < first + V4X_TILE_RECORDING_DWORDS && first < span->end)
+			covered = i + 1;
+	}
+	// With every span kept, the oldest goes too, so this pass's has a place.
+	if (!covered && queue->tile_span_count == V4X_TILE_SPANS)
+		covered = 1;
+	if (covered)
+		wait_for_span(span_at(queue, covered - 1));
+	queue->tile_span_first = (queue->tile_span_first + covered) % V4X_TILE_SPANS;
+	queue->tile_span_count -= covered;
+	queue->tile_recording = (XsdkCommandBuffer){ .dwords = queue->tile_space + first,
+		.address = xsdk_gpu_address(queue->tile_space) + first * 4,
+		.capacity_dwords = V4X_TILE_RECORDING_DWORDS };
+	return &queue->tile_recording;
+}
+
+// The pass just ended kept as a span of the queue's space, which the GPU runs until the fence after its bands; one that
+// recorded nothing, or outgrew its room, queued nothing.
+static void keep_span(VkQueue queue, uint32_t fence)
+{
+	const XsdkCommandBuffer *const recording = &queue->tile_recording;
+	const uint32_t first = (uint32_t)(recording->dwords - queue->tile_space);
+	queue->tile_write = first + recording->count;
+	if (!recording->count)
+		return;
+	queue->tile_spans[(queue->tile_span_first + queue->tile_span_count) % V4X_TILE_SPANS] =
+		(TileSpan){ .first = first, .end = first + recording->count, .fence = fence };
+	queue->tile_span_count++;
+}
+
 // A subpass past eDRAM's tiles is a tiled pass (xsdk:include/xsdk/gpu.h): its commands are replayed once into a
-// recording that each band of rows runs.
+// recording, in the queue's space, that each band of rows runs.
 static void begin_tiled_pass(VkQueue queue, Replay *replay)
 {
 	const Framebuffer *const framebuffer = replay->framebuffer;
-	TileRecording *const recording = framebuffer->recording;
 	v4x_profile_tiles_begin();
-	// The GPU may still be running what the subpass recorded last.
-	if (recording->fence && !xsdk_gpu_fence_done(recording->fence)) {
-		v4x_profile_wait_start();
-		const NTSTATUS waited = xsdk_gpu_wait(recording->fence, IDLE_TIMEOUT_MS);
-		v4x_profile_wait_end();
-		if (!NT_SUCCESS(waited))
-			xsdk_log_write("vulkan4xenon: a pass past eDRAM's last recording didn't finish: 0x%08X", (unsigned)waited);
-	}
+	XsdkCommandBuffer *const recording = tile_room(queue);
 	keep_tiled_depth(queue, replay);
 	// Resolves clear depth in bands to it, and the hierarchical buffer takes it as each band's.
 	if (replay->clears_depth && !framebuffer->tiling.depth_whole)
 		set_depth_clear(queue, replay->clear_depth, replay->clear_stencil);
-	const NTSTATUS status = xsdk_gpu_begin_tiles(&framebuffer->tiling, &recording->buffer);
+	const NTSTATUS status = xsdk_gpu_begin_tiles(&framebuffer->tiling, recording);
 	if (!NT_SUCCESS(status))
 		xsdk_log_write("vulkan4xenon: xsdk_gpu_begin_tiles failed: 0x%08X", (unsigned)status);
 	replay->tiling = true;
@@ -1056,7 +1107,7 @@ static void end_tiled_pass(VkQueue queue, Replay *replay, Image *resolved_depth)
 	replay->tiling = false;
 	if (!NT_SUCCESS(xsdk_gpu_end_tiles(resolves, count)))
 		(void)v4x_host_unsupported("a pass past eDRAM whose commands outgrow its recording's 1 MB");
-	framebuffer->recording->fence = xsdk_gpu_fence();
+	keep_span(queue, xsdk_gpu_fence());
 	queue->depths[0] = render_pass->has_depth && framebuffer->tiling.depth_whole
 		? holding(depth, replay->depth_tile, whole(framebuffer))
 		: (EdramPart){ .contents = EDRAM_UNKNOWN };
@@ -1064,7 +1115,7 @@ static void end_tiled_pass(VkQueue queue, Replay *replay, Image *resolved_depth)
 	replay->clip_planes_on = false;
 	memset(replay->pointed_streams, 0, sizeof replay->pointed_streams);
 	memset(replay->pointed_textures, 0, sizeof replay->pointed_textures);
-	v4x_profile_tiles_ended(framebuffer->recording->buffer.count);
+	v4x_profile_tiles_ended(queue->tile_recording.count);
 }
 
 // The next render pass in the command buffer after this command, if there is one.

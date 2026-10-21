@@ -164,7 +164,21 @@ enum {
 	// most a draw repeats, a packet's 65535 indices of 32 bits.
 	V4X_INDEX_COPY_PARTS = 4,
 	V4X_INDEX_COPY_PART_BYTES = 256 * 1024,
+	// The memory passes past eDRAM record into, one after another (queue.c, tile_room): two and a half rooms, so a room
+	// taken from the start again holds only passes at least half a room of recordings old, which the GPU has likely run.
+	V4X_TILE_SPACE_DWORDS = V4X_TILE_RECORDING_DWORDS * 5 / 2,
+	// A recording starts on a 128-byte line, as xsdk's stream segments do (xsdk:src/gpu.c, SEGMENT_ALIGN_DWORDS).
+	V4X_TILE_ALIGN_DWORDS = 32,
+	// The passes the GPU may still run that the queue keeps; past them it waits for the oldest.
+	V4X_TILE_SPANS = 64,
 };
+
+// Where a pass past eDRAM recorded in the queue's space, in dwords, and the fence after its bands.
+typedef struct {
+	uint32_t first;
+	uint32_t end;
+	uint32_t fence;
+} TileSpan;
 
 struct VkQueue_T {
 	VkDevice device;
@@ -193,6 +207,14 @@ struct VkQueue_T {
 	uint32_t copy_part;
 	uint32_t copy_part_bytes;
 	uint32_t copy_serials[V4X_INDEX_COPY_PARTS];
+	// The space passes past eDRAM record into, taken with the first framebuffer that has one (render_pass.c), and where
+	// the last ended; the pass being recorded's room; the spans the GPU may still run, oldest first, in a ring.
+	volatile uint32_t *tile_space;
+	uint32_t tile_write;
+	XsdkCommandBuffer tile_recording;
+	TileSpan tile_spans[V4X_TILE_SPANS];
+	uint32_t tile_span_first;
+	uint32_t tile_span_count;
 };
 
 struct VkDevice_T {
@@ -432,14 +454,8 @@ typedef struct {
 	uint32_t attachment_count;
 } RenderPassSubpasses;
 
-// A tiled pass's recording, which each band runs; the GPU may run it until fence lands.
-typedef struct {
-	XsdkCommandBuffer buffer;
-	uint32_t fence;
-} TileRecording;
-
 // One subpass's attachments' images, and the colour targets they draw into, one after another in eDRAM from tile 0,
-// with the tiles they take all together; or past eDRAM's tiles, the tiled pass they draw in and its recording.
+// with the tiles they take all together; or past eDRAM's tiles, the tiled pass they draw in.
 typedef struct {
 	Image *attachments[V4X_MAX_COLOR_ATTACHMENTS];
 	// Each colour attachment's resolve attachment, or NULL.
@@ -452,7 +468,6 @@ typedef struct {
 	uint32_t color_tiles;
 	bool tiled;
 	XsdkTiling tiling;
-	TileRecording *recording;
 } Framebuffer;
 
 // A VkFramebuffer: each subpass's images, as the render pass it was made with places its attachments; a compatible pass
@@ -461,7 +476,6 @@ typedef struct {
 	Framebuffer subpasses[V4X_MAX_SUBPASSES];
 	uint32_t width;
 	uint32_t height;
-	TileRecording recordings[V4X_MAX_SUBPASSES];
 } FramebufferSubpasses;
 
 // A copy between a buffer and the whole of an image's level, in some of its layers or 3D slices, kept in the command

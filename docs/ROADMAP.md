@@ -3283,6 +3283,31 @@ waits for the GPU` too, and only those that found the GPU still running the reco
 - **At 1 sample** no pass is past eDRAM, so no such line; phase 0's replay took 1.0 ms, the GPU 13.2 ms from submit,
   29.0 fps.
 
+**Step 2, built** (2026-10-20; the console's run to come):
+- **The space is 2.5 MB, not 2.** A pass keeps 1 MB of room, today's limit. Where the room doesn't fit before the
+  space's end, it's taken from the start again, and in 2 MB that room would cover the pass just recorded, which the GPU
+  is likely still running, at every lap. In 2.5 MB the passes the room covers then were followed by at least half a
+  room of recordings, about 6 to 9 of Dusklight's frames at 14,000 to 21,000 dwords a present (step 1).
+- **Taken with the first framebuffer past eDRAM,** not at the first such pass as the scope had it, so a lack of memory
+  fails `vkCreateFramebuffer` with `VK_ERROR_OUT_OF_DEVICE_MEMORY`, as a framebuffer's own recording did, rather than a
+  submit; framebuffers made on two threads at once keep one space. It's freed with the device. A framebuffer no longer
+  takes 1 MB of its own.
+- **Each pass records from the space's next 128-byte line** into an `XsdkCommandBuffer` pointing there, with 1 MB of
+  room (src/queue.c, `tile_room`); after its bands it's kept as a span with its fence, up to 64 of them, oldest first.
+  A pass whose room covers spans waits for the newest of them, as the fences land in order, and drops them; with all 64
+  kept it waits for the oldest. The profile's lines count these waits as before.
+- **New checks** (tests/test_tiles.c), on the 2-sample framebuffer with depth and a resolve attachment:
+  - 8 passes in one submission, each loading the last and drawing a full-height strip of its own, nearer than the last,
+    every texel of the resolve attachment checked;
+  - 12 such passes, each with 3,000 quads off screen after its strip, the first with 300 full-screen quads in the
+    clear's colour before it so the GPU lags: at 15 to 87 dwords a recorded quad, each pass stays under 1 MB and the
+    space starts again over passes this submission recorded; every texel checked, and the submit's time and the fence's
+    logged;
+  - 8 passes of 16 full-screen quads each: `vkQueueSubmit` returns in under a quarter of the time until their fence.
+- **Broken on purpose** (`results/2026-10-20-milestone-30/breaks.py` and `builds.sh`): `wait_last`, each pass waiting
+  for the one before, should fail the submit's time check alone; `no_span_wait`, rooms taken without waiting for the
+  spans in them, the wrap check, or hang the GPU, so it runs last, from a fresh boot.
+
 ## 5. The Dusklight track
 
 An outline, made precise one milestone at a time. Each starts only when agreed.

@@ -309,30 +309,27 @@ static VkResult place_targets(const RenderPass *pass, Framebuffer *images)
 	return tile + depth_tiles <= XSDK_EDRAM_TILES && !forced ? VK_SUCCESS : tile_targets(pass, images);
 }
 
-// A tiled pass's recording, made with its framebuffer, as recording into it at a submit would be the hot path's.
-static VkResult make_recordings(FramebufferSubpasses *framebuffer, uint32_t subpass_count)
+// The queue's space for passes past eDRAM to record into, taken with the first framebuffer that has one, so a lack of
+// memory fails vkCreateFramebuffer rather than a submit, and kept till the device goes.
+static VkResult take_tile_space(VkDevice device, const FramebufferSubpasses *images, uint32_t subpass_count)
 {
-	for (uint32_t s = 0; s < subpass_count; s++) {
-		framebuffer->subpasses[s].recording = &framebuffer->recordings[s];
-		if (!framebuffer->subpasses[s].tiled)
-			continue;
-		const NTSTATUS status =
-			xsdk_gpu_command_buffer_create(&framebuffer->recordings[s].buffer, V4X_TILE_RECORDING_DWORDS);
-		if (!NT_SUCCESS(status)) {
-			xsdk_log_write("vulkan4xenon: xsdk_gpu_command_buffer_create failed: 0x%08X", (unsigned)status);
-			return VK_ERROR_OUT_OF_DEVICE_MEMORY;
-		}
+	bool tiled = false;
+	for (uint32_t s = 0; s < subpass_count; s++)
+		tiled = tiled || images->subpasses[s].tiled;
+	volatile uint32_t **const space = &device->queue.tile_space;
+	if (!tiled || __atomic_load_n(space, __ATOMIC_ACQUIRE))
+		return VK_SUCCESS;
+	volatile uint32_t *const taken = xsdk_gpu_alloc(V4X_TILE_SPACE_DWORDS * 4);
+	if (!taken) {
+		xsdk_log_write("vulkan4xenon: xsdk_gpu_alloc of %u bytes for passes past eDRAM failed",
+			(unsigned)(V4X_TILE_SPACE_DWORDS * 4));
+		return VK_ERROR_OUT_OF_DEVICE_MEMORY;
 	}
+	// Framebuffers may be made on several threads at once; the first to set the space keeps it.
+	volatile uint32_t *none = NULL;
+	if (!__atomic_compare_exchange_n(space, &none, taken, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE))
+		xsdk_gpu_free(taken);
 	return VK_SUCCESS;
-}
-
-static void free_framebuffer(const VkAllocationCallbacks *allocator, FramebufferSubpasses *framebuffer)
-{
-	for (uint32_t s = 0; framebuffer && s < V4X_MAX_SUBPASSES; s++) {
-		if (framebuffer->recordings[s].buffer.dwords)
-			xsdk_gpu_command_buffer_free(&framebuffer->recordings[s].buffer);
-	}
-	v4x_host_free(allocator, framebuffer);
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL vkCreateFramebuffer(VkDevice device, const VkFramebufferCreateInfo *pCreateInfo,
@@ -351,17 +348,14 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateFramebuffer(VkDevice device, const VkFram
 		if (result != VK_SUCCESS)
 			return result;
 	}
-	const VkAllocationCallbacks *const allocator = v4x_host_device_allocator(device, pAllocator);
-	FramebufferSubpasses *const framebuffer =
-		v4x_host_alloc(allocator, sizeof *framebuffer, VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
+	const VkResult taken = take_tile_space(device, &images, render_pass->subpass_count);
+	if (taken != VK_SUCCESS)
+		return taken;
+	FramebufferSubpasses *const framebuffer = v4x_host_alloc(
+		v4x_host_device_allocator(device, pAllocator), sizeof *framebuffer, VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
 	if (!framebuffer)
 		return VK_ERROR_OUT_OF_HOST_MEMORY;
 	*framebuffer = images;
-	const VkResult result = make_recordings(framebuffer, render_pass->subpass_count);
-	if (result != VK_SUCCESS) {
-		free_framebuffer(allocator, framebuffer);
-		return result;
-	}
 	*pFramebuffer = v4x_handle(framebuffer);
 	return VK_SUCCESS;
 }
@@ -369,5 +363,5 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateFramebuffer(VkDevice device, const VkFram
 VKAPI_ATTR void VKAPI_CALL vkDestroyFramebuffer(
 	VkDevice device, VkFramebuffer framebuffer, const VkAllocationCallbacks *pAllocator)
 {
-	free_framebuffer(v4x_host_device_allocator(device, pAllocator), v4x_object(framebuffer));
+	v4x_host_free(v4x_host_device_allocator(device, pAllocator), v4x_object(framebuffer));
 }

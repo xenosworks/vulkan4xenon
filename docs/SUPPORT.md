@@ -355,9 +355,11 @@ Some are there to refuse, as the features they need aren't reported. Each logs w
   - **Refused inside it:** queries and time stamps, as each band would run them; `vkEndCommandBuffer` returns
     `VK_ERROR_FEATURE_NOT_PRESENT`, and one in a secondary command buffer is dropped at replay and logged. A render area
     smaller than the framebuffer fails the command buffer the same way, as each band resolves all its rows.
-  - **Shortcut:** each subpass past eDRAM records into 1 MB of packets its framebuffer holds, some thousands of the
-    layer's draws; a pass that outgrows it draws nothing, and the layer logs it. A pass waits for the GPU to finish the
-    last one its framebuffer's subpass recorded, so a framebuffer used twice in a submission costs a wait.
+  - **Shortcut:** a pass past eDRAM records into at most 1 MB of packets, some thousands of the layer's draws; a pass
+    that outgrows it draws nothing, and the layer logs it. The passes record one after another into 2.5 MB of GPU
+    memory the device takes with its first framebuffer past eDRAM, `VK_ERROR_OUT_OF_DEVICE_MEMORY` from
+    `vkCreateFramebuffer` if it can't, and a pass waits for the GPU only where its 1 MB of room still holds a pass the
+    GPU may run (milestone 30).
   - Up to 4096x4096, any subpass fits xsdk's 64 bands.
 - **Subpasses, each a pass of its own** (milestone 19): `vkCmdBeginRenderPass` and `vkCmdNextSubpass` begin each
   subpass as the replay begins a render pass, and `vkCmdNextSubpass` and `vkCmdEndRenderPass` end it. An attachment
