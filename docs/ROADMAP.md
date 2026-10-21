@@ -3308,6 +3308,31 @@ waits for the GPU` too, and only those that found the GPU still running the reco
   for the one before, should fail the submit's time check alone; `no_span_wait`, rooms taken without waiting for the
   spans in them, the wrap check, or hang the GPU, so it runs last, from a fresh boot.
 
+**Step 2 on the console** (2026-10-20 and 21, `e3c5a6e` against xsdk `06e13ff`; `results/2026-10-20-milestone-30/`,
+the `step2_*` and `ordon_*` logs):
+- **vulkan4xenon_test** passed 520 of 520 twice. The 8 busy passes returned from `vkQueueSubmit` in 390 and 391 us,
+  their fence 42.5 and 42.3 ms after; the 12 passes recorded past the 2.5 MB space came out with every texel right.
+- **The breaks:** `wait_last` failed the submit's time check alone, 42,522 us of 48,475; `no_span_wait` hung the GPU,
+  as warned. vkbench passed its 17 checks; its times weren't measured against main's in the same session.
+- **The logo shot's phase 0, at 2 samples:** the replay took 1.2 ms a frame, from 11.2, against 1.0 at 1 sample; the
+  passes' begins waited 0 us for the GPU; the GPU took 16.0 ms from submit, 13.1 at 1 sample; 29.0 and 29.1 fps. At 4
+  samples the shot landed on a lighter frame, 1757 against 1921 to 1926 (72 draws a present against 249), so its
+  phases don't compare; its replay took 0.5 to 1.0 ms a frame without waits.
+- **The title scene,** plain builds by the agent, 32 windows: 1,151.6 frames a second summed at 1 sample and 1,149.9
+  at 2, each with four of its last 25 windows under 29.5, the lowest 28.8 and 28.7.
+- **Ordon,** plain builds played by the user: the village (F_SP103) averaged 27.25 fps at 1 sample, 27.23 at 2 and
+  27.80 at 4, and F_SP104 29.10, 29.05 and 28.82, each route the user's own.
+
+**Closed on 2026-10-21, with Dusklight at 4 samples by the user's choice:**
+- The replay at 2 samples costs 1.2 ms a frame, under the 2 ms bar.
+- The 29.5 fps bar is missed at 1 sample as at 2 and 4, in the title scene and Ordon's village alike, so the shortfall
+  isn't multisampling's; the user left the frame rate for later. F_SP104 runs as at 1 sample within a route's noise.
+- Decision 5 had 4 samples measured, not a default; the user chose 4, as Ordon ran as fast at 4 as at 1 and 2, and
+  `DUSK_XSDK_MSAA`'s default in dusklight-xenon is 4. The title scene at 4 samples isn't recorded: the agent's run of
+  it lost its log.
+
+Milestone 30 is done.
+
 ## 5. The Dusklight track
 
 An outline, made precise one milestone at a time. Each starts only when agreed.
