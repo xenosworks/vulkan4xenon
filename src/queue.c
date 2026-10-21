@@ -983,10 +983,15 @@ static void begin_tiled_pass(VkQueue queue, Replay *replay)
 {
 	const Framebuffer *const framebuffer = replay->framebuffer;
 	TileRecording *const recording = framebuffer->recording;
+	v4x_profile_tiles_begin();
 	// The GPU may still be running what the subpass recorded last.
-	const NTSTATUS waited = recording->fence ? xsdk_gpu_wait(recording->fence, IDLE_TIMEOUT_MS) : STATUS_SUCCESS;
-	if (!NT_SUCCESS(waited))
-		xsdk_log_write("vulkan4xenon: a pass past eDRAM's last recording didn't finish: 0x%08X", (unsigned)waited);
+	if (recording->fence && !xsdk_gpu_fence_done(recording->fence)) {
+		v4x_profile_wait_start();
+		const NTSTATUS waited = xsdk_gpu_wait(recording->fence, IDLE_TIMEOUT_MS);
+		v4x_profile_wait_end();
+		if (!NT_SUCCESS(waited))
+			xsdk_log_write("vulkan4xenon: a pass past eDRAM's last recording didn't finish: 0x%08X", (unsigned)waited);
+	}
 	keep_tiled_depth(queue, replay);
 	// Resolves clear depth in bands to it, and the hierarchical buffer takes it as each band's.
 	if (replay->clears_depth && !framebuffer->tiling.depth_whole)
@@ -1002,6 +1007,7 @@ static void begin_tiled_pass(VkQueue queue, Replay *replay)
 	memset(replay->pointed_textures, 0, sizeof replay->pointed_textures);
 	// A band begins with the loop constants the last band left, so the recording writes its own.
 	queue->loops_written = false;
+	v4x_profile_tiles_begun();
 }
 
 // Colour target i's band into an image, clearing the target to its clear for the next band; one drawn back is left out
@@ -1023,6 +1029,7 @@ static void end_tiled_pass(VkQueue queue, Replay *replay, Image *resolved_depth)
 {
 	const RenderPass *const render_pass = replay->render_pass;
 	const Framebuffer *const framebuffer = replay->framebuffer;
+	v4x_profile_tiles_end();
 	XsdkTileResolve resolves[2 * V4X_MAX_COLOR_ATTACHMENTS + 2];
 	uint32_t count = 0;
 	for (uint32_t i = 0; i < render_pass->color_count; i++) {
@@ -1057,6 +1064,7 @@ static void end_tiled_pass(VkQueue queue, Replay *replay, Image *resolved_depth)
 	replay->clip_planes_on = false;
 	memset(replay->pointed_streams, 0, sizeof replay->pointed_streams);
 	memset(replay->pointed_textures, 0, sizeof replay->pointed_textures);
+	v4x_profile_tiles_ended(framebuffer->recording->buffer.count);
 }
 
 // The next render pass in the command buffer after this command, if there is one.

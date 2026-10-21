@@ -22,6 +22,11 @@ void v4x_profile_present(void);
 // Time a wait for the GPU in the replay, for the 10 s log; the stage the wait falls in still counts it too.
 void v4x_profile_wait_start(void);
 void v4x_profile_wait_end(void);
+// Time a pass past eDRAM's begin and end (src/queue.c), a wait for the GPU between begin and begun counted as its too.
+void v4x_profile_tiles_begin(void);
+void v4x_profile_tiles_begun(void);
+void v4x_profile_tiles_end(void);
+void v4x_profile_tiles_ended(uint32_t dwords);
 #else
 static inline void v4x_profile_submit(void)
 {
@@ -56,6 +61,23 @@ static inline void v4x_profile_wait_start(void)
 
 static inline void v4x_profile_wait_end(void)
 {
+}
+
+static inline void v4x_profile_tiles_begin(void)
+{
+}
+
+static inline void v4x_profile_tiles_begun(void)
+{
+}
+
+static inline void v4x_profile_tiles_end(void)
+{
+}
+
+static inline void v4x_profile_tiles_ended(uint32_t dwords)
+{
+	(void)dwords;
 }
 #endif
 

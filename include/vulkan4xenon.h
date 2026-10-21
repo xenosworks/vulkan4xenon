@@ -131,6 +131,15 @@ typedef struct {
 	uint32_t commands;
 	uint32_t draws;
 	uint32_t presents;
+	// Passes past eDRAM (docs/ROADMAP.md, milestone 30): how many, their begins' ticks, their waits for the GPU within
+	// those, how many waits, their ends' ticks and the dwords they recorded; then the most one recorded, not a count.
+	uint32_t tiled_passes;
+	uint64_t tiled_begin_ticks;
+	uint64_t tiled_wait_ticks;
+	uint32_t tiled_waits;
+	uint64_t tiled_end_ticks;
+	uint64_t tiled_dwords;
+	uint32_t tiled_most_dwords;
 } V4xProfile;
 
 #ifdef V4X_PROFILE

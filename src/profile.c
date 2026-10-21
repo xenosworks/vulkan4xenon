@@ -51,6 +51,9 @@ static uint32_t waits;
 static uint64_t logged_wait_ticks;
 static uint32_t logged_waits;
 static uint32_t wait_began;
+// When the pass past eDRAM's begin or end being timed started, and whether a wait now falls in its begin.
+static uint32_t tiles_began;
+static bool in_tiled_begin;
 
 static void log_commands(void);
 static void log_waits(void);
@@ -147,8 +150,39 @@ void v4x_profile_wait_start(void)
 
 void v4x_profile_wait_end(void)
 {
-	wait_ticks += time_base() - wait_began;
+	const uint32_t ticks = time_base() - wait_began;
+	wait_ticks += ticks;
 	waits++;
+	if (!in_tiled_begin)
+		return;
+	totals.tiled_wait_ticks += ticks;
+	totals.tiled_waits++;
+}
+
+void v4x_profile_tiles_begin(void)
+{
+	tiles_began = time_base();
+	in_tiled_begin = true;
+}
+
+void v4x_profile_tiles_begun(void)
+{
+	totals.tiled_begin_ticks += time_base() - tiles_began;
+	totals.tiled_passes++;
+	in_tiled_begin = false;
+}
+
+void v4x_profile_tiles_end(void)
+{
+	tiles_began = time_base();
+}
+
+void v4x_profile_tiles_ended(uint32_t dwords)
+{
+	totals.tiled_end_ticks += time_base() - tiles_began;
+	totals.tiled_dwords += dwords;
+	if (dwords > totals.tiled_most_dwords)
+		totals.tiled_most_dwords = dwords;
 }
 
 V4xProfile v4x_profile_totals(void)
@@ -179,6 +213,29 @@ static void log_stage(const char *what, const char *stage, uint64_t ticks, uint3
 		(unsigned)(laps_tenths / 10), (unsigned)(laps_tenths % 10));
 }
 
+// Passes past eDRAM, if any: their begins' waits for the GPU and the rest of their begins, their ends, and what they
+// recorded (docs/ROADMAP.md, milestone 30).
+static void log_tiles(const char *what, const V4xProfile *from, const V4xProfile *to, uint32_t presents)
+{
+	const uint32_t passes = to->tiled_passes - from->tiled_passes;
+	if (!passes)
+		return;
+	const uint64_t waited = to->tiled_wait_ticks - from->tiled_wait_ticks;
+	const uint64_t begun = to->tiled_begin_ticks - from->tiled_begin_ticks;
+	const uint64_t dwords = to->tiled_dwords - from->tiled_dwords;
+	const uint32_t pass_tenths = each((uint64_t)passes * 10, presents);
+	const uint32_t wait_tenths = each((uint64_t)(to->tiled_waits - from->tiled_waits) * 10, presents);
+	xsdk_log_write(
+		"vulkan4xenon: profile, %s: passes past eDRAM, %u.%u a present: their begins %u us a present waiting for the "
+		"GPU, in %u.%u waits, and %u us besides; their ends %u us; %u dwords recorded a present, %u a pass, %u at "
+		"most since the first submit",
+		what, (unsigned)(pass_tenths / 10), (unsigned)(pass_tenths % 10),
+		(unsigned)each(nanoseconds(waited) / 1000, presents), (unsigned)(wait_tenths / 10),
+		(unsigned)(wait_tenths % 10), (unsigned)each(nanoseconds(begun - waited) / 1000, presents),
+		(unsigned)each(nanoseconds(to->tiled_end_ticks - from->tiled_end_ticks) / 1000, presents),
+		(unsigned)each(dwords, presents), (unsigned)each(dwords, passes), (unsigned)to->tiled_most_dwords);
+}
+
 void v4x_profile_log(const char *what, const V4xProfile *from, const V4xProfile *to)
 {
 	const uint32_t draws = to->draws - from->draws;
@@ -206,6 +263,7 @@ void v4x_profile_log(const char *what, const V4xProfile *from, const V4xProfile 
 	for (uint32_t s = 0; s < V4X_PROFILE_STAGES; s++)
 		log_stage(what, stage_names[s], to->ticks[s] - from->ticks[s], to->laps[s] - from->laps[s], draws);
 	log_stage(what, "all", ticks, laps, draws);
+	log_tiles(what, from, to, presents);
 }
 
 // Since the last log, each command type taking a share of the submits: its time a present, as timed, and how often.

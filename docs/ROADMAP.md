@@ -3262,6 +3262,13 @@ GPU's time a frame at 1 and 2 samples recorded, Dusklight stays at 1 sample, and
 src/render_pass.c and src/objects.h, the framebuffers' recordings taken out; the checks and breaks about 150; then the
 runs above, of which only Ordon needs the user.
 
+**Step 1's lines** (built 2026-10-20, the console's run to come): in a profile build, every `vulkan4xenon: profile,
+<what>:` group, the 10 s ones and a title's own through `v4x_profile_log`, ends with a line on passes past eDRAM when
+there were any: how many a present; their begins' waits for the GPU to finish their recording's last run, in us and
+waits a present, and the rest of their begins; their ends, the bands' runs and resolves queued; and the dwords they
+recorded, a present, a pass, and the most one pass recorded since the first submit. The waits count in `the replay's
+waits for the GPU` too, and only those that found the GPU still running the recording.
+
 ## 5. The Dusklight track
 
 An outline, made precise one milestone at a time. Each starts only when agreed.
