@@ -3511,6 +3511,26 @@ No Xenia run is needed; Xenia would pass the new checks by its own model and can
 10 lines, its checks about 150 and the breaks about 60; no change to Aurora or Dusklight. Every run is the agent's,
 nothing needs the user.
 
+**On the console** (2026-10-21, `0b64e7d` against xsdk `f62488e`; xsdk's
+`results/2026-10-21-vulkan4xenon-milestone-31/` and `results/2026-10-21-milestone-31/`):
+- **The probe:** all seven one-level shapes, packed mips off, read from their corner as one rectangle on the base
+  page, 20x11 from page 0 (0, 0) to (19, 10); the 62 control lines are those of milestone 29's run, line for line.
+- **vulkan4xenon_test** passed 523 of 523 twice: the four small targets read back with no texel wrong and sampled
+  with 0 of 8,192 pixels wrong; vkbench passed its 17 checks.
+- **xsdk_test** passed 634 of 636, its new sampling check among them; the two failures are the controller's, with
+  none answering its poll.
+- **The breaks** failed what they name and nothing else: `fetch_packed` the sampled check in vulkan4xenon_test
+  (2,792 of 8,192 pixels wrong) and xsdk_test's new check; `place_tail` the read-back (every texel wrong) and xsdk_test's
+  new check, which uploads through the same layout.
+- **Dusklight's title scene,** plain builds against main and against this milestone from one Dusklight tree: the
+  layer's refusal and Aurora's `No image for Resolved Texture (20x11)` are gone (2 of each against none), and the
+  frame rate matches window for window (59.4 to 60.0 fps before the scene, 48.6, 29.8, 28.8 and 30.0 in it). The
+  600th frame's captures don't show the glow: the scene's camera moves in real time, so the two runs' frames sit
+  apart, and that, not bloom's level 6, is most of their difference. The copies being made and drawn rest on the
+  refusals gone and on vulkan4xenon_test's checks of such targets.
+
+Milestone 31 is done.
+
 ## 5. The Dusklight track
 
 An outline, made precise one milestone at a time. Each starts only when agreed.
