@@ -4,7 +4,9 @@
 retail kernel. The goal it's measured against is **Dusklight**, a reimplementation of Twilight Princess, running on
 the console through it.
 
-**Status.** Agreed on 2026-10-11. Milestones 1 to 7, 9 and 10 are done, and milestone 8 was tried and reverted.
+**Status.** Agreed on 2026-10-11. Milestones 1 to 7, 9 to 15 and 17 to 31 are done, 18 with its fourth step put off
+and 29 closed short of its targets; milestone 8 was tried and reverted. Milestones 16, Dusklight's menus, and 34,
+the FIFO worker, are being built, and 33, graphics options, is agreed.
 Section 5 has the Dusklight track's order, agreed the same day; section 7 lists what's still open.
 
 **Constraints.** xsdk's, unchanged:
@@ -1570,16 +1572,319 @@ show is the played run's 143 MB: here Link stood still in a dialogue. Aurora kee
 copy it converts until 600 frames go by unused (aurora-xenon:lib/gx/texture.cpp, sweep_object_caches), so 35 to 49 at
 once means the copies behind the map keep changing, and a moving player may well change them faster.
 
-### Milestone 16: Dusklight's menus
+### Milestone 16: Dusklight's menus and overlays
 
-**Why.** Dusklight's own menus, its settings, controller setup, achievements, graphics tuner and command console, are
-RmlUi documents (dusklight-xenon:src/dusk/ui/), and the vulkan4xenon backend skips every RmlUi draw
-(aurora-xenon:lib/vulkan4xenon/encoding.cpp, encode_pass: "recorded only on Dawn"), so on the console they run unseen.
-Aurora draws them on the PC through its WebGPU render interface (aurora-xenon:lib/rmlui/WebGPURenderInterface.cpp and
-pipeline.cpp, about 2,900 lines): geometry with a transform, scissors, clip masks, layers composited together, and
-blur, glass and drop-shadow filters.
+**Agreed with the user (2026-10-14)** as a milestone after 14 and 15. **Its scope, below, agreed on 2026-10-21**
+with every recommendation in it. It takes in ImGui through vulkan4xenon too, which xsdk milestone 57 left to this
+layer (xsdk:docs/scope/57-text-and-ui.md, Left out).
 
-**Agreed with the user (2026-10-14)** as a milestone after 14 and 15; its scope is settled when it starts.
+**Why.**
+- **The console's backend draws neither of Aurora's two UIs.** It skips every RmlUi draw
+  (aurora-xenon:lib/vulkan4xenon/encoding.cpp:1082-1083, "recorded only on Dawn") and drops ImGui's frozen draw data
+  (encoding.cpp:1281-1282, `(void)overlay`). RmlUi is drawn only when Aurora is built with Dawn
+  (aurora-xenon:CMakeLists.txt:50-55). On the console a null render interface hands out handles
+  (aurora-xenon:lib/rmlui/RmlUi_Backend_Aurora.cpp:14-33), and the documents get `Context::Update` every frame but
+  never `Render` (aurora-xenon:lib/rmlui.cpp:518-525; lib/gfx/frame.cpp:229-235).
+- **Back opens a menu nobody can see, and it takes the controller.** Back maps to F1 unless the menu has a binding of
+  its own (dusklight-xenon:src/dusk/ui/input.cpp:345-349). F1 is the menu command (src/dusk/ui/ui.cpp:646-647), and
+  that command toggles the menu bar (src/dusk/ui/document.cpp:215-224). The preset window had the same problem and is
+  kept closed on the console (dusklight-xenon `43b8f65635`; src/m_Do/m_Do_main.cpp:1014-1022; milestone 10).
+- **The beta's testers need the settings and the overlays.** The FPS counter is an element of RmlUi's overlay
+  document (src/dusk/ui/overlay.cpp:41, 273-310) and is set under Video, "Show FPS Counter"
+  (src/dusk/ui/settings.cpp:721-770), so it arrives with RmlUi. Dusklight's ImGui tools (src/dusk/imgui/) already
+  run every frame on the console, since `TARGET_PC=1` is set there too (src/m_Do/m_Do_graphic.cpp:2188-2190;
+  cmake/GameABIConfig.cmake:7). Aurora renders and clones their lists each frame (aurora-xenon:lib/aurora.cpp:191), and
+  then nothing draws them.
+- **No keyboard reaches them.** ImGui's menu bar opens with Shift+F1 (src/dusk/imgui/ImGuiConsole.cpp:283-299), and
+  the overlays open with F2 to F10 (src/dusk/imgui/ImGuiMenuTools.cpp:139-145; ImGuiHeapOverlay.cpp:27-28;
+  ImGuiCameraOverlay.cpp:16-17). The console's backend passes ImGui no input at all
+  (aurora-xenon:lib/vulkan4xenon/backend.cpp:556), so a player with only a controller needs an option in the menu.
+
+**What Dusklight's menus ask of RmlUi's render interface,** from res/rml/*.rcss and the documents in
+src/dusk/ui/*.cpp, checked against encounter's RmlUi at `f00a0fe` (aurora-xenon:extern/CMakeLists.txt:350-351) and
+Dawn's renderer (aurora-xenon:lib/rmlui/WebGPURenderInterface.cpp, 1,868 lines, and pipeline.cpp, 1,054):
+
+| Feature | Where Dusklight uses it | Dawn | Here |
+|---|---|---|---|
+| Geometry, coloured and textured | Everything. Text, the `text()` icons (global.rcss:70-119) and `horizontal-`/`vertical-gradient`, which RmlUi builds as vertex colours (rmlui:Source/Core/DecoratorGradient.cpp:143-166; tabbing.rcss:24-44) | `DrawGeometry`, :418-454, pushes vertices and 32-bit indices on every draw | Step 2 |
+| Textures | Font atlases, up to 1024x1024 each (rmlui:Source/Core/FontEngineDefault/FontFaceLayer.cpp:100), PNGs and the game's item icons (src/dusk/ui/icon_provider.cpp:753-755) | :517-600, premultiplied RGBA8 | Step 2 |
+| Scissor | Every scrolled pane and list | :602-643 | Step 2 |
+| Transforms | Windows and toasts scale in (window.rcss:30, 52; overlay.rcss:43, 52), the menu bar slides in (popup.rcss:27-32), `translateX(-50%)` (overlay.rcss:187-208), rotations (controls.rcss:118-122) | :700-706 | Step 2 |
+| Clip masks | `overflow: hidden` with `border-radius`, or under a transform, which turns the scissor off (rmlui:Source/Core/ElementUtilities.cpp:196-218): every window (window.rcss:22-32). Every box-shadow's cut-out too (below) | Stencil, :645-698 | Step 2 |
+| Layers, saved as textures | Every `box-shadow`. RmlUi draws the element's background and border into the shadow's texture, which it makes in a layer (rmlui:Source/Core/ElementBackgroundBorder.cpp:166-172; GeometryBoxShadow.cpp:157-243). That covers every button and select button (controls.rcss:1-36), and windows, toasts and popovers. Without layers they have no background | :1312-1486 | Step 2 |
+| `filter: opacity` | The 0.2 s fades of windows, toasts and popovers (window.rcss:29-32; overlay.rcss:42-52; popover.rcss:22-30). Values of 0 and 1 push no layer (rmlui:Source/Core/FilterBasic.cpp:40-50) | Colour matrix, :1539-1548 | Step 2 (Decisions, 4) |
+| Blur | `backdrop-filter` on windows, the menu bar, popovers, toasts and a close button (window.rcss:26; popup.rcss:26; popover.rcss:20; overlay.rcss:40; tabbing.rcss:78). Box-shadows with a blur radius (window.rcss:27, 25dp; overlay.rcss:41; popover.rcss:21, 87) | `RenderBlur`, :941-1061 | Left out (Decisions, 3) |
+| `drop-shadow`, `grayscale`, `brightness` | The autosave icon (overlay.rcss:333), the mods' package rows (window.rcss:451) and the touch controls (touch_controls.rcss:59) | :1062-1239 | Left out |
+| Gradient shaders | An empty colour swatch and the hue slider (global.rcss:221; popover.rcss:76; src/dusk/ui/color_input.cpp:279) | :1642-1747 | Left out |
+| `image-effects` | The mods' images (src/dusk/ui/mods_window.cpp:126, 228). Registered on Dawn alone (aurora-xenon:lib/rmlui.cpp:393) | ImageEffects.cpp | Left out |
+| Glass, mask images | Not used: no match in res/rml or src/dusk/ui | GlassFilter.cpp | Nothing |
+
+So the core is a short list: geometry, textures, scissor, transforms, clip masks and layers. Layers are needed
+because buttons draw their backgrounds through them, not only for effects.
+
+**What vulkan4xenon gives them, all in place already:**
+- **Stencil** with a `D24_UNORM_S8_UINT` attachment, covering every op, reference and mask (docs/SUPPORT.md,
+  Pipelines; milestone 26).
+- **Render to texture** into `R8G8B8A8_UNORM` images, which can be sampled, blended into and used as colour
+  attachments (Formats; milestone 4).
+- **A 1280x720 colour target with a D24S8 depth target at one sample fits eDRAM untiled.** Depth and stencil stay in
+  eDRAM from one pass to the next unless another target reaches their tiles (Render passes).
+- **Dynamic scissor; every blend factor but the dual-source ones; colour write masks** (Pipelines).
+- **The vertex formats both UIs need:** `R32G32_SFLOAT`; `R8G8B8A8_UNORM`, read by address; and
+  `A8B8G8R8_UNORM_PACK32`, read as a packed word (Formats). Indices of 16 or 32 bits (Commands). Push constants up to
+  128 bytes (Pipelines).
+- **Shaders:** `vkCreateShaderModule` finds a container in the app's bundle by its SPIR-V. When the bundle lacks one,
+  the layer compiles it on the console once and keeps it (Shaders; xsdk:docs/scope/shader-compiling.md).
+- **About 1 us of CPU a draw through the layer:** 0.966 us before milestone 29, which brought the submit down to 0.575
+  (milestone 29).
+
+**How a 2D program joins Aurora's backend.**
+- **How programs are found now.** GX pipelines get GLSL from the generator (aurora-xenon:lib/vulkan4xenon/
+  pipeline.cpp, `make_pipeline`). `find_program` then looks for that GLSL's SPIR-V in three places
+  (lib/vulkan4xenon/program.cpp:146-194): first the pack, keyed by XXH3 of the source (glsl.cpp:1648-1650); then
+  SPIR-V kept on the disk; else glslang compiles it on the console and keeps it.
+- **The backend's own programs** are listed in `glsl::fixed_programs()`: clears, copies, the present, palettes and
+  GXPeekZ (glsl.hpp:113-130; glsl.cpp:1627-1646). The null backend's recorder writes them out with the first config
+  (glsl.hpp:136-138). tools/build_glsl_pack.py compiles the recording into dusklight-xenon:platforms/xenon/glsl_pack.c
+  (dusklight-xenon:CMakeLists.txt:76-81).
+- **The UI's two programs join that list.** The next pack then holds them beside the 150 before, unchanged, as
+  `66e5621140` did for its three. Until that pack is built, the console compiles them once.
+
+**ImGui on the console today.**
+- Aurora builds ImGui 1.91.9b (aurora-xenon:extern/CMakeLists.txt:229-251). The backend builds its font atlas and
+  sets only the display size (backend.cpp:558-566), so `io.DeltaTime` keeps ImGui's default of 1/60
+  (imgui:imgui.cpp:1460). As a result, the Debug Overlay's "FPS" would always read 60.
+- `aurora_imgui_add_texture` returns no texture (backend.cpp:593-598). Dusklight loads its logos through it
+  (src/dusk/imgui/ImGuiEngine.cpp:44, 221-228).
+- Dusklight's ImGui fonts are Inter at 18, 26 and 40 px and Noto Mono at 16 (ImGuiEngine.cpp:90-104). With ImGui's
+  Latin-1 glyphs that is likely a 512x1024 atlas, 2 MB as RGBA32. This is an estimate, and step 1 logs the real size.
+- On the PC, the tools open from ImGui's menu bar or with F keys (ImGuiMenuTools.cpp:117-125), and only with
+  "Enable Advanced Settings" on (settings.cpp:1608-1617; ImGuiMenuTools.cpp:140-141). The Input Viewer is ImGui with
+  an option of its own, "Show Input Viewer" (settings.cpp:1618-1622; ImGuiControllerOverlay.cpp:13).
+- **Which windows work without input.** The Debug Overlay, Player Info and Camera Debug show information only, with
+  `ImGuiWindowFlags_NoNav` (ImGuiMenuTools.cpp:149-152, 214-217; ImGuiCameraOverlay.cpp:30). Heaps is readable but
+  has buttons. The rest are tools that need input to use: Processes, Audio Debug, the Save Editor, State Share, the
+  Actor Spawner, Bloom and the Stub Log.
+- **Byte order.** ImGui writes its colours and atlas texels as words, which IM_COL32 builds as 0xAABBGGRR
+  (imgui:imgui.h:2882-2889). On this big-endian CPU their bytes are therefore A, B, G, R. imgui_impl_vulkan reads both
+  as `R8G8B8A8_UNORM` (imgui:backends/imgui_impl_vulkan.cpp:712-721, 936), so used unchanged it would take alpha for
+  red. That corrects milestone 57's "needs no change". RmlUi's colours are bytes in R, G, B, A order
+  (rmlui:Include/RmlUi/Core/Vertex.h:12-18), so they read correctly as `R8G8B8A8_UNORM`.
+
+**The design.** RmlUi and ImGui share one program pair: the position goes through a matrix, and the fragment colour
+is the vertex colour times the texture. They use different pipeline states over that pair. Both draw into a
+1280x720 UI image, which is composited premultiplied over the EFB at the present, as Dawn's present composites
+RmlUi's target (aurora-xenon:lib/webgpu/present.cpp:209-221). RmlUi records on the game thread into a list. That
+list goes to the render worker with the frame, as ImGui's frozen data does. It doesn't take Dawn's route, which
+drains the FIFO on the game thread before RmlUi records (lib/aurora.cpp:197-200), because the game thread is what
+holds Ordon at 28 fps.
+
+**What it takes.**
+1. **Measurement first.** In the diagnostics build, a counting render interface replaces the null one, and
+   `Context::Render` runs after `Update`, still drawing nothing. A hook in dusklight-diag.patch, like milestone 44's,
+   steps through the title scene's counted frames:
+   1. menu closed, nothing shown;
+   2. FPS counter on;
+   3. a toast;
+   4. the menu open on Settings, at the Interface tab;
+   5. every tab of the menu once.
+
+   For each stage the log gives:
+   - `Update` and `Render` time a frame on the game thread;
+   - draws, vertex bytes and index bytes a frame;
+   - scissor, transform and clip-mask calls;
+   - layers pushed and the deepest stack;
+   - textures saved from layers, and textures generated, with their sizes;
+   - filters and shaders asked for, by name;
+   - ImGui's atlas size, and its lists' vertices with the Debug Overlay on.
+
+   If `Render` costs more than 0.1 ms a frame with the menu closed, or the memory sum passes the budget
+   (Decisions, 6), the numbers come back to you before step 2.
+2. **The shared 2D path in Aurora's backend** (aurora-xenon, lib/vulkan4xenon and a console render interface in
+   lib/rmlui):
+   - **Programs:** `ui_vertex` and `ui_fragment` in glsl.cpp, added to `fixed_programs()`. There is no gamma, as
+     Dawn applies it only to sRGB targets (WebGPURenderInterface.cpp:1752-1780). Push constants hold a 64-byte matrix
+     and the translation.
+   - **Pipelines over that pair**, from pipeline.cpp's `create_pipeline` with stencil state added to `PipelineDesc`:
+     - RmlUi's draw, with stencil off and with stencil equal. Vertices are 20 bytes: position, then colour as
+       `R8G8B8A8_UNORM` at 8, then UV at 12. Blending is premultiplied (one, one minus source alpha).
+     - Clip replace and clip intersect, with colour writes off and the references Dawn uses (:652-698).
+     - Layer composite, blended or replacing (`Rml::BlendMode`).
+     - ImGui's draw. Colour is `A8B8G8R8_UNORM_PACK32` at 16. Colour blends as source alpha over one minus source
+       alpha, and alpha as one over one minus source alpha (imgui_impl_vulkan.cpp:968-972), which leaves
+       premultiplied colour in the UI image.
+     - The present's composite, from the existing copy programs (pipeline.cpp:398-405) with premultiplied blending.
+   - **Targets.** The UI image is `R8G8B8A8_UNORM`, with a D24S8 for clip masks and layer images of the same size.
+     Each is made at first use and kept. One render pass covers colour plus D24S8, to load or clear.
+   - **RmlUi's interface, on the game thread, makes no Vulkan calls.**
+     - It records draws, scissors, transforms, clip operations, layer pushes, composites, pops and saves into a list.
+     - Geometry stays on the CPU from `CompileGeometry` and is held by the frame's list until the render worker has
+       copied it into a ring for the frame slot, as Dawn copies it on every draw.
+     - New textures' bytes go through `stage_upload` (lib/gfx/backend.hpp:81-83). `LoadTexture` works as Dawn's does:
+       SDL's PNG reader, premultiplied, and runtime textures.
+     - `SaveLayerAsTexture` copies the scissor region with the existing copy draw (encoding.cpp:404-410).
+     - `CompileFilter` handles "opacity", folded into the composite's colour. "blur" returns no filter, so
+       box-shadows are drawn without blur (GeometryBoxShadow.cpp:194-200).
+     - The "blur" and "drop-shadow" filter instancers are replaced by identity ones on the console, so they push no
+       layer (rmlui:Source/Core/Factory.cpp:471-475).
+     - `CompileShader` returns no shader.
+     - The list's vectors are cleared between frames rather than freed (CODE_GUIDELINES.md 9).
+   - **ImGui:**
+     - `new_frame` sets `DeltaTime` from the frame clock.
+     - The atlas is uploaded once, its words written out as bytes in R, G, B, A order, and the CPU's copy is freed.
+     - `aurora_imgui_add_texture` makes a texture.
+     - The lists are copied into the ring, each command's indices starting on 4 bytes, the only alignment the console
+       has drawn index lists from (xsdk:docs/GUIDE.md:93-95). Each command's clip rectangle becomes the scissor.
+   - **`end_frame`:**
+     - If anything was drawn: the uploads, then RmlUi's passes, then ImGui into the base pass. The present then draws
+       the EFB and the UI image over it.
+     - If nothing was drawn: no pass and no composite.
+     - The UI is drawn whether or not a swapchain image was acquired, so Xenia's captures show it.
+     - `backend::end_frame` takes RmlUi's list beside ImGui's (backend.hpp:160), and the Dawn and null backends'
+       signatures change to match.
+   - **Captures:** `write_capture` (encoding.cpp:197-221) blends the UI image over the EFB on the CPU whenever the UI
+     drew. A diagnostics call also writes the UI image alone, with alpha.
+3. **Dusklight's side** (dusklight-xenon):
+   - **A "Debug Overlays" option** in the Interface tab, under `#ifdef __XSDK__`, after "Show Input Viewer":
+     - It is disabled unless advanced settings are on, as the tools are.
+     - It has toggles for Debug Overlay, Player Info, Camera Debug and Heaps, through four accessors on
+       ImGuiMenuTools' private flags (ImGuiMenuTools.hpp:28-55).
+     - The toggles aren't saved, as on the PC (ImGuiMenuTools.cpp:197).
+   - **Help text.** Under the same `#if`, the help text for "Enable Advanced Settings" names that option instead of
+     Shift+F1.
+   - **The pack is rebuilt** with the two new programs.
+   - **The FPS counter and Input Viewer options work as they are.**
+
+**xsdk and vulkan4xenon need nothing new.** If step 1 or the runs find a gap in the layer, it's scoped with you then.
+
+**New checks.**
+- **Aurora's host tests** (local/m44c/aurora_host_tests.sh's way: the null backend on the PC):
+  - the recorder:
+    - clip Set, SetInverse and Intersect, with the stencil references and pipelines Dawn uses, and the limit of 255
+      nested clips;
+    - the scissor clamped to the target;
+    - a transformed and translated point landing where Dawn puts it;
+    - push, composite, pop and save, each touching the right images;
+    - opacity in the composite's colour;
+    - blur and drop-shadow pushing nothing;
+  - ImGui:
+    - the atlas's words becoming FF FF FF a on any host;
+    - a command at an odd index offset copied onto 4 bytes;
+    - an empty clip rectangle skipped;
+  - the two programs present in `fixed_programs()`, checked by text as `DepthPrograms` checks its programs;
+  - the capture's arithmetic: a premultiplied texel over an EFB texel.
+- **On the console, in the diagnostics build, run by the agent.** At the title scene's counted frames the hook turns
+  on the FPS counter, advanced settings, the Debug Overlay and a toast. It shows the menu notification, then opens
+  the menu as Back does and goes to Settings, Interface. It captures the composite and the UI image a second after
+  each change, then closes the menu. Each check reads element boxes from RmlUi and ImGui, and probes only flat
+  interiors, as Xenos's linear filter isn't exact at texel centres (xsdk:docs/HARDWARE.md, "Milestone 57 on the
+  console"):
+  - `ui_fps`: inside the FPS box, its background is `rgba(surface, 80%)` premultiplied, within 2/255, and the text
+    box holds glyph pixels.
+  - `ui_focus_ring`: one pixel outside the focused button is the accent colour.
+  - `ui_focus_inside`: inside it, alpha is the button's own, as `opacity: 0.9` gives it (controls.rcss:5), and not 1.
+  - `ui_transform`: the notification's centre is within a pixel of x = 640.
+  - `ui_scissor`: with the settings pane scrolled 200 px, the window rows above it are unchanged.
+  - `imgui_bg`: inside the Debug Overlay, the window background at 0.65 alpha, premultiplied.
+  - `imgui_text`: 10% to 90% of the overlay's first text line is glyph.
+  - `composite`: across the FPS box, composite = EFB x (1 - a) + UI.
+  - `ui_idle`: with the menu closed and nothing shown, the profile's passes a present equal the control build's.
+- Every check is a log line and takes under a second.
+
+**Broken on purpose** (`results/<date>-milestone-32/breaks.py` and `builds.sh`, as milestone 30's), each failing the
+checks named:
+- `no_clip_mask`: `ui_focus_inside`.
+- `no_save_layer` (`SaveLayerAsTexture` saves nothing): `ui_focus_ring` and `ui_focus_inside`.
+- `no_transform`: `ui_transform`.
+- `no_scissor`: `ui_scissor`.
+- `imgui_byte_colour` (ImGui's colour as `R8G8B8A8_UNORM`): `imgui_bg`.
+- `imgui_atlas_words` (the atlas uploaded unswapped): `imgui_text`.
+- `straight_composite`: `composite`.
+- `always_draw` (the UI pass and composite run every frame): `ui_idle`.
+
+Each host check is also broken once in its own test.
+
+**Verification:**
+- Aurora's host tests pass, and each of their breaks fails.
+- The diagnostics build passes every check twice on the console, and each break fails the checks it names and no
+  others. The log gives:
+  - CPU time a frame on the game thread (`Update`, `Render` and the recording) and on the render worker (the UI's
+    replay), in each state;
+  - the first menu open's frame time;
+  - the UI's GPU memory by kind (image, D24S8, layers, textures, ring), after every tab has opened once.
+- Plain builds with and without this milestone, against the same xsdk and layer, in the same session:
+  - the title scene in five or more 10 s windows, menu closed, nothing shown;
+  - Ordon's village (F_SP103) with the same, warped to by the agent as milestone 15's build does, or played by you if
+    you prefer your own route;
+  - an option changed in the menu still set after a relaunch.
+- A Xenia smoke run of the diagnostics build with `--readback_resolve=full`: no crash, and its captures written.
+
+**Done when:**
+- The console's captures show the menu, a toast, the FPS counter, the four ImGui overlays and the Input Viewer.
+- Every check passes twice, each break fails what it names, and the host tests pass.
+- With the menu closed and nothing shown:
+  - no UI pass is recorded;
+  - RmlUi costs the game thread at most 0.1 ms a frame more than `Update` alone;
+  - the title scene and Ordon run within the control build's noise.
+- With only the FPS counter on, the overlay costs at most 0.2 ms of CPU a frame, game thread and render worker
+  together.
+- The CPU cost of an open menu, and the UI's memory, are recorded, and the memory is within the budget (Decisions, 6).
+
+**Left out:**
+- **Blur, whether backdrop, filter or a box-shadow's.** Shadows come out hard-edged: a window's
+  `0 0 25dp 5dp` (window.rcss:27) draws a 5dp ring, opaque black, as RmlUi's default shadow colour is. The 80% to 90%
+  backgrounds show the scene behind them unblurred.
+- **Drop shadows, colour-matrix filters, gradient shaders, image effects, glass and mask images** (the table above).
+  Each of these is drawn as nothing, or as identity.
+- **ImGui's interactive tools and its menu bar.** Navigating them would share the controller with the game
+  (Decisions, 5).
+- **The TV's safe area, touch controls, and the prelaunch screen**, which the console skips
+  (src/m_Do/m_Do_main.cpp:804-808).
+
+**Decisions,** each with a recommendation:
+1. **Measure first, or build straight away.** Step 1 is about 150 lines and one run by the agent, and it answers the
+   question that would sink the design: whether `Render` costs a CPU-bound game too much with the menu closed.
+   Recommended: measure first.
+2. **Where the UI draws.** Into its own image, composited at the present (recommended): layers stay uniform, captures
+   and Xenia show the UI, and the present pass keeps no stencil. The cost is 3.6 MB, and when anything is shown,
+   about 0.3 ms of GPU for the image's resolve and the composite (a 720p resolve takes 270 us,
+   xsdk:docs/HARDWARE.md, "Multisampled formats and targets, milestone 44 step 3"). The alternative draws straight
+   into the swapchain image. That saves those, but a layer pushed mid-frame would need the swapchain image loaded
+   back, and captures would need another path.
+3. **Blur.** Recommended: none for the beta, with the hard shadows above. Next, if you want it: blur for box-shadow
+   textures alone, made once a texture, for about 150 lines and a program. Dawn's full blur, backdrops included, runs
+   several passes every frame a window is open and isn't planned.
+4. **Fades.** Layers (recommended): the same code box-shadows need, used 0.2 s at a time, at the cost of one more
+   3.6 MB image. The alternative is an identity "opacity" instancer, which turns fades into cuts and saves that
+   image.
+5. **ImGui's tools from a controller.** The four display-only windows, toggled from the menu (recommended). The
+   alternative is gamepad navigation of ImGui's menu bar, which needs a mode that keeps the controller from the game:
+   a milestone of its own.
+6. **Memory.** Targets come to about 14 MB with fades (image, D24S8, two layers), or 11 MB without, plus the textures
+   step 1 counts, against about 50 MB free in Ordon (your figure). Recommended: a 20 MB budget, everything kept once
+   made (stability over latency). The alternatives are freeing layers and shadow textures some frames after the UI
+   goes idle, or reusing the EFB's one-sample read depth (encoding.cpp, `efbDepthRead`) as the stencil, which saves
+   3.6 MB but ties the two together.
+7. **The preset window** stays closed on the console (recommended): its presets ask for 1536x1536 shadow targets,
+   past the layer's 1280x720 (milestone 10).
+
+**Size:** medium.
+- **Aurora:** about 1,300 lines. The recorder is about 450, the backend's passes, pipelines, textures, ring,
+  composite and capture about 450, the programs 40, ImGui 120 and the host tests 250. Dawn's renderer is 2,900.
+- **Dusklight:** about 80 lines committed and the pack rebuilt; the diagnostics hook, about 250, stays in local/.
+- **Console:** step 1's run, then two runs with their breaks and the Ordon comparison, all by the agent.
+
+**Risks:**
+- **`Render` is new work on the critical thread.** Step 1 prices it before any GPU work.
+- **Each focus move makes a box-shadow texture.** The background changes with the shadow, so each move costs a layer
+  pass and a copy, about two 720p resolves of GPU. The first open makes every one at once, which may hitch a frame or
+  two. If the logged first-open time is long, the layer pass can resolve only the scissor region, as render areas
+  allow (docs/SUPPORT.md, Render passes; milestone 27).
+- **Big-endian data.** ImGui's words against RmlUi's bytes (above), and the item icons converted from game textures
+  (src/dusk/ui/icon_provider.cpp). The byte-order checks catch the first two; the icons show only in advanced tabs.
+- **A clip mask lost between passes.** That would happen if another target took the stencil's tiles, and it would
+  show as `ui_focus_inside` failing.
+- **The first open rasterises glyphs** with FreeType, which may hitch.
 
 ### Milestone 17: multisampling
 
@@ -3530,6 +3835,578 @@ nothing needs the user.
   refusals gone and on vulkan4xenon_test's checks of such targets.
 
 Milestone 31 is done.
+
+### Milestone 33: graphics options that spend Dusklight's idle GPU
+
+Agreed with the user on 2026-10-21, with every recommendation below; the higher internal resolution stays out, as
+decision 3 recommends and the user chose again the same day.
+
+Three options in Dusklight's own menu, each defaulting to what Dusklight draws today: anisotropic filtering forced
+for the game's textures, sharper shadows, and a higher internal resolution. Players reach them through the menu, which
+milestone 16 makes draw on the console; nothing here waits for it, as the measurement build sets the options itself.
+
+**Why.** Dusklight is held by the CPU, and the GPU has time to spare:
+- **The frame rate doesn't follow the GPU.** Ordon's village averaged 27.25 fps at 1 sample, 27.23 at 2 and 27.80 at
+  4, the same routes played by the user (milestone 30's record).
+- **The main thread is busy the whole frame.** In the user's run of 2026-10-21 at 4 samples, through the village, the
+  ranch, the spring and Faron Woods (`Z:\Xbox-360-SDK\local\beta\timing\run1\dusk_timing.log`, a line a 10 s window),
+  the main thread's update took 8.6 to 21.9 ms a frame and its draw 11.1 to 23.5, their sum with
+  `aurora_begin_frame` and the rest the whole frame, at 27.3 to 30.0 fps. Work added to it costs frame rate directly.
+  The FIFO worker took 11.0 to 32.4 ms a frame, the render worker 4.2 to 22.3.
+- **The GPU took 12.1 to 23.9 ms a frame,** about 18 on average: 9.4 to 21 ms short of a 33.3 ms frame. The village's
+  windows took 14.8 to 23.9, the heaviest at 27.4 fps (`dusk_timing.log:5208-5211`). At 1 and 2 samples the village
+  took 9.7 to 15.6 and 13.8 to 20.1 ms (`Z:\Xbox-360-SDK\local\m30\ordon\ms1`, `ms2`, the diagnostics builds).
+- **But the GPU can hold the main thread before it fills the frame.** `aurora_begin_frame` waits for a frame slot
+  (aurora-xenon:lib/vulkan4xenon/encoding.cpp:1219-1223); there are two (aurora-xenon:CMakeLists.txt:65), and a slot
+  comes free only when the GPU finishes the frame two back (aurora-xenon:lib/vulkan4xenon/device.cpp:600-621). The
+  run's `begin` took up to 5.3 ms a frame in the spring (`dusk_timing.log:3059-3061`), 4.5 in the village
+  (`:4271-4273`) and 1.7 in the village's heaviest window, while the GPU stayed under 24 ms. Where `begin` already
+  waits, GPU time added to a frame likely lengthens the main thread's frame one for one. How much of `begin` is the slot's
+  wait isn't timed apart; step 4 does.
+- **Memory is tight.** The run had 42 to 73 MB free while played (`dusk_timing.log`, the `Memory:` lines); milestone
+  30's plain 4-sample build fell to 28 and 20 MB free on a second visit to the village, newlib's heap at 292 MB
+  (results/2026-10-20-milestone-30/ordon_dusk_ms4_plain.log:4282, 5182). Memory, not the GPU, bounds the shadows' top
+  value.
+
+So each option must cost the GPU little, the main thread nothing, and memory a known amount, and keep today's look
+unless a player picks otherwise.
+
+**The options as Dusklight has them.**
+- **Anisotropic filtering:** none. Aurora's `maxTextureAnisotropy`, 16 unless set (aurora-xenon:lib/aurora.cpp:75-76),
+  only scales a texture's own GX_ANISO_2 or GX_ANISO_4 (aurora-xenon:lib/gfx/texture.cpp:49-60), and Twilight
+  Princess asks for none: no texture on its disc sets its own, and Ordon's GPU time was the same with 16 and 1
+  (milestone 14's record; results/2026-10-15-milestone-14-steps-5-6/anisotropy_frame_times.txt). The PC's WebGPU path
+  draws it unfiltered too, and upstream Dusklight has no such setting (dusklight-xenon:src/dusk/settings.h; upstream
+  `77705f8bb9` the same).
+- **Shadows:** `game.shadowResolutionMultiplier`, 1 by default (dusklight-xenon:src/dusk/settings.cpp:85), 1 to 8 in the
+  menu (dusklight-xenon:src/dusk/ui/graphics_tuner.cpp:148-150).
+- **Internal resolution:** `game.internalResolutionScale`, 0 by default (settings.cpp:84), 0 to 12 in the menu
+  (graphics_tuner.cpp:145-147).
+
+**What it takes.**
+
+1. **Anisotropic filtering, forced: Off, 2x, 4x, 8x, 16x.**
+   - **Aurora,** in its shared code, so every backend takes it: `aurora_set_anisotropy(uint16_t)` in
+     include/aurora/aurora.h beside `aurora_set_resampler`. `TextureBind::sampler_config` (lib/gfx/texture.cpp:200-234)
+     takes the larger of it and the game's own for a texture with mips, filtered linearly within a level
+     (`GX_LIN_MIP_NEAR`, `GX_LIN_MIP_LIN`), whose levels are its own (not `hasArbitraryMips`); every other texture keeps
+     the game's, so nothing filtered nearest or without mips changes. Aurora's rule then filters those textures
+     trilinearly (texture.cpp:219-223), as forced filtering does on the PC. The value is an atomic, since the setting's
+     callback runs on the main thread and `sampler_config` on the FIFO worker (lib/gx/command_processor.cpp:688), and
+     the setter calls `gx::texture::invalidate_bindings` (lib/gx/texture.cpp:859) so the FIFO worker's cached bind
+     groups are rebuilt (command_processor.cpp:683-695).
+   - **The backend** clamps it to the layer's 16 already (aurora-xenon:lib/vulkan4xenon/backend.cpp:240).
+   - **Dusklight:** `game.anisotropicFiltering`, 0 to 4 for Off to 16x, 0 by default, registered with a callback that
+     clamps it and calls `aurora_set_anisotropy(1 << value)`, applied at start beside
+     `applyInternalResolutionScale` (src/m_Do/m_Do_main.cpp:766); a `GraphicsOption` (src/dusk/ui/graphics_tuner.hpp,
+     .cpp) and a "Texture Filtering" entry in the menu's Resolution section (src/dusk/ui/settings.cpp:793-811).
+   - **Values:** the powers of two, as xsdk rounds the rest down (xsdk:src/texture.c:675-678).
+   - **Applies at once,** from the next frame's draws. New samplers and sets are made once; old sets expire
+     (backend.cpp, `expire_texture_sets`).
+   - **Memory:** none past a sampler a new configuration, a few dozen in all.
+   - **CPU:** the main thread nothing; the FIFO worker a comparison a texture when it rebuilds a bind group, and every
+     bind group once when the value changes.
+   - **GPU:** no number yet. About a third of the game's textures have mips (6,396 of 19,493 on the disc,
+     results/2026-10-15-milestone-14/disc_scan.txt), and Xenos takes more samples only where a texture is squeezed, as
+     the village's path and roofs are at a glancing angle; trilinear filtering of the `GX_LIN_MIP_NEAR` ones adds its
+     own. 2x and 4x are likely small; 8x and 16x are the values that may risk 30 fps, and step 4 measures each.
+
+2. **Shadows: 1x, 2x, 3x.**
+   - **What the multiplier does:** the shadow maps are 192 and 64 texels square times the multiplier, drawn into
+     framebuffers twice that and copied down by half (dusklight-xenon:src/d/d_drawlist.cpp:1496-1526, 1587-1623): at
+     1x the console resolves 384x384 and 192x192 (results/2026-10-13-milestone-12/dusklight_diag.log:810).
+     `reset()` re-runs `init()` when the setting changes (:1541-1544), so it **applies at once**. Aurora makes the
+     framebuffers' colour and depth at that size from an LRU of 64 MB that drops what goes 32 frames unused
+     (aurora-xenon:lib/gfx/recording.cpp:260-276; lib/gfx/lru_cache.hpp:21-25), so a lowered value gives its memory back
+     within about a second.
+   - **The 1280x720 limit of 2026-10-12 is gone.** dusklight-xenon `43b8f65635` found the Dusk preset's 4x maps asking
+     for 1536x1536 framebuffers past the layer's 1280x720. The layer has drawn framebuffers up to 4096x4096 past eDRAM
+     since milestone 17 (docs/SUPPORT.md, Render passes), a 2048x2048 shadow map with depth stored a band at a time
+     among its checks (xsdk:docs/HARDWARE.md, "Render passes past eDRAM in the layer, milestone 44"). The backend
+     makes a target of any size (backend.cpp:268-365). On the console the preset window stays closed
+     (m_Do_main.cpp, `43b8f65635`).
+   - **Each multiplier,** the maps' passes at one sample, as Aurora's offscreen passes are
+     (aurora-xenon:lib/gfx/pipeline_cache.cpp:1109-1112), tiled by the layer's rules (src/render_pass.c,
+     `tile_targets`; xsdk:src/gpu_tiles.c, `rows_of`), memory for both maps' framebuffers, colour and depth, and their
+     copies, at 4 bytes a texel:
+
+     | Multiplier | Framebuffers | eDRAM, colour and depth | Memory | More than 1x | GPU, estimated |
+     |---|---|---|---|---|---|
+     | 1x | 384x384, 128x128 | 144 + 144 tiles, untiled | 1.4 MiB | | about 0.1 ms |
+     | 2x | 768x768, 256x256 | 480 + 480, untiled | 5.6 MiB | 4.2 MiB | +0.3 to 0.5 ms |
+     | 3x | 1152x1152, 384x384 | 1152 + 1152: 2 bands, depth whole | 12.7 MiB | 11.2 MiB | +0.9 to 1.3 ms |
+     | 4x | 1536x1536, 512x512 | 1920 + 1920: 16 bands of 96 rows | 22.5 MiB | 21.1 MiB | +1.7 to 2.5 ms, and the casters' vertices 16 times |
+
+     The GPU estimate is the clear and the store, each about a resolve, and the copy down, at a 1280x720 resolve's 270
+     us and 3.4 Gpixels a second (xsdk:docs/HARDWARE.md, "Multisampled formats and targets, milestone 44 step 3"),
+     with the casters' fill at most the whole map; the second map adds a ninth when more than four shadows are drawn.
+     Each band runs the pass's draws again (xsdk:docs/HARDWARE.md, "Multisampling's cost, and Dusklight at 2 and 4
+     samples, milestone 44 step 5"), few here.
+   - **4x is left out** (decision 2): its 21 MiB is as much as the 20 MB milestone 30's run had free in the village,
+     and its 16 bands come from the layer keeping a depth whole that the pass never loads.
+   - **Only 4 samples keep the EFB's depth through a bigger map.** The game draws the shadow maps after the frame's
+     first EFB pass (dusklight-xenon:src/m_Do/m_Do_graphic.cpp:2200-2243). At 4 samples the EFB's depth is in bands,
+     stored to its texture and drawn back by the next pass, whatever the shadow pass did to eDRAM (docs/SUPPORT.md,
+     Render passes). At 1 sample it sits whole at tiles 1328 to 2047: 2x's depth fits under it, while 3x's tiled pass
+     keeps its own depth at eDRAM's top and the layer forgets the EFB's (docs/SUPPORT.md, Render passes, "a tiled
+     pass's bands reach every tile but a whole depth's"). At 2 samples it sits at tiles 608 to 2047 and 2x's depth
+     already lands on it (src/queue.c, `place_depth`). Losing it leaves the rest of the frame testing against what the
+     shadow pass left, which the layer logs once (src/queue.c, `check_depth_kept`). So under `__XSDK__` the menu's top
+     value follows `DUSK_XSDK_MSAA`: 3x at 4 samples, 2x at 1, 1x at 2, clamped where `init()` reads it, so a config
+     file or a preset can't pass it. The 1- and 2-sample caps come from these rules; no run checks them, as Dusklight
+     ships at 4.
+   - **CPU:** the game draws the same; at 3x the render worker records the map's pass once into milestone 30's space and
+     queues its 2 bands, tens of microseconds.
+   - **Risk to 30 fps:** 2x unlikely; 3x's 1 ms or so lands on the main thread in windows where `begin` already
+     waits, the village's heaviest among them (Why).
+
+3. **Internal resolution: what it would take, not built** (decision 3).
+   - **Where 720p is fixed:** Dusklight sets the console's window to 1280x720 (m_Do_main.cpp:708-711); the EFB follows
+     the window's size, or with a scale of N, the GameCube's 608x448 (src/m_Do/m_Do_machine.cpp:94-98) times N at the
+     window's aspect (aurora-xenon:lib/window.cpp:90-100, 493-502): 796x448 at 1, 1593x896 at 2, 2389x1344 at 3. The
+     backend then clamps it to the swapchain's 1280x720 (encoding.cpp:223-235), the layer's one display mode
+     (docs/SUPPORT.md, Display and swapchain), and logs "The EFB is 1280x720, not the window's". So scale 1 draws at
+     448 rows today, and 2 and up at 720p.
+   - **What it would need:**
+     - the backend's clamp at the layer's framebuffer limit, 4096 (src/physical_device.c:103-104), not the screen;
+     - an EFB that can't be made keeping the last one, with a line in the log: today `begin_frame` fails, and so the
+       frame, every frame after (encoding.cpp:1227-1230);
+     - the present as it is: it draws the EFB into the 1280x720 image at its aspect through a linear sampler
+       (encoding.cpp:1296-1305), so every texel counts at 1.25x and 1.5x, unevenly, and at 2x it's a 2x2 average. The
+       console ignores Dusklight's "Output Resampling" (backend.cpp:574), so there's no area filter;
+     - a menu range under `__XSDK__`: the GameCube multiples land on 896 rows (2) and 1344 (3); 900p and 1080p, 1.25
+       and 1.5 times 720p, take a fractional scale through `VISetFrameBufferScale`, which takes a float
+       (dusklight-xenon:src/dusk/settings.cpp:236-238);
+     - the EFB's samples as a player option, read at start: Aurora picks them once (aurora-xenon:lib/vulkan4xenon/
+       device.cpp:330-356; m_Do_main.cpp:716). The resolution itself applies at once (window.cpp:624-633; the EFB
+       remade at the next `begin_frame`, encoding.cpp:1227), with the old and the new EFB both held until the frames
+       in flight finish.
+   - **What it would cost.** EFB memory is its colour and depth at 1 sample, and at 2 and 4 the multisampled colour
+     and the one-sample depth beside them (encoding.cpp:254-260), each a one-sample texture in memory (docs/SUPPORT.md,
+     Images); EFB copies grow with the pixels. Hierarchical depth stays off past 1280 wide and past 1024 rows times
+     samples (xsdk:src/gpu_draw.c, `HIZ_MOST_WIDTH`; xsdk:docs/HARDWARE.md, "A band's depth clear goes on a colour
+     resolve, milestone 44 step 5": not run again since). The GPU estimate scales the village's measured time by the
+     pixels and adds 1 to 1.5 ms a band past today's (milestone 30 step 2: 3 bands at 2 samples took 2.9 ms more than
+     one untiled sample):
+
+     | EFB | Samples | eDRAM tiles | Bands | EFB memory | Village GPU a frame |
+     |---|---|---|---|---|---|
+     | 1280x720 | 1 | 1440 | untiled | 7.2 MiB | 9.7 to 15.6 ms, measured |
+     | 1280x720 | 2 | 2880 | 3, depth whole | 14.4 MiB | 13.8 to 20.1, measured |
+     | 1280x720 | 4 | 5760 | 3, depth in bands | 14.4 MiB | 14.8 to 23.9, measured |
+     | 1600x900 | 1 | 2280 | 2, depth whole | 11.3 MiB | 16 to 26 |
+     | 1600x900 | 2 | 4520 | 3, depth in bands | 22.7 MiB | 22 to 32 |
+     | 1600x900 | 4 | 9040 | 5, depth in bands | 22.7 MiB | 25 to 40 |
+     | 1920x1080 | 1 | 3264 | 5, depth whole | 15.9 MiB | 26 to 41 |
+     | 1920x1080 | 2 | 6480 | 4, depth in bands | 31.9 MiB | 32 to 47 |
+     | 1920x1080 | 4 | 12960 | 7, depth in bands | 31.9 MiB | 37 to 60 |
+
+     The CPU's part is the render worker's: an EFB pass past eDRAM records once into milestone 30's space and queues a
+     resolve a band, 1.2 ms of replay a frame at 2 samples against 1.0 at 1 (milestone 30 step 2); the main thread and
+     the FIFO worker do the same work at any size.
+   - **Not worth offering at 4 samples.** 1.25x would take 25 to 40 ms of a 33.3 ms frame, and with `begin` already
+     waiting in the heaviest windows, every millisecond of it lands on the main thread; 1.5x is past the frame, and its
+     32 MiB EFB is 17.5 more than today's, with the copies 2.25 times theirs, against 42 MB free. Only 1.25x at 1
+     sample is likely to fit, with 1.25x at 2 samples borderline and 1.5x at 1 sample past the frame in the busier
+     windows, its depth at risk too: at 1080p the EFB's whole depth starts at tile 416, and a copy of 960x360 at
+     720p, among the game's resolve sizes (results/2026-10-13-milestone-12/dusklight_diag.log:810), would take 612
+     tiles at 1.5x and overwrite it. Each of those trades 4 samples' edges for a little texture and foliage
+     smoothing, at more GPU than options 1 and 2 together.
+
+4. **The measurement: one build, one run in Ordon, by the agent.** The user doesn't play: the build warps from the
+   title scene to the village, as milestone 14's diagnostics did (results/2026-10-15-milestone-14-steps-5-6/
+   diagnostic/step5-diag-dusklight.patch, `F_SP103` point 0 room 0), where Link stands on the path to the houses with
+   his shadow at his feet (that folder's depth_of_field_console_pc.png).
+   - **The build:** `local/beta/timing`'s, at 4 samples with Aurora's diagnostics, its main-thread parts, workers and
+     GPU a frame logged each window, without its moves of SDL's audio thread every other window. Added to its overlay
+     (`src/dusk/xenon_run.cpp`): the warp; a schedule setting the values through the settings themselves, as the menu
+     will; each window's frame-slot wait (`aurora_take_frame_slot_wait_ns`, milestone 30's diagnostics), the
+     backend's GPU memory peaks (device.cpp, the pools' `takenPeak`), the offscreen passes' sizes drawn, and a capture
+     (`aurora_capture_frame`) at each window's end; then it ends itself.
+   - **The schedule,** 20 s to settle in the village, then windows of 5 s settling and 10 s measured, each value twice,
+     up then down, so the day's light and the villagers' wandering cancel:
+     - anisotropy Off, 2x, 4x, 8x, 16x, 16x, 8x, 4x, 2x, Off, shadows at 1x;
+     - shadows 1x, 2x, 3x, 4x, 4x, 3x, 2x, 1x, anisotropy Off; 4x for the record, last of its block;
+     - anisotropy 16x with shadows at 3x, then both at their defaults.
+
+     20 windows, 5 minutes after the title scene's minute.
+   - **A break build** (below) runs the same schedule; and the plain build at the defaults runs the title scene for a
+     minute, as a smoke run.
+
+**xsdk and vulkan4xenon** need nothing new: the layer has anisotropy up to 16 (src/sampler.c:85-89,
+src/physical_device.c:98) on xsdk's fetch constant (xsdk:docs/HARDWARE.md, "Anisotropic filtering, milestone 33"), and
+draws framebuffers to 4096 past eDRAM. No vulkan4xenon_test, vkbench or xsdk_test runs.
+
+**New checks.**
+- **On the PC,** an Aurora host test (aurora-xenon:tests/, run as `local/m44c/aurora_host_tests.sh` runs them):
+  `sampler_config` with the forced value gives it to a mipped linear texture, keeps the game's own when higher, and
+  gives 1 to a texture without mips, one filtered nearest and one with arbitrary mips.
+- **On the console,** a script on the PC (`compare.py`, as milestone 14's `diagnostic/sharpness.py`) reads the run's
+  log and captures and prints each check:
+  - **Anisotropy in effect:** in a band of the path between Link and the fence, clear of the HUD, picked from the
+    first default capture and fixed in the script before the break build runs, each value's capture differs from
+    Off's by more than three times Off's two windows differ from each other, and its mean step in green (sharpness.py's
+    measure) is higher than Off's, 16x's the most.
+  - **Shadows in effect:** each window logs the offscreen passes it drew, 384x384 times the multiplier; in a box
+    around Link's shadow, each multiplier's capture differs from 1x's by more than three times 1x's two windows do.
+  - **The costs:** each value's GPU time a frame, frame rate, `begin` and frame-slot wait, workers' time, frames past
+    34 ms and GPU memory peak, against the default windows beside it, in one table, with the captures' crops in one
+    picture for the record.
+
+**Broken on purpose** (`results/<date>-milestone-33/breaks.py` and `builds.sh`, one build with both):
+- `aniso_ignored`: `sampler_config` leaves the forced value out. The anisotropy check fails, every capture alike, and
+  so does the host test; nothing else.
+- `shadow_init_kept`: `reset()` no longer re-runs `init()` on a change. The offscreen passes stay 384x384 and the
+  shadows check fails; nothing else.
+
+**Verification,** on the console, by the agent: the measurement build's run, the break build's, the plain build's
+smoke run; on the PC, Aurora's host tests with and without the break.
+
+**Done when:**
+- the host tests pass, and fail with `aniso_ignored`;
+- in the measurement run, both checks pass; the break build fails each check it names and no other;
+- each value offered (Off to 16x, 1x to 3x) changes the frame rate by no more than 0.5 fps, and `begin` and the
+  frame-slot wait by no more than 0.3 ms a frame, against the default windows beside it, with no more frames past
+  34 ms; and adds at most 3 ms of GPU a frame, alone and with the other's top value, so the user's heaviest village
+  window, 23.9 ms, would stay under 27. A value that doesn't is left out of the menu and recorded;
+- the GPU memory each shadow value adds is within 10% of the table's;
+- at the defaults nothing changes: the host test gives today's sampler at Off, the default windows' shadow passes are
+  384x384, and the plain build's smoke run passes the title scene's minute with no new error line;
+- the record says, value by value, what each costs and which may lower the heaviest windows' frame rate.
+
+**Left out:**
+- Internal resolution as a player option (decision 3), and the EFB's samples as one.
+- Shadows at 4x, and the layer choosing depth in bands for a tiled pass that neither loads nor stores its depth, which
+  would take 4x's map from 16 bands to 2.
+- A third frame slot: `AURORA_FRAME_SLOT_COUNT` 3, a CMake setting Aurora has, would let the GPU run a frame further
+  behind before the main thread waits, for a frame more of latency and a third frame's pools. If step 4 shows the
+  options' cost landing on `begin`, it's a measurement of its own.
+- Alpha to coverage for the game's alpha-tested foliage, which the layer has (docs/SUPPORT.md, Pipelines) and Aurora
+  doesn't ask for: the foliage smoothing a higher resolution would bring, for less. A milestone of its own if wanted.
+- Re-checking hierarchical depth past 1280 wide (xsdk:docs/HARDWARE.md, "A band's depth clear goes on a colour
+  resolve, milestone 44 step 5"), which only option 3 needs.
+- An area filter for the present, and a 1080p front buffer.
+
+**Decisions:**
+1. **Anisotropy on every target or the console alone.** The rule is in Aurora's shared code, so the PC's WebGPU path
+   would take it with no more code; under `__XSDK__` alone it's the same diff plus `#if`s. Recommended: every target.
+2. **Shadows' top value.** 3x (recommended: 11 MiB more, about 1 ms of GPU); 2x (4 MiB, under half a millisecond, if
+   step 4's 3x misses the bar); or 4x as well (21 MiB, as much as the village had free late in milestone 30's run).
+3. **Internal resolution.** (a) Left out of this milestone, with the estimates above recorded (recommended: not worth
+   it at 4 samples, and the combinations that fit trade edges for texture sharpness at more GPU than options 1 and 2
+   together); (b) the backend's clamp lifted and 1.25x and 1.5x measured at 1 and 2 samples, two more builds and runs;
+   (c) offered now, with the EFB's samples as a player option read at start and the resolution offered only at 1 and
+   2 samples.
+4. **Measure the defaults' slack first, or in the same run.** The run's default windows give `begin` and the
+   frame-slot wait at the spawn, beside each value; the user's play run gives the heaviest windows. Recommended: the
+   same run, as above, no user play.
+
+**Size:** small. Aurora about 30 lines and a 60-line host test; Dusklight about 40 lines (the setting, the menu entry,
+the shadows' cap); the measurement overlay about 150 lines over `local/beta/timing`'s, `compare.py` about 120; then
+three runs by the agent and none by the user.
+
+### Milestone 34: the FIFO worker
+
+Agreed with the user on 2026-10-21, with every recommendation below.
+
+Aurora's FIFO worker turns the game's GX stream into recorded passes, alone on hardware thread 4, and the game waits
+for it every frame. It takes 19 to 22 ms a frame standing in Ordon and up to 31 in play. This milestone measures it
+without the zones' cost, then takes out work it doesn't need to do on this CPU, until Ordon holds 30 fps with room to
+spare. The per-frame wait stays.
+
+**Why.**
+- **The game's frame is the worker's time.** The game writes a frame's GX first, after the 30 fps limiter
+  (dusklight:src/f_pc/f_pc_manager.cpp:82; libs/JSystem/src/JFramework/JFWDisplay.cpp:250-261), then runs every
+  actor's update and draw (f_pc_manager.cpp:104, 108), and the draw's end waits for the worker:
+  `cAPIGph_AfterOfDraw` (src/f_pc/f_pc_draw.cpp:46) reaches JFWDisplay's `endFrame` (src/m_Do/m_Do_graphic.cpp:905;
+  JFWDisplay.cpp:331-345), whose `JFWDrawDoneAlarm` calls `GXDrawDone` (JFWDisplay.cpp:572-584), and Aurora's waits
+  until the worker has passed the token (aurora-xenon:lib/dolphin/gx/GXManage.cpp:264-278; lib/gx/fifo.cpp:541-552).
+  Standing outside Link's house (F_SP103, point 0, room 1; run 4, windows 15-23) a frame was 11.6-12.1 ms of the
+  limiter's wait, 12.1-12.7 of the game's own work, and 7.8-8.6 of the draw-done wait, the worker taking 19.4-19.9.
+  The wait is what's left of the worker after the game's work before it, about 11.5 ms (19.6 less 11.5 is 8.1), so
+  the worker starts with the frame's first command and doesn't run dry, and the frame ends about 1 ms after it does
+  (audio, `aurora_end_frame`, the next begin). Every millisecond off the worker is one off the frame, until the worker
+  is under the game's ~11.5 ms. The GPU took 18.5-23.1 ms a frame there (runs 3 and 4).
+- **In play it decides the frame rate.** In the user's run 5 the worker took 12.0-24.7 ms a frame in settled windows,
+  and 31.1 in window 22 (the village, 26.0 fps), where the limiter's wait was down to 3.4 ms. The ranch's windows
+  (23-26) took 18.9-23.6.
+- **Where its time goes,** run 3 and run 4 at the village spot, own time a frame (windows 14-23 and 15-23):
+
+  | Zone | ms own | calls | us a call |
+  |---|---|---|---|
+  | `process` (command_processor.cpp:447): decoding, BP/CP/XF registers | 7.53 / 6.65 | 1,091 / 966 | 6.9 |
+  | `push_verts_hashed` (recording.cpp:887): a draw's vertices copied, hashed | 3.32 / 2.65 | 409 / 365 | 7.3-8.1 |
+  | `handle_draw_unmerged` (command_processor.cpp:762), most of it `push_gx_draw` | 2.18 / 1.78 | 195 / 161 | 11.1 |
+  | `DRAW_INDEXED` (command_processor.cpp:1056), most of it `push_gx_draw` | 2.10 / 2.05 | 213 / 204 | 10.0 |
+  | `push_uniforms` (shader_info.cpp:488) | 1.49 / 1.35 | 389 / 353 | 3.8 |
+  | `push_array` (recording.cpp:934): an array copied and hashed, whole | 1.31 / 1.29 | 75 / 67 | 17-19 |
+  | `handle_aurora` (command_processor.cpp:858) | 0.68 / 0.66 | 3,626 / 3,391 | 0.19 |
+  | `populate_pipeline_config` (gx.cpp:182) | 0.60 / 0.54 | 153 / 136 | 3.9 |
+  | `draw_prim`, `push_indices`, `build_bind_groups`, the rest | 2.1 / 1.9 | | |
+
+  The worker took 22.2 and 19.6 ms a frame on average, about 0.6 of it outside `process`. In run 5's window 22 the
+  same rows were 9.64, 4.66, 2.61, 3.42, 2.00 and 2.29 ms: more of everything, not one new cost.
+- **What costs more on this CPU,** reading the path end to end:
+  - **Hashing.** Every unmerged and indexed draw's vertex bytes and every array a frame reads, whole, are hashed with
+    XXH3 as they're copied (aurora-xenon:lib/gfx/recording.cpp:886-896, 933-956), for the console backend's vertex
+    cache (lib/vulkan4xenon/backend.cpp:52-57; lib/vulkan4xenon/decode.cpp:828-928). So is the 2.7 KB pipeline config
+    at every change of the state it's built from (lib/gx/command_processor.cpp:655-666), 136-207 times a frame, and
+    each texture set, about 230 bytes, at each bind group built (lib/gfx/texture.cpp:240-262). XXH3 is defined
+    little-endian: xxHash 0.8.3 swaps every 64-bit word it reads, the input's and its secret's, on a big-endian host
+    (xxhash.h:2680-2691, 3423-3426); it takes its scalar path here, having no VMX one (xxhash.h:3972-3997); and
+    without `__int128` its 64-by-64-bit multiplies, which inputs of 240 bytes or less use, are four 32-bit ones each
+    (xxhash.h:4432-4520). A title runs in 32-bit mode (xsdk:docs/HARDWARE.md:4398). None of these hashes leaves the
+    run.
+  - **Copies of the pipeline config.** `populate_pipeline_config` resets the 2.7 KB config, fills it, then builds a
+    second one around it and copies it back (aurora-xenon:lib/gx/gx.cpp:185, 290-298): about 8 KB of stores at each
+    change, 3.9 us.
+  - **Byte compares.** `update_pipeline_inputs` compares about 1 KB of state for every draw after a register write
+    that dirties the pipeline, with 16-byte vector loads from fields at any alignment
+    (lib/gx/command_processor.cpp:270-299, 323-360). How GCC loads those on this CPU, and what that costs, isn't
+    known; it isn't zoned.
+  - **Atomics.** After each `process` call on the stream, the worker stores its position and loads the one the game
+    waits for, sequentially consistent (lib/gx/fifo.cpp:124-130, 171-186), about 125 ns each on the console
+    (xsdk:docs/HARDWARE.md:4409-4413). The 966-1,526 `process` calls a frame count the called lists' too, so these are
+    fewer: about 0.1-0.2 ms a frame. A called list ends a call on the stream (command_processor.cpp:530-532), and the
+    game never waits there.
+  - **Not costs here:** the stream's byte order, written and read big-endian, is a no-op on this host
+    (aurora-xenon:lib/internal.hpp:86-94, 111-121); registers dispatch through a function-pointer table, one call per
+    write that changes state (lib/gx/regs.cpp:14-19, 952-975), with no `std::function` or virtual call per command;
+    no allocation per command (the pools are preallocated, the tables kept: command_processor.cpp:1097-1103); one
+    mutex per bind group built (lib/vulkan4xenon/backend.cpp:516-527), 136-210 a frame; the bounds check on every
+    read (lib/internal.hpp:184-186, 418-424), a compare. Uniform pieces are zeroed before they're written
+    (lib/gfx/recording.cpp:200-213), but `map_uniform`, zeroing included, took 0.06-0.07 ms a frame.
+- **The zones carry their own cost.** Each zone scans the thread table with an acquire load a slot until it finds
+  its own, reads the time base twice, updates three 64-bit counters and its parent's, and does an atomic exchange on
+  every close (xsdk:local/beta/zones/tracy/xenon_zone.hpp:44-92). The exchange alone is about 55 ns
+  (xsdk:docs/HARDWARE.md:4409, a relaxed `fetch_add`), an acquire load's `isync` about 12. The worker ran 7,700 and
+  8,830 zones a frame at the spot, 11,700 in run 5's window 22, so the zones likely cost it 1 to 2 ms a frame, most of
+  it counted in `process`'s own time, where the children's opening and closing fall. Step 1 measures it.
+- **The scene isn't the same from run to run.** Within a run the worker's windows at the spot varied by 0.15 ms
+  (run 4) and 0.38 ms (run 3, standard deviations), but run 3 drew 15% more (8,832 zones a frame against 7,701; 1,091
+  `process` calls against 966) and took 2.6 ms more, the worker's time per 1,000 zones within 1.3% (2.51 and 2.54
+  ms). Two runs can't be compared without counting what they drew.
+- **Why the per-frame wait stays.** The worker reads the game's memory by pointer, when it gets there: called display
+  lists (aurora-xenon:lib/dolphin/gx/GXDispList.cpp:65-71; lib/gx/fifo.cpp:101-116), every array a draw indexes,
+  copied at the draw (lib/gx/command_processor.cpp:629-643), matrices loaded by index (:485-510), textures and
+  palettes. J3D keeps its display lists, skinned vertices and draw matrices in two buffers it swaps each frame
+  (dusklight:libs/JSystem/include/JSystem/J3DGraphBase/J3DPacket.h:104-131, J3DVertex.h:133-150;
+  libs/JSystem/include/JSystem/J3DGraphAnimator/J3DMtxBuffer.h:53), which is safe only because the GPU, and here the
+  worker, is done with a frame before the game's next calc writes the buffer it read. Waiting a frame later, frame
+  N+1's calc writes what frame N's commands still point at. And it would gain little: the worker is busy from the
+  frame's first command to the wait already, so deferring adds the ~1 ms after the wait and lets a heavy frame borrow
+  from the next, not more.
+
+**What it takes.** Code in Aurora only (Z:\aurora-xenon, branch `xenon`, then Dusklight's extern/aurora fast-forwarded),
+in Aurora's style (xsdk:CODE_GUIDELINES.md, section 14); the measurement code in `xsdk:local/beta/v34`, never
+committed. Each step after the first is measured on its own and kept only for a measured gain.
+
+1. **Measurement first,** the v34 build (`local/beta/v34/build.sh`, zones/build.sh's copy, its overlay over
+   Dusklight and Aurora), built twice, `ZONES=1` and `ZONES=0`, run by the agent:
+   - **Aurora without zones** in `ZONES=0`: Aurora's `ZoneScoped` empty, the worker timed only by Aurora's own busy
+     time (aurora-xenon:lib/gx/fifo.cpp:191-211); Dusklight's main-thread zones kept. The target is measured in this
+     build.
+   - **The zones' cost,** two ways: both builds at the same spots, and at start the worker opens and closes 100,000
+     nested zones and logs the cost of one. The shim's exchange becomes a load first (xenon_zone.hpp:87).
+   - **Counters a frame,** plain 32-bit counts the logger reads every 10 s: stream bytes; display list calls and bytes;
+     BP, CP and XF writes, and how many changed state; Aurora's commands by kind; draws merged, unmerged and indexed;
+     pipeline-input changes and memo misses; bytes hashed for vertices, arrays, configs and texture sets; uniform bytes.
+     They're what an A/B pair is checked against.
+   - **Finer zones** in `ZONES=1`: `process` inside a display list apart from the stream's; inside `push_gx_draw`,
+     `update_pipeline_inputs`, the memo's key and lookup, the array lookups and `push_draw_command`; each uniform
+     piece. Tables for hardware threads 3 and 5 too, beside 0, 2 and 4, so the decode helper's share of the worker's
+     core shows.
+   - **A hash probe** on hardware thread 4 before the warp: XXH3 as built, XXH3 reading words in the host's order,
+     XXH32 run twice, XXH64, and `memcpy`, over 64 B, 256 B, 1 KB, 4 KB and 64 KB, MB/s each; and whether GCC
+     offers `__int128` here.
+   - **Two spots,** 4 minutes each: F_SP103 point 0 room 1, as now, then the ranch, F_SP00 room 0 (a room the game
+     names: dusklight:src/d/actor/d_a_demo_item.cpp:241), point 0, which the first run checks by its `Stage` line and
+     a capture 300 frames in.
+   - **Alternation:** a variant flag the logger flips at every 10 s window and the worker reads at each frame's begin.
+     Each later step's code sits behind it in this build, so its A and B windows alternate in one run. A verify mode
+     runs the old computation beside the new and counts disagreements.
+
+   If the worker without zones is already at 15 ms a frame or less at the village spot, the milestone goes straight
+   to the user's session. If hashing is under a quarter of the worker's time without zones, steps 3 and 4's estimates
+   are redone with step 1's numbers and come back to the user first.
+2. **The worker on its own core.** Today the decode helper, on hardware thread 5, shares core 2 with the worker
+   (aurora-xenon:lib/thread.cpp:297-299), and the render worker hands it decodes and hashes
+   (lib/vulkan4xenon/decode.cpp:696-786). Milestone 26's probe found two busy threads on one core's two hardware
+   threads at 51% each, one alone on hardware thread 4 at 87% of one on 0, and one on 2 at 93%
+   (xsdk:docs/HARDWARE.md:2051-2053). The list becomes `Aurora render worker=4,Aurora FIFO processor=2`, the decode
+   helper staying on 5, now beside its render worker. One line.
+   - **SDL's audio thread moves too,** off the main thread's hardware thread 0, where it starts as its creator's
+     (xsdk:include/xsdk/thread.h:19) and preempts the main thread for the audio DSP, 0.8 ms a frame standing still and
+     4.8 in run 5's worst village window. It goes to hardware thread 5, beside the render worker, not beside the FIFO
+     worker: on hardware thread 5 beside the worker on 4 it gained nothing (local/beta/timing/run1, 28.7 against 29.3
+     fps, the worker 11-32 ms a frame). Dusklight places it (aurora::thread's list, or SDL-xenon's driver taking a
+     hardware thread from a hint), judged in the same A/B with the main thread's own time and the DSP's.
+   - **Saving:** up to 1.3 ms (7% of 19.6) from the core, plus whatever step 1 finds the helper costs the worker.
+   - **Risk:** no change to what's drawn. The render worker runs on core 2 at 87% (it took 6.9-13.4 ms a frame at the
+     spot, 5-21.5 in play), and shader compiles and texture preconversion, on hardware thread 3, run in bursts beside
+     the worker.
+   - **Check:** each thread's placement line; the render worker's time and `begin` not rising in the A/B. In the
+     A/B build each worker moves itself at a window's first frame, as `place` does (lib/thread.cpp:320-330).
+3. **The pipeline memo's key.** At each pipeline-input change the worker hashes the whole config
+   (aurora-xenon:lib/gx/command_processor.cpp:657), about 2.7 KB counted from its members (lib/gx/pipeline.hpp:27-41;
+   lib/gx/gx.hpp:143-169, 554-585), 2.1 KB of it the 16 TEV stages, 132 bytes each with GX's enums at 4 bytes.
+   `populate_pipeline_config` fills only the stages in use and leaves the rest as its reset made them
+   (lib/gx/gx.cpp:185, 240-247). Changes:
+   - the key hashes the config up to its last stage in use and from `tevStageCount` on: 0.9 to 1.3 KB for 1 to 4
+     stages;
+   - the memo is keyed by 64 bits on every host. Today it's `HashType`, 32-bit on a 32-bit host, and so is the layout
+     key given as XXH3's seed (lib/gfx/hash.hpp:11-25; command_processor.cpp:226-230, 657), so two configs could
+     already share a memo entry here;
+   - `populate_pipeline_config` assigns the config's fields in place, without the second 2.7 KB config
+     (gx.cpp:290-298).
+   - **Saving:** 0.7-1.1 ms, a guess until step 1 gives XXH3's rate here. The hash is part of `DRAW_INDEXED` and
+     `handle_draw_unmerged`'s 3.8-4.3 ms own time. `push_array` took 17-19 us an array, its copy about 3 of them, the
+     arrays averaging 6 KB at most (the storage pool's peak, 415-448 KB a frame, over 67-75 arrays): XXH3 at about
+     400 MB/s or less, so 6.5 us or more for 2.7 KB, 0.9-1.3 ms a frame at 136-207 changes. Hashing a third to a half
+     of the bytes saves 0.5-0.9 of it, and populating in place about 0.2 of `populate_pipeline_config`'s 0.54-0.60.
+   - **Risk:** a key shared by two different configs draws one with the other's pipeline. Every byte that can differ
+     must be in the key: the stages past `tevStageCount` are always the reset's, as are the indirect stages past
+     `numIndStages`, and both counts are in it.
+   - **Check:** verify mode keeps each key's first config and compares every later hit with it, counting mismatches;
+     a new test in gx_fifo_tests gives configs differing in one byte of a used stage, in a count, or in any field after
+     the stages, and expects different keys, and equal keys for equal configs.
+4. **A hash for what stays in the run.** One function for the vertex bytes and arrays
+   (aurora-xenon:lib/gfx/recording.cpp:886-896, 933-956), their counterpart on the render worker for draws the worker
+   didn't hash (lib/vulkan4xenon/decode.cpp:672-683, 779-786), the texture set's key (lib/gfx/texture.cpp:240-262)
+   and step 3's memo key. Keys that outlive a run, the shader and pipeline caches' names on disk
+   (lib/gfx/pipeline_cache.cpp:445-552; lib/vulkan4xenon/glsl.cpp:1649), stay XXH3. Step 1's probe picks the fastest
+   that gives 64 bits at Dusklight's sizes. The likely ones: XXH3 compiled a second time, in one file under its own
+   `XXH_NAMESPACE`, with `XXH_CPU_LITTLE_ENDIAN` set to 1, which xxhash.h lets a build choose (xxhash.h:2680), so it
+   reads words as the host holds them: the same mixing without the swaps; or XXH32 run twice with two seeds, 32-bit
+   multiplies only.
+   - **Saving:** the copies run through xsdk's `memcpy`, 1.8 GB/s from memory into cached memory
+     (xsdk:docs/HARDWARE.md:1527), so hashing is most of `push_verts_hashed` and `push_array`'s 4.0-4.6 ms, and part
+     of `build_bind_groups`' 0.43-0.48. A function twice as fast saves about 1.8-2.2 ms, three times 2.4-2.9.
+   - **Risk:** a weaker function lets two different vertex blocks share a key, and the vertex cache draws one's
+     decoded vertices for the other.
+   - **Check:** verify mode hashes the same bytes with XXH3 too and counts, each frame, pairs the new function calls
+     equal and XXH3 doesn't; a new test in gfx_recording_tests: equal bytes at any alignment hash equal, and every
+     single-bit change in 1 to 4,096 bytes changes the hash; the test `TextureSetHash.AsTheStreamedFieldsGave`
+     (tests/gfx_recording_test.cpp:359-388) streams through the new function; the vertex cache's line keeps its 96-98%
+     of draws found at the spot.
+5. **The display lists' reads,** if step 1 finds hundreds of KB a frame. The worker reads a called list from the
+   game's memory (aurora-xenon:lib/gx/fifo.cpp:101-116), perhaps from memory rather than the cache. `process` touches
+   the list ahead of where it reads (`dcbt`, within the list's bytes): newlib's `memcpy` read 1 MB from memory at 410
+   MB/s, and the SDK's, with `dcbt` 8 lines ahead, at 1,814 (xsdk:docs/HARDWARE.md:1511, 1527). About 10 lines.
+   - **Saving:** unknown until step 1: none to about 1.5 ms.
+   - **Risk:** none to what's drawn; a touch is a hint, kept inside the list.
+   - **Check:** the A/B; gx_dl_tests and the stream's byte goldens unchanged.
+6. **The rest, after step 1's split,** measured together and kept only together:
+   - the worker stores its position and wakes the game only at a draw-done, a frame's end and the end of what was
+     published, not after each display list's return (lib/gx/fifo.cpp:171-186): about 0.1-0.2 ms. A wake missed
+     hangs the game at its draw-done, where JFWDisplay's alarm aborts the frame after 0.5 s
+     (dusklight:libs/JSystem/src/JFramework/JFWDisplay.cpp:572-584), so gx_fifo_tests' waits check it, and its break
+     runs last;
+   - word compares in `update_pipeline_inputs` (lib/gx/command_processor.cpp:270-299), if step 1 times it above 1 us
+     a draw;
+   - a uniform piece that step 1 times at 0.5 ms a frame or more, if one does.
+
+**Ranked by saving for the effort** (the zone build at the village spot, before the zones' cost comes out):
+
+| Step | Change | Lines | Saving, ms a frame | Risk |
+|---|---|---|---|---|
+| 2 | The worker and render worker trade hardware threads | 1 | 0.5-1.3 | none to output |
+| 3 | The memo's key: used stages, 64 bits, no second config | ~30 | 0.7-1.1 | wrong pipeline |
+| 4 | A hash for what stays in the run | ~50, test ~40 | 1.8-2.9 | false vertex cache hit |
+| 5 | Display lists touched ahead | ~10 | 0-1.5 | none to output |
+| 6 | Position stores, input compares, a uniform piece | ~30 | 0.1-1.0 | a missed wake |
+
+Together about 3 to 8 ms, against a worker estimated at 18 to 21 ms at the spot without zones.
+
+**How a step is judged,** with no one at the console:
+- A run is the title scene's minute, the warp, the first window there dropped, then 10 A/B pairs (200 s) at each
+  spot: about 9 minutes, launched and fetched by the agent.
+- A step is kept if, at the village spot, the mean of its 10 paired differences is 0.3 ms or more and three standard
+  errors or more (runs 3 and 4's spreads give 0.07-0.17 ms for 10 pairs), and the ranch shows no loss of 0.3 ms or
+  more. A pair whose counters differ by more than 2% is left out, and said. Otherwise the step is reverted to HEAD
+  (xsdk:CODE_GUIDELINES.md, 1.4).
+- Verify mode once a step, untimed, in its own run: no disagreement.
+- No Xenia run: it schedules the worker on a host thread and can't time any of this (xsdk's CLAUDE.md).
+
+**New checks** (Aurora's host tests: gx_fifo_tests and gfx_recording_tests on Dawn through `~/build/host_dawn_tests.sh`,
+the rest on the null backend through `~/build/aurora_host_tests.sh`; the source a fresh copy, cleaned first):
+- gx_fifo_tests: the memo's key (step 3), as above.
+- gfx_recording_tests: the run's hash (step 4), as above, and the texture set test through it.
+- Every existing test passes at each step, the stream's byte goldens (tests/gx_fifo_bytes_test.cpp) among them,
+  unchanged: no step touches what the game thread writes.
+
+**Broken on purpose** (`results/<date>-milestone-34/breaks.py`, the A/B build with one change each):
+- `memo_prefix`: the memo's key over the config's first 256 bytes: verify mode counts mismatches, the key's test fails,
+  and the capture draws materials with other materials' pipelines.
+- `hash_prefix`: the run's hash over each range's first 16 bytes: verify mode counts disagreements, the hash's test
+  fails, and the capture shows geometry from other draws' vertices.
+- `wake_missed` (if step 6 keeps its position change): no store at a draw-done return. gx_fifo_tests' waits fail; on
+  the console the game hangs at its first draw-done, so it runs last, from a fresh boot.
+
+**Verification,** on the console:
+- By the agent: step 1's two builds at both spots; each step's A/B run and verify run; the breaks; then the `ZONES=0`
+  build with every kept step and no alternation, twice, for the target.
+- Plain Dusklight builds, without diagnostics, before and after, built as `xsdk:local/dusk_current/build.sh` builds
+  but into the milestone's own directory: `dusklight_title.ppm`, the title scene's 600th frame, counted, from each,
+  and their difference, equal but for the logo's moving shine, which differs between two runs of one build too
+  (vulkan4xenon:docs/ROADMAP.md:1184-1186). The steps change no GPU input, so anything else is a bug.
+- By the user, once at the end: the `ZONES=0` build with every kept step, played by hand through the village, the
+  spring and the ranch, as in run 5, about 10 minutes, with `zones_play.txt` beside it.
+
+**Done when:**
+- At the village spot, in the `ZONES=0` build, the worker takes 15 ms a frame or less: the mean of the settled windows
+  in each of two runs (19.6 and 22.2 with zones in runs 4 and 3; step 1 gives the start without them). In play the
+  worker took up to 1.26 times the spot's time in a settled window (24.7 ms in run 5's window 16, against run 4's
+  19.6) and 1.59 times in the heaviest (31.1, window 22). At 15 ms here that's 19 to 24 ms there, and the frame, the
+  worker plus about 1 ms after the wait, 25 ms or less: 8 ms or more under 33.3.
+- Verify mode found no disagreement for any kept step; the captures match but for the shine; Aurora's host tests pass,
+  each break failing what it names.
+- In the user's session every 10 s window without a stage change logs 29.5 fps or more, milestone 30's bar (a window
+  at the limiter's 30 logs 29.7 to 30.0), and the worker 24 ms or less.
+
+A window that misses 29.5 with the worker under 24 ms is the main thread's: in run 5's window 22 the game's own work
+was 29.9 ms a frame, and at the ranch 18.5-24.7. The audio DSP's 4.8 ms there (`DspRender`) isn't the main thread's
+work: it runs in SDL's audio callback (dusklight:src/dusk/audio/DuskAudioSystem.cpp:155-260), on SDL's device thread,
+which runs on hardware thread 0 with the main thread and above it, so it preempts it (the zones count per hardware
+thread). Step 2 moves it off. Such windows go back to the
+user as their own scope, and this milestone closes on the worker's two targets.
+
+**Left out:**
+- Waiting for the draw-done a frame later (Decisions, 1), and a third frame slot (Decisions, 2).
+- Splitting the worker into a decoding thread and a recording thread on two cores: the most it could give, and a
+  rewrite of the command processor's state handling, not for the beta.
+- The main thread's own work (above); the audio DSP isn't its own and moves in step 2.
+- Shrinking the config's TEV stages to bytes: the pipeline cache remembers configs on disk by their bytes
+  (aurora-xenon:lib/gfx/pipeline_cache.cpp:443-445), so every cached one would be lost once, and step 3 takes most of
+  the gain without it.
+- Uniform pieces written without zeroing first: 0.06-0.07 ms a frame.
+- The game thread's publish after every draw (aurora-xenon:lib/gx/fifo.cpp:40, 567-574) and every display list call
+  (lib/dolphin/gx/GXDispList.cpp:71): the main thread's cost, not the worker's.
+
+**Decisions,** each with a recommendation:
+1. **The per-frame wait.** Keep it (recommended: J3D's two buffers and every pointer the worker reads assume it, and
+   waiting a frame later would gain about 1 ms and smoothing); or wait a frame later, which needs a third buffer in
+   each of J3D's double buffers, every other pointer the worker reads checked, and the memory for both.
+2. **A third frame slot.** Not in this milestone (recommended: it shortens `begin`'s wait for the GPU, 0.2 ms a frame
+   at the spot and up to 5.1 in one window, not the worker, and costs about 15 MB, Dusklight's pools being 2, 2, 1, 2
+   and 8 MB a slot, dusklight:CMakeLists.txt:112-116, with 37 to 98 MB free in Ordon in runs 4 and 5); or add it.
+3. **Where the hashing goes.** A faster hash on the worker, where the bytes are warm (recommended); or
+   `contentHashes` off (aurora-xenon:lib/vulkan4xenon/backend.cpp:56), one line, the hashing moving to the render
+   worker and its helper, both on core 2 after step 2, reading the pools cold, as the fallback if step 1's probe finds
+   no function twice as fast; or keep XXH3 everywhere.
+4. **How steps are compared.** Alternating windows in one run (recommended: runs 3 and 4 drew 15% apart at the same
+   spot); or separate runs set side by side by their counters; or a tool that records the worker's input and replays
+   it, the fairest and the most work.
+5. **The target.** 15 ms at the village spot without zones (recommended: 8 ms or more of margin in play); or 12 ms,
+   the game's own work before the wait, below which the still scene gains nothing; or the user's session alone.
+6. **The memo's 64-bit key.** In step 3 (recommended: the 32-bit key can already pick another config's pipeline,
+   and it costs nothing); or left as it is.
+7. **If the target is missed after step 6.** Back to the user with the remaining buckets (recommended), the decoding
+   and recording split among the options; or a hash helper on another core straight away.
+
+**Size:** medium. Step 1 about 200 lines of measurement code in `local/beta/v34`, two builds and two runs by the
+agent; steps 2-6 about 120 lines in Aurora and 80 of host tests; one A/B run and one verify run a step, the breaks, two
+final runs and the captures, about 15 runs of 9 minutes by the agent; one session of about 10 minutes by the user.
 
 ## 5. The Dusklight track
 
