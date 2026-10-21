@@ -3132,6 +3132,134 @@ stages add up to the submit. The first submit times 10,000 laps back to back, to
 
 Milestone 29 is done.
 
+### Milestone 30: tiled passes that don't wait for the GPU
+
+Proposed on 2026-10-20, for the user to agree.
+
+**Why.** xsdk milestone 44 step 5 left Dusklight at 1 sample: at 2 samples its title scene ran 28.8 to 29.9 fps and
+Ordon's village 27 to 28, under the 29.5 fps bar, where 1 sample runs 29.7 to 29.9 and 29 to 30 (xsdk:docs/HARDWARE.md,
+"Multisampling's cost, and Dusklight at 2 and 4 samples, milestone 44 step 5"). The cost is the CPU's, in the replay at
+`vkQueueSubmit`: in the logo shot's phase 0 it took 1.1 ms a frame at 1 sample, 11.2 at 2 and 12.8 at 4, and 29.0 at 1
+sample with every pass with depth forced into 2 bands (xsdk:results/2026-10-20-milestone-44-step-5/, `dusk_ms*.log`).
+The profile build's lines in those logs (milestone 29) say where:
+- **Not in translating the draws.** A tiled pass's commands are already replayed once, into a recording each band runs
+  (docs/SUPPORT.md, Render passes), and the stages a draw goes through cost the same in phase 0: dispatch, push,
+  pipeline, constants, resources, checks and draws took 2.26 us a draw at 1 sample and 2.35 at 2, 249 draws a frame.
+- **In the commands that aren't draws:** 0.39 ms a frame at 1 sample, 10.7 at 2. `vkCmdBeginRenderPass`'s replay took
+  138 us a present over 27 passes in the title scene's last 10 s before the shot at 1 sample, 9,283 at 2, 10,315 at 4,
+  and 25,566 to 27,061 forced into 2 bands; a pass's end 130 us at 1 sample and 258 at 2. In Ordon the begins took 127
+  to 173 us a present at 1 sample and 9.1 to 17.2 ms at 2, where the submit took 13.0 to 19.3 ms a present against 1.0
+  to 2.3, and Aurora's vertex cache waited 57 to 68 times for frames in flight, against none at 1 sample
+  (`ordon_dusk_ms*.log`).
+- **What a tiled pass's begin does that an untiled one's doesn't** is wait for the GPU to finish the recording its
+  framebuffer's subpass made last, as each subpass has one recording (src/queue.c, `begin_tiled_pass`;
+  src/render_pass.c, `make_recordings`), the shortcut docs/SUPPORT.md names. Aurora draws the EFB through one
+  framebuffer it keeps (aurora-xenon:lib/vulkan4xenon/encoding.cpp, `target_framebuffer`) and breaks its pass at each
+  EFB copy (section 5), so at 2 samples each EFB pass waits for the GPU to finish the one before. A wait that finds its
+  fence not yet passed sleeps 1 ms at a time (xsdk:include/xsdk/gpu.h, `xsdk_gpu_set_wait_spin`), about 2 ms a sleep
+  (xsdk:docs/HARDWARE.md, "Sleeps, write speeds, and a set-up that wouldn't run from a cached stream"). The profile
+  counts only the copies' waits for the GPU (src/transfer.c), so it showed none. The waits are the likely cost, but
+  haven't been timed apart.
+- **The GPU's part isn't known yet.** Its time from submit rose from 13.2 to 17.0 ms a frame at 2 samples, but while
+  the replay waits, the GPU can stand idle through each sleep's overshoot and the next pass's translation: it finished
+  12.1 ms after the replay at 1 sample and 5.8 at 2.
+
+So step 5's idea, a tiled pass translated once and run once a band, is how the layer works already; this milestone takes
+out the wait.
+
+**What it takes.**
+1. **Measurement first,** in the profile build (`V4X_PROFILE=1`) and Dusklight's diagnostics builds at 1 and 2 samples,
+   made as step 5's were, the logo shot run by the agent:
+   - `begin_tiled_pass`'s wait for its recording counted with the replay's waits for the GPU, so the log gives its
+     count and time a present;
+   - the tiled passes a present, and the rest of their begins and ends, timed apart from the wait;
+   - each tiled pass's recording in dwords, the largest and the sum a present, to size step 2's space.
+
+   If the waits aren't most of the begins' 9.3 ms, the measurement comes back to the user before step 2.
+2. **Recordings in one space the queue keeps,** in place of one a framebuffer subpass:
+   - 2 MB of xsdk's GPU memory, taken at the first tiled pass, as the index copies' memory is (src/transfer.c,
+     `copy_room`), and freed with the device. A framebuffer past eDRAM no longer takes 1 MB.
+   - A tiled pass records from the space's next 128-byte line, where xsdk starts each segment of its stream, which the
+     ring runs as indirect buffers (xsdk:src/gpu.c, `submit_segment`), with 1 MB of room, today's limit; the
+     `XsdkCommandBuffer` it records into points there (xsdk:include/xsdk/gpu.h). Where 1 MB doesn't fit before the
+     space's end, it starts again at the beginning.
+   - Each pass's span is kept with its fence, in order. A pass whose room covers spans the GPU may still run waits for
+     the last of their fences; with 2 MB and recordings of Dusklight's size (step 1), no pass should wait.
+   - docs/SUPPORT.md's shortcut keeps 1 MB a pass and drops "a framebuffer used twice in a submission costs a wait".
+3. **Dusklight at 2 samples by default,** once the runs below show it holds the bar: `DUSK_XSDK_MSAA`'s default in
+   dusklight-xenon goes to 2.
+
+**xsdk** needs nothing new. The bands' resolves go on the ring between runs of the recording, where `xsdk_gpu_end_tiles`
+queues them (xsdk:src/gpu_tiles.c), so the change needs neither resolves nor fences inside a recording, which xsdk
+doesn't have (xsdk:docs/PARITY.md, "Command buffers recorded once and run many times"). If step 1 puts the cost in
+xsdk's calls instead, that's an xsdk change, scoped with the user then.
+
+**New checks** in vulkan4xenon_test (tests/test_tiles.c), each well under a second:
+- 8 passes in one submission on one 1280x720 framebuffer at 2 samples, with depth and a resolve attachment as Aurora's
+  EFB has, each loading the last and adding a quad of its own, every texel of the resolve attachment checked: several
+  recordings in flight at once.
+- Passes whose recordings together pass the space's size, in one submission, so it starts again over spans the GPU may
+  still run, every texel checked.
+- The submission's time: the 8 passes, each keeping the GPU busy a few milliseconds, return from `vkQueueSubmit` in
+  under a quarter of the GPU's time for them, where waiting for each pass takes seven eighths of it.
+
+**Broken on purpose** (`results/<date>-milestone-30/breaks.py` and `builds.sh`):
+- each tiled pass waiting for the last one's fence, as now: the submission's time check alone fails;
+- room taken without waiting for the spans in it: the wrap check fails, or the GPU hangs, so that title runs last, from
+  a fresh boot.
+
+**Verification,** on the console:
+- vulkan4xenon_test twice, every check passing, the tiles and multisample checks among them, and each break failing the
+  checks it names and no others; by the agent.
+- vkbench's 17 checks, its times within 3% of main's, as none of its scenes tiles; by the agent.
+- xsdk_test and probe_tiles only if xsdk changes, which as scoped it doesn't.
+- Dusklight at 1 and 2 samples, against the same xsdk and Aurora: the diagnostics builds' logo shot (the replay, its
+  waits, the render worker, the GPU from submit) and the plain builds' title scene over five or more 10 s windows, by
+  the agent; Ordon's village (F_SP103) and F_SP104 in the plain builds, played by the user, as in step 5. Nothing tiles
+  at 1 sample, so its runs are the control. The logo shot's capture at 2 samples has its edges blended, as in step 5.
+- 4 samples, the logo shot only, for the record.
+
+**Done when:**
+- the logo shot's replay at 2 samples costs at most 2 ms a frame, from 11.2 (1.1 at 1 sample);
+- at 2 samples the title scene holds 29.5 fps or more in every 10 s window, and Ordon's village once settled; F_SP104,
+  29.0 to 29.4 at 1 sample in step 5, runs no slower than 1 sample does in the same session;
+- vulkan4xenon_test passes twice, each break fails what it names, and vkbench is as before;
+- Dusklight defaults to 2 samples (step 3).
+
+If the replay comes down and the frame rate still misses the bar, the milestone closes with the replay's cost and the
+GPU's time a frame at 1 and 2 samples recorded, Dusklight stays at 1 sample, and the GPU's part comes back to the user
+(For you to decide, 4).
+
+**Left out:**
+- Translating a tiled pass when it's recorded, or keeping its recording from one submission to the next: the draws'
+  translation costs the same at 1 and 2 samples, and milestone 29's reasons hold (a pass's begin and end depend on what
+  eDRAM holds at submit, and uniform reads and indirect draws are known only then).
+- Resolves and fences inside xsdk's recordings.
+- Spinning in the wait instead (`xsdk_gpu_set_wait_spin`): the CPU would still keep step with the GPU pass by pass, and
+  spinning slowed the thread sharing the waiter's core in Dusklight (xsdk:docs/HARDWARE.md, "Milestones 30 to 35
+  together, and fence waits that sleep again").
+- The GPU's extra work at 2 samples (For you to decide, 4), and 4 samples by default.
+
+**For you to decide,** each with a recommendation:
+1. **Measure first, or build step 2 straight away.** Step 1 is a few lines of the profile build and one run by the
+   agent, and the waits are inferred from the begins' cost, not timed. Recommended: measure first.
+2. **Where the space lives.** In the layer, 2 MB with 1 MB a pass (recommended: no xsdk change, the limit as it is, 1 MB
+   more than today for Dusklight's one tiled framebuffer and less for a title with several); or 1 MB with 512 KB a
+   pass, today's memory and half the limit; or xsdk recording a tiled pass into its own stream, an xsdk change, as a
+   pass would need room past the stream's 64 KB blocks (xsdk:src/gpu.c, `STREAM_BLOCKS`).
+3. **Dusklight's default:** 2 samples in this milestone if both scenes hold the bar (recommended), else it stays 1.
+4. **The GPU, if the bar is missed.** At 2 samples each tiled EFB pass draws its colour back in every band and resolves
+   it twice a band, into the multisampled image and into the resolve attachment, the same average both times
+   (docs/SUPPORT.md, Render passes), where an untiled pass at 1 sample skips a load eDRAM still holds and resolves only
+   its area. Recommended: a milestone of its own once this one's runs give the GPU's time without the idle gaps, a probe
+   of those costs its first step.
+5. **4 samples:** measured for the record, not a default (recommended), as its depth is in bands and drawn back by
+   every pass that loads it, and it replayed 12.8 ms a frame in step 5.
+
+**Size:** small. Step 1 is about 20 lines and one run by the agent; step 2 about 100 lines in src/queue.c,
+src/render_pass.c and src/objects.h, the framebuffers' recordings taken out; the checks and breaks about 150; then the
+runs above, of which only Ordon needs the user.
+
 ## 5. The Dusklight track
 
 An outline, made precise one milestone at a time. Each starts only when agreed.
