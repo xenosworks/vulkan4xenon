@@ -5,8 +5,9 @@ retail kernel. The goal it's measured against is **Dusklight**, a reimplementati
 the console through it.
 
 **Status.** Agreed on 2026-10-11. Milestones 1 to 7, 9 to 15 and 17 to 31 are done, 18 with its fourth step put off
-and 29 closed short of its targets; milestone 8 was tried and reverted. Milestones 16, Dusklight's menus, and 34,
-the FIFO worker, are being built, and 33, graphics options, is agreed.
+and 29 closed short of its targets; milestone 8 was tried and reverted. Milestone 34, the FIFO worker, closed short of
+its target, and milestone 16, Dusklight's menus, shipped in Dusklight's beta 1 without being closed; both are pushed.
+Milestone 33, graphics options, is agreed.
 Section 5 has the Dusklight track's order, agreed the same day; section 7 lists what's still open.
 
 **Constraints.** xsdk's, unchanged:
@@ -1885,6 +1886,21 @@ Each host check is also broken once in its own test.
 - **A clip mask lost between passes.** That would happen if another target took the stencil's tiles, and it would
   show as `ui_focus_inside` failing.
 - **The first open rasterises glyphs** with FreeType, which may hitch.
+
+**Shipped in Dusklight's beta 1 on 2026-10-22, by the user's choice, but not closed** (the runs' logs are in
+`xsdk:local/beta/v16`, outside the repository):
+- Run 3, before the review's fixes, passed every check twice, each break failed what it names, and the title used the
+  memory the control build did.
+- After the review's fixes and the memory the user chose (aurora-xenon `ca4e8c2`: RmlUi's textures kept, the UI's
+  image, layers and rings released once nothing shows), run 5's first pass passed 10 checks of 11. Its first `ui_idle`
+  failed because the config saved on the console had the FPS counter on from the start, so the UI drew from the boot.
+  `ui_released` passed: the image, layers and rings went from 11.6 MB to 0 once nothing showed.
+- Run 5's second pass stopped 17.7 s into the title scene, after the toast's check, with nothing in the log. That
+  isn't explained. The user then played the beta with a freeze logger in it and saw no freeze. The freeze the user
+  hit before came with Unlock Framerate on (milestone 34's closing note).
+- Pushed: aurora-xenon `a526001`, dusklight-xenon `e3a303e56a`.
+
+To close it: both passes clean, from a config with the defaults.
 
 ### Milestone 17: multisampling
 
@@ -4407,6 +4423,24 @@ user as their own scope, and this milestone closes on the worker's two targets.
 **Size:** medium. Step 1 about 200 lines of measurement code in `local/beta/v34`, two builds and two runs by the
 agent; steps 2-6 about 120 lines in Aurora and 80 of host tests; one A/B run and one verify run a step, the breaks, two
 final runs and the captures, about 15 runs of 9 minutes by the agent; one session of about 10 minutes by the user.
+
+**Closed on 2026-10-22 short of its target, by the user's choice** (the runs' logs are in `xsdk:local/beta/v34`,
+outside the repository):
+- Steps 2 to 4 are kept, each measured against the step before at the village spot:
+  - the FIFO processor on hardware thread 2 and the render worker on 4, with SDL's audio thread on 5
+    (`SDL_HINT_AUDIO_XSDK_HARDWARE_THREAD`, SDL-xenon `adb87a744`): 1.44 ms a frame;
+  - the pipeline memo keyed in 64 bits by the stages in use: 1.05 ms;
+  - XXH64 for the run's vertices and arrays: 0.45 ms.
+- Step 5, the decoder's early-outs, saved nothing, and was taken out.
+- The worker went from 18.90 to 15.89 ms a frame at the village spot, against the 15 ms target, and from 22.42 to
+  19.23 at the ranch.
+- Verify mode found no disagreement for a kept step, and it caught the decoder's break. Aurora's host tests passed on
+  the tree with milestone 16: 108 of 108 on the null backend, and 413 of 413 on Dawn, which doesn't build the UI's test
+  target.
+- The user's session was the beta, milestones 16 and 34 together, in Ordon. It was fine with Unlock Framerate off.
+  With it on, the game draws up to 60 frames a second, about twice the worker's time at 30, and the frame rate fell
+  into the teens on Epona. The beta's release notes tell testers to leave it off.
+- Pushed: aurora-xenon `fbaf27f`, SDL-xenon `adb87a744`, dusklight-xenon `c366f1156c`.
 
 ## 5. The Dusklight track
 
