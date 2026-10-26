@@ -104,6 +104,9 @@ static uint64_t fence_wait_ticks;
 static uint32_t fence_waits;
 static uint64_t logged_fence_wait_ticks;
 static uint32_t logged_fence_waits;
+// The layer's eDRAM counts and xsdk's, at the last log.
+static V4xEdramCounts logged_edram;
+static XsdkGpuStats logged_gpu_stats;
 // V4xProfileCount's counts, and theirs at the last log.
 static uint64_t counts[V4X_PROFILE_COUNTS];
 static uint64_t logged_counts[V4X_PROFILE_COUNTS];
@@ -602,14 +605,37 @@ static void log_trace(void)
 	}
 }
 
+// A count's line, in tenths a present.
+static void log_count(const char *what, uint64_t count, uint32_t presents)
+{
+	const uint32_t tenths = each(count * 10, presents);
+	xsdk_log_write("vulkan4xenon: profile, the last 10 s: %s, %u.%u a present", what, (unsigned)(tenths / 10),
+		(unsigned)(tenths % 10));
+}
+
+// Since the last log: what passes did to eDRAM, and xsdk's waits for room in its ring, each a present.
+static void log_edram(uint32_t presents)
+{
+	const V4xEdramCounts edram = v4x_edram_counts();
+	XsdkGpuStats stats;
+	xsdk_gpu_stats(&stats);
+	log_count("images drawn back", edram.drawn_back - logged_edram.drawn_back, presents);
+	log_count("resolves made to clear", edram.clear_resolves - logged_edram.clear_resolves, presents);
+	log_count("resolves put off", edram.resolves_put_off - logged_edram.resolves_put_off, presents);
+	log_count("put-off resolves made later", edram.late_resolves - logged_edram.late_resolves, presents);
+	log_count("xsdk's waits for room in its ring", stats.waits - logged_gpu_stats.waits, presents);
+	log_count("microseconds of them", stats.waited_us - logged_gpu_stats.waited_us, presents);
+	logged_edram = edram;
+	logged_gpu_stats = stats;
+}
+
 // Since the last log, each count a present.
 static void log_counts(void)
 {
 	const uint32_t presents = totals.presents - logged.presents;
+	log_edram(presents);
 	for (uint32_t c = 0; c < V4X_PROFILE_COUNTS; c++) {
-		const uint32_t tenths = each((counts[c] - logged_counts[c]) * 10, presents);
-		xsdk_log_write("vulkan4xenon: profile, the last 10 s: %s, %u.%u a present", count_names[c],
-			(unsigned)(tenths / 10), (unsigned)(tenths % 10));
+		log_count(count_names[c], counts[c] - logged_counts[c], presents);
 		logged_counts[c] = counts[c];
 	}
 }

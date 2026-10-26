@@ -95,10 +95,13 @@ typedef struct {
 	float rgba[4];
 	float depth;
 	uint32_t stencil;
-	const struct Image *image;
+	struct Image *image;
 	uint32_t tile;
 	uint32_t format;
 	VkRect2D area;
+	// A colour image's contents newer than its memory: the pass that drew them put its resolve off (queue.c,
+	// resolve_can_wait), so it's resolved before anything reads the image or eDRAM loses it.
+	bool unresolved;
 } EdramPart;
 
 // The layer's own shaders and state for drawing an image back into eDRAM, for vkCmdClearAttachments's rectangles, and

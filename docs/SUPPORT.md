@@ -427,6 +427,14 @@ Some are there to refuse, as the features they need aren't reported. Each logs w
     tiles;
   - its end resolves each colour target's area into its attachment's image, converted to the image's format
     (`xsdk_gpu_resolve_target`, or `xsdk_gpu_resolve_texture_rect` for a smaller area);
+  - but puts a resolve off where nothing can read the image before its next pass (milestone 66): a whole pass at one
+    sample, of the image's size, clearing nothing for the next pass, after whose end, within the command buffer's
+    next 256 commands, a pass draws into the image again before any draw whose bound sets view it through a combined
+    image sampler, and before any command but binds, pushes, dynamic state, buffer copies, attachment clears and
+    queries. eDRAM keeps the image unresolved till that pass, which puts it off again or resolves it. One left
+    unresolved is resolved first when eDRAM loses it, when a pass writes its image elsewhere or stores less than all
+    of it, and at the end of its command buffer. So an emulator drawing a framebuffer a sprite at a time between
+    passes of other framebuffers resolves it once;
   - the layer tracks what up to eight colour targets hold, the newest passes', at their tiles and in their formats,
     each lost when a pass's colour or depth reaches its tiles, and what each depth holds, and over which rectangle:
     values a resolve cleared it to, at a framebuffer's size, or an image's contents;

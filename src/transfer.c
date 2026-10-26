@@ -1,6 +1,7 @@
 #include "transfer.h"
 
 #include <altivec.h>
+#include <assert.h>
 #include <math.h>
 #include <string.h>
 
@@ -115,8 +116,11 @@ static void image_written(VkQueue queue, const Image *image)
 {
 	xsdk_gpu_invalidate(image->texture.address, image->texture.size_bytes);
 	for (uint32_t i = 0; i < V4X_EDRAM_COLORS; i++) {
-		if (queue->colors[i].image == image)
-			queue->colors[i] = (EdramPart){ .contents = EDRAM_UNKNOWN };
+		if (queue->colors[i].image != image)
+			continue;
+		// A copy ends a put-off resolve's wait before it (queue.c, resolve_can_wait).
+		assert(!queue->colors[i].unresolved);
+		queue->colors[i] = (EdramPart){ .contents = EDRAM_UNKNOWN };
 	}
 }
 

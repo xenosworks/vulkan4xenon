@@ -11,7 +11,8 @@
 
 // Render passes going back and forth between framebuffers (milestone 66): three of 1280x720, 720 tiles each, more than
 // eDRAM's 2048 hold, so going back to them draws one back, every texel kept; a main one with depth and a small one
-// drawn between its passes, as an emulator's palette blits go, kept in eDRAM side by side so neither is drawn back;
+// drawn between its passes, as an emulator's palette blits go, kept in eDRAM side by side so neither is drawn back,
+// each pass's resolve put off till a pass samples the main one into a copy, then made before it;
 // then part of the main one blitted into the small one on the GPU while eDRAM holds the small one past the blit's
 // tiles, so the pass loading it after draws it back with the blit.
 
@@ -28,6 +29,12 @@ enum {
 	FENCE_TIMEOUT_NS = 1000000000,
 	// The main framebuffer's texels probed, and each big one's.
 	MAIN_PROBES = ROUNDS + 4,
+	// After this round, the main framebuffer is sampled into a copy of the small one's size, its texels probed.
+	SAMPLED_ROUND = 2,
+	COPY_PROBES = 6,
+	VERTEX_FLOATS = 6,
+	UV_OFFSET_BYTES = 16,
+	QUAD_VERTICES = 6,
 	BIG_PROBES = 3,
 	BLIT_PROBES = 3,
 	// The main framebuffer's square blitted into the whole small one, inside its first quad.
@@ -38,6 +45,7 @@ enum {
 typedef enum {
 	IMAGE_MAIN,
 	IMAGE_SMALL,
+	IMAGE_COPY,
 	IMAGE_BIG,
 	IMAGES = IMAGE_BIG + BIGS,
 } ImageKind;
@@ -62,12 +70,22 @@ typedef struct {
 	VkRenderPass passes[PASSES];
 	VkFramebuffer main;
 	VkFramebuffer small;
+	VkFramebuffer copy;
 	VkFramebuffer bigs[BIGS];
 	VkPipelineLayout layout;
 	VkPipeline depth_pipeline;
 	VkPipeline flat_pipeline;
 	VkBuffer quad;
 	VkDeviceMemory quad_memory;
+	// texture.vert and texture.frag drawing the main framebuffer over the copy.
+	VkDescriptorSetLayout set_layout;
+	VkPipelineLayout texture_layout;
+	VkPipeline texture_pipeline;
+	VkSampler sampler;
+	VkDescriptorPool pool;
+	VkDescriptorSet set;
+	VkBuffer image_quad;
+	VkDeviceMemory image_quad_memory;
 } Parts;
 
 typedef struct {
@@ -109,6 +127,33 @@ static const Probe blit_probes[BLIT_PROBES] = {
 	{ "the main framebuffer's first quad blitted in", 8, 8, { 220, 40, 40 } },
 	{ "more of it", 20, 50, { 220, 40, 40 } },
 	{ "the quad drawn after the blit", 48, 48, { 40, 200, 200 } },
+};
+
+// Clip space, then texture coordinates, over the whole viewport.
+static const float image_quad[QUAD_VERTICES][VERTEX_FLOATS] = {
+	{ -1.0f, -1.0f, 0.0f, 1.0f, 0.0f, 0.0f },
+	{ 1.0f, -1.0f, 0.0f, 1.0f, 1.0f, 0.0f },
+	{ -1.0f, 1.0f, 0.0f, 1.0f, 0.0f, 1.0f },
+	{ 1.0f, -1.0f, 0.0f, 1.0f, 1.0f, 0.0f },
+	{ 1.0f, 1.0f, 0.0f, 1.0f, 1.0f, 1.0f },
+	{ -1.0f, 1.0f, 0.0f, 1.0f, 0.0f, 1.0f },
+};
+
+static const VkVertexInputBindingDescription image_binding = { 0, VERTEX_FLOATS * 4, VK_VERTEX_INPUT_RATE_VERTEX };
+static const VkVertexInputAttributeDescription image_attributes[] = {
+	{ .location = 0, .binding = 0, .format = VK_FORMAT_R32G32B32A32_SFLOAT, .offset = 0 },
+	{ .location = 1, .binding = 0, .format = VK_FORMAT_R32G32_SFLOAT, .offset = UV_OFFSET_BYTES },
+};
+
+// The copy's texel x, y samples the main framebuffer's nearest to (x + 0.5) * 5, (y + 0.5) * 3: the first quad, the
+// rounds' before the copy, the clear colour where round 3's goes after it, and the clear colour.
+static const Probe copy_probes[COPY_PROBES] = {
+	{ "the first quad", 10, 10, { 220, 40, 40 } },
+	{ "round 0's quad", 28, 9, { 40, 200, 40 } },
+	{ "round 1's quad", 34, 9, { 230, 210, 30 } },
+	{ "round 2's quad", 40, 9, { 40, 200, 200 } },
+	{ "the clear colour, round 3's quad after the copy", 46, 9, { 0, 0, 96 } },
+	{ "the clear colour", 60, 50, { 0, 0, 96 } },
 };
 
 static HarnessQuad round_quad(uint32_t round)
@@ -196,8 +241,9 @@ static VkResult create_framebuffer(const Harness *harness, VkRenderPass render_p
 
 static VkResult create_targets(const Harness *harness, Parts *parts)
 {
-	static const uint32_t widths[IMAGES] = { MAIN_WIDTH, SMALL_WIDTH, BIG_WIDTH, BIG_WIDTH, BIG_WIDTH };
-	static const uint32_t heights[IMAGES] = { MAIN_HEIGHT, SMALL_HEIGHT, BIG_HEIGHT, BIG_HEIGHT, BIG_HEIGHT };
+	static const uint32_t widths[IMAGES] = { MAIN_WIDTH, SMALL_WIDTH, SMALL_WIDTH, BIG_WIDTH, BIG_WIDTH, BIG_WIDTH };
+	static const uint32_t heights[IMAGES] = { MAIN_HEIGHT, SMALL_HEIGHT, SMALL_HEIGHT, BIG_HEIGHT, BIG_HEIGHT,
+		BIG_HEIGHT };
 	const VkImageUsageFlags usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
 		VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 	VkResult result = VK_SUCCESS;
@@ -229,6 +275,9 @@ static VkResult create_targets(const Harness *harness, Parts *parts)
 	if (result == VK_SUCCESS)
 		result = create_framebuffer(harness, parts->passes[PASS_SMALL], &parts->views[IMAGE_SMALL], 1, SMALL_WIDTH,
 			SMALL_HEIGHT, &parts->small);
+	if (result == VK_SUCCESS)
+		result = create_framebuffer(
+			harness, parts->passes[PASS_SMALL], &parts->views[IMAGE_COPY], 1, SMALL_WIDTH, SMALL_HEIGHT, &parts->copy);
 	for (uint32_t i = 0; i < BIGS && result == VK_SUCCESS; i++)
 		result = create_framebuffer(harness, parts->passes[PASS_BIG_CLEAR], &parts->views[IMAGE_BIG + i], 1, BIG_WIDTH,
 			BIG_HEIGHT, &parts->bigs[i]);
@@ -259,12 +308,94 @@ static VkResult create_pipeline(const Harness *harness, const Parts *parts, bool
 	return harness_pipeline(harness, &spec, parts->passes[depth ? PASS_MAIN_CLEAR : PASS_SMALL], pipeline);
 }
 
+// A set viewing the main framebuffer through a nearest sampler, and the pipeline drawing it over a target.
+static VkResult create_sampling(const Harness *harness, Parts *parts)
+{
+	const VkDescriptorSetLayoutBinding binding = {
+		.binding = 0,
+		.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+		.descriptorCount = 1,
+		.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+	};
+	const VkDescriptorSetLayoutCreateInfo set_info = {
+		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+		.bindingCount = 1,
+		.pBindings = &binding,
+	};
+	VkResult result = vkCreateDescriptorSetLayout(harness->device, &set_info, NULL, &parts->set_layout);
+	const VkPipelineLayoutCreateInfo layout_info = {
+		.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+		.setLayoutCount = 1,
+		.pSetLayouts = &parts->set_layout,
+	};
+	if (result == VK_SUCCESS)
+		result = vkCreatePipelineLayout(harness->device, &layout_info, NULL, &parts->texture_layout);
+	const VkSamplerCreateInfo sampler_info = {
+		.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+		.magFilter = VK_FILTER_NEAREST,
+		.minFilter = VK_FILTER_NEAREST,
+		.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
+		.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+		.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+		.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+	};
+	if (result == VK_SUCCESS)
+		result = vkCreateSampler(harness->device, &sampler_info, NULL, &parts->sampler);
+	const VkDescriptorPoolSize size = { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1 };
+	const VkDescriptorPoolCreateInfo pool_info = {
+		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+		.maxSets = 1,
+		.poolSizeCount = 1,
+		.pPoolSizes = &size,
+	};
+	if (result == VK_SUCCESS)
+		result = vkCreateDescriptorPool(harness->device, &pool_info, NULL, &parts->pool);
+	const VkDescriptorSetAllocateInfo allocate_info = {
+		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+		.descriptorPool = parts->pool,
+		.descriptorSetCount = 1,
+		.pSetLayouts = &parts->set_layout,
+	};
+	if (result == VK_SUCCESS)
+		result = vkAllocateDescriptorSets(harness->device, &allocate_info, &parts->set);
+	if (result != VK_SUCCESS)
+		return result;
+	const VkDescriptorImageInfo image = { parts->sampler, parts->views[IMAGE_MAIN],
+		VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
+	const VkWriteDescriptorSet write = {
+		.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+		.dstSet = parts->set,
+		.descriptorCount = 1,
+		.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+		.pImageInfo = &image,
+	};
+	vkUpdateDescriptorSets(harness->device, 1, &write, 0, NULL);
+	const HarnessPipeline spec = {
+		.vertex_spirv = texture_vert_spirv,
+		.vertex_bytes = TEXTURE_VERT_SPIRV_BYTES,
+		.fragment_spirv = texture_frag_spirv,
+		.fragment_bytes = TEXTURE_FRAG_SPIRV_BYTES,
+		.bindings = &image_binding,
+		.binding_count = 1,
+		.attributes = image_attributes,
+		.attribute_count = 2,
+		.layout = parts->texture_layout,
+		.dynamic_viewport = true,
+	};
+	result = harness_pipeline(harness, &spec, parts->passes[PASS_SMALL], &parts->texture_pipeline);
+	if (result == VK_SUCCESS)
+		result = harness_buffer(harness, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, image_quad, sizeof image_quad,
+			&parts->image_quad, &parts->image_quad_memory);
+	return result;
+}
+
 static bool build(const Harness *harness, Parts *parts)
 {
 	bool ok = harness_ok("edram parts targets", create_targets(harness, parts));
 	ok = ok && harness_ok("edram parts layout", harness_push_layout(harness, &parts->layout));
 	ok = ok && harness_ok("edram parts quad", harness_quad_buffer(harness, &parts->quad, &parts->quad_memory));
 	ok = ok && harness_ok("edram parts pipeline", create_pipeline(harness, parts, true, &parts->depth_pipeline));
+	ok = ok && harness_ok("edram parts sampling", create_sampling(harness, parts));
 	return ok && harness_ok("edram parts pipeline", create_pipeline(harness, parts, false, &parts->flat_pipeline));
 }
 
@@ -308,6 +439,16 @@ static void record_main(VkCommandBuffer commands, const Parts *parts)
 		begin(commands, parts, load, parts->main, MAIN_WIDTH, MAIN_HEIGHT, NULL, 0, parts->depth_pipeline);
 		const HarnessQuad quad = round_quad(r);
 		harness_push_quad_in(commands, parts->layout, &quad, MAIN_WIDTH, MAIN_HEIGHT);
+		vkCmdEndRenderPass(commands);
+		if (r != SAMPLED_ROUND)
+			continue;
+		begin(commands, parts, parts->passes[PASS_SMALL], parts->copy, SMALL_WIDTH, SMALL_HEIGHT, NULL, 0,
+			parts->texture_pipeline);
+		const VkDeviceSize offset = 0;
+		vkCmdBindDescriptorSets(
+			commands, VK_PIPELINE_BIND_POINT_GRAPHICS, parts->texture_layout, 0, 1, &parts->set, 0, NULL);
+		vkCmdBindVertexBuffers(commands, 0, 1, &parts->image_quad, &offset);
+		vkCmdDraw(commands, QUAD_VERTICES, 1, 0, 0);
 		vkCmdEndRenderPass(commands);
 	}
 	begin(commands, parts, load, parts->main, MAIN_WIDTH, MAIN_HEIGHT, NULL, 0, parts->depth_pipeline);
@@ -437,6 +578,13 @@ static uint32_t big_misses(const Harness *harness, const Parts *parts)
 static void destroy(const Harness *harness, Parts *parts)
 {
 	const VkDevice device = harness->device;
+	vkDestroyBuffer(device, parts->image_quad, NULL);
+	vkFreeMemory(device, parts->image_quad_memory, NULL);
+	vkDestroyPipeline(device, parts->texture_pipeline, NULL);
+	vkDestroyDescriptorPool(device, parts->pool, NULL);
+	vkDestroySampler(device, parts->sampler, NULL);
+	vkDestroyPipelineLayout(device, parts->texture_layout, NULL);
+	vkDestroyDescriptorSetLayout(device, parts->set_layout, NULL);
 	vkDestroyBuffer(device, parts->quad, NULL);
 	vkFreeMemory(device, parts->quad_memory, NULL);
 	vkDestroyPipeline(device, parts->flat_pipeline, NULL);
@@ -444,6 +592,7 @@ static void destroy(const Harness *harness, Parts *parts)
 	vkDestroyPipelineLayout(device, parts->layout, NULL);
 	for (uint32_t i = 0; i < BIGS; i++)
 		vkDestroyFramebuffer(device, parts->bigs[i], NULL);
+	vkDestroyFramebuffer(device, parts->copy, NULL);
 	vkDestroyFramebuffer(device, parts->small, NULL);
 	vkDestroyFramebuffer(device, parts->main, NULL);
 	for (uint32_t i = 0; i < PASSES; i++)
@@ -463,7 +612,7 @@ void test_edram_parts(const Harness *harness)
 	static Parts parts;
 	memset(&parts, 0, sizeof parts);
 	const bool built = build(harness, &parts);
-	check("edram parts: five images, six render passes and two pipelines made", built);
+	check("edram parts: six images, six render passes and three pipelines made", built);
 	// The big ones first, so one holds tile 0 and the main one goes past the blit's tiles.
 	const uint32_t before = v4x_edram_counts().drawn_back;
 	const bool bigs_ran = built && run(harness, &parts, record_bigs);
@@ -473,17 +622,24 @@ void test_edram_parts(const Harness *harness)
 		bigs_ran && big_drawn >= 1);
 	check("edram parts: each holds its clear colour, its quad and the quad drawn once loaded again",
 		bigs_ran && big_misses(harness, &parts) == 0);
-	const uint32_t between = v4x_edram_counts().drawn_back;
+	const V4xEdramCounts between = v4x_edram_counts();
 	const bool main_ran = built && run(harness, &parts, record_main);
-	const uint32_t main_drawn = v4x_edram_counts().drawn_back - between;
+	const uint32_t main_drawn = v4x_edram_counts().drawn_back - between.drawn_back;
+	const uint32_t put_off = v4x_edram_counts().resolves_put_off - between.resolves_put_off;
 	check("edram parts: a main framebuffer with depth loaded after each of 6 small passes, none drawn back",
 		main_ran && main_drawn == 0);
 	check("edram parts: the main framebuffer holds every quad, its depth kept, and the small one its last",
 		main_ran && main_misses(harness, &parts) == 0);
+	check("edram parts: those passes' ends put their resolves off till their next passes, 6 times at least",
+		main_ran && put_off >= ROUNDS);
+	check("edram parts: the copy sampled from the main framebuffer after round 2 holds it as it was then",
+		main_ran && misses(harness, &parts, IMAGE_COPY, SMALL_WIDTH, copy_probes, COPY_PROBES) == 0);
 	const bool blit_ran = main_ran && run(harness, &parts, record_blit);
 	check("edram parts: the small framebuffer loaded after a blit into it on the GPU holds the blit, drawn back",
 		blit_ran && misses(harness, &parts, IMAGE_SMALL, SMALL_WIDTH, blit_probes, BLIT_PROBES) == 0);
-	xsdk_log_write("edram parts: drawn back %u with the small passes, %u going back to the big ones",
-		(unsigned)main_drawn, (unsigned)big_drawn);
+	xsdk_log_write(
+		"edram parts: drawn back %u with the small passes, %u going back to the big ones; %u resolves put off with the "
+		"small passes",
+		(unsigned)main_drawn, (unsigned)big_drawn, (unsigned)put_off);
 	destroy(harness, &parts);
 }

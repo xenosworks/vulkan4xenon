@@ -27,6 +27,8 @@ enum {
 	VISIBILITY_WORD_IDS = XSDK_VISIBILITY_IDS / 2,
 	// The push constants in quads of 16 bytes, a float constant register each.
 	PUSH_QUADS = V4X_MAX_PUSH_CONSTANT_BYTES / 16,
+	// The commands after a pass's end looked through for what reads its image before its next pass (resolve_can_wait).
+	RESOLVE_SCAN_COMMANDS = 256,
 };
 
 typedef struct {
@@ -563,7 +565,7 @@ static EdramPart cleared_depth(
 		.area = area };
 }
 
-static EdramPart holding(const Image *image, uint32_t tile, VkRect2D area)
+static EdramPart holding(Image *image, uint32_t tile, VkRect2D area)
 {
 	return (EdramPart){ .contents = EDRAM_IMAGE,
 		.width = image->width,
@@ -807,6 +809,36 @@ static void place_colors(VkQueue queue, Replay *replay)
 			(XsdkColorTarget){ .format = framebuffer->targets[i].format, .tile = first + framebuffer->targets[i].tile };
 }
 
+// A colour part's contents eDRAM holds newer than its image, a pass's resolve put off, resolved into the image; the
+// targets must be set again after.
+static void resolve_part(EdramPart *part, uint32_t serial)
+{
+	static const float none[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+	const XsdkColorTarget target = { .format = part->format, .tile = part->tile };
+	const uint32_t depth_tile =
+		XSDK_EDRAM_TILES - xsdk_gpu_target_sample_tiles(part->width, part->height, part->samples);
+	xsdk_gpu_set_targets_samples(part->width, part->height, part->samples, &target, 1, depth_tile);
+	xsdk_gpu_set_resolve_clears(false, false);
+	xsdk_gpu_resolve_target(0, &part->image->texture, none);
+	part->image->used_serial = serial;
+	part->unresolved = false;
+	edram_counts.late_resolves++;
+}
+
+// A colour part eDRAM is about to lose, resolved first if its resolve was put off; the targets must be set again after.
+static void lose_part(EdramPart *part, uint32_t serial)
+{
+	if (part->unresolved)
+		resolve_part(part, serial);
+	*part = (EdramPart){ .contents = EDRAM_UNKNOWN };
+}
+
+static void lose_parts(VkQueue queue, uint32_t serial)
+{
+	for (uint32_t i = 0; i < V4X_EDRAM_COLORS; i++)
+		lose_part(&queue->colors[i], serial);
+}
+
 // Whether the pass draws or resolves into an image: one of its colour attachments or their resolve attachments.
 static bool pass_writes(const Replay *replay, const Image *image)
 {
@@ -817,35 +849,61 @@ static bool pass_writes(const Replay *replay, const Image *image)
 	return false;
 }
 
+// Whether a part is one the pass keeps as its own: its target i's image where it placed target i.
+static bool own_part(const EdramPart *part, const Replay *replay)
+{
+	for (uint32_t i = 0; i < replay->render_pass->color_count; i++) {
+		if (part->contents == EDRAM_IMAGE && part->image == replay->framebuffer->attachments[i] &&
+			part->tile == replay->targets[i].tile && part->format == replay->targets[i].format)
+			return true;
+	}
+	return false;
+}
+
 // The colour parts the pass's colour targets or depth reach are lost, as it draws over them, and so are those of the
-// images it writes, which it holds afresh where it placed them (begin_render_pass keeps its own).
+// images it writes, which it holds afresh where it placed them; each resolved first if its resolve was put off, but
+// for the pass's own, which begin_render_pass keeps.
 static void forget_colors(VkQueue queue, const Replay *replay)
 {
 	const Framebuffer *const framebuffer = replay->framebuffer;
 	const bool has_depth = replay->render_pass->has_depth;
 	for (uint32_t i = 0; i < V4X_EDRAM_COLORS; i++) {
 		EdramPart *const part = &queue->colors[i];
-		if (color_overlaps(part, replay->color_tile, framebuffer->color_tiles) ||
-			(has_depth && color_overlaps(part, replay->depth_tile, depth_tiles(framebuffer))) ||
-			(part->contents == EDRAM_IMAGE && pass_writes(replay, part->image)))
+		if (!color_overlaps(part, replay->color_tile, framebuffer->color_tiles) &&
+			!(has_depth && color_overlaps(part, replay->depth_tile, depth_tiles(framebuffer))) &&
+			!(part->contents == EDRAM_IMAGE && pass_writes(replay, part->image)))
+			continue;
+		if (own_part(part, replay))
 			*part = (EdramPart){ .contents = EDRAM_UNKNOWN };
+		else
+			lose_part(part, replay->serial);
 	}
 }
 
-// The pass's parts first, target i's at i for its end; then the others kept, newest first, as many as fit.
-static void keep_colors(VkQueue queue, const EdramPart *parts, uint32_t count)
+// The pass's parts first, target i's at i for its end; then the others kept, newest first, as many as fit, those that
+// don't resolved if their resolves were put off. Returns whether one was, so the targets must be set again.
+static bool keep_colors(VkQueue queue, const EdramPart *parts, uint32_t count, uint32_t serial)
 {
 	EdramPart kept[V4X_EDRAM_COLORS];
 	uint32_t n = 0;
+	bool resolved = false;
 	for (; n < count; n++)
 		kept[n] = parts[n];
-	for (uint32_t i = 0; i < V4X_EDRAM_COLORS && n < V4X_EDRAM_COLORS; i++) {
-		if (queue->colors[i].contents != EDRAM_UNKNOWN)
-			kept[n++] = queue->colors[i];
+	for (uint32_t i = 0; i < V4X_EDRAM_COLORS; i++) {
+		EdramPart *const part = &queue->colors[i];
+		if (part->contents == EDRAM_UNKNOWN)
+			continue;
+		if (n < V4X_EDRAM_COLORS) {
+			kept[n++] = *part;
+		} else {
+			resolved = resolved || part->unresolved;
+			lose_part(part, serial);
+		}
 	}
 	for (; n < V4X_EDRAM_COLORS; n++)
 		kept[n] = (EdramPart){ .contents = EDRAM_UNKNOWN };
 	memcpy(queue->colors, kept, sizeof kept);
+	return resolved;
 }
 
 // Depth never leaves eDRAM, so loading it after eDRAM lost it finds undefined contents.
@@ -884,6 +942,8 @@ static void draw_back(VkQueue queue, const Replay *replay, EdramPart *colors)
 	for (uint32_t i = 0; i < render_pass->color_count; i++) {
 		if (render_pass->load_ops[i] != VK_ATTACHMENT_LOAD_OP_LOAD || color_ready(&colors[i], replay, i))
 			continue;
+		// Its resolve was put off only for a whole pass, whose area holds any load's.
+		assert(!colors[i].unresolved);
 		if (render_pass->color_count > 1)
 			set_one_target(replay, i);
 		v4x_profile_pass_event(V4X_PROFILE_DRAWN_BACK);
@@ -952,7 +1012,8 @@ static void begin_render_pass(VkQueue queue, Replay *replay)
 		clear_image_depth(queue, replay, &queue->depths[replay->depth_part]);
 	draw_back(queue, replay, colors);
 	clear_targets(queue, replay, colors);
-	keep_colors(queue, colors, render_pass->color_count);
+	if (keep_colors(queue, colors, render_pass->color_count, replay->serial))
+		set_target(replay);
 	replay->pipeline_dirty = true;
 	replay->clip_planes_on = false;
 	// Drawing an image back and resolves point streams and slots of their own.
@@ -1021,11 +1082,104 @@ static VkRect2D stored_area(const EdramPart *color, const Image *image, const Vk
 	return held ? color->area : *rect;
 }
 
-// Each stored target's area is resolved into its attachment, the first of them clearing depth for the next pass too; a
-// sampled depth image takes the whole of eDRAM's depth, which holds it all. A multisampled target's average goes into
-// its resolve attachment first, clearing nothing if its own image takes it too.
-static void end_render_pass(VkQueue queue, Replay *replay, Image *resolved_depth, const Command *next,
-	const PassClears *next_clears, const VkRect2D *next_area)
+// Whether a pass draws into the image as a colour attachment, so its own resolve may wait for it; one that resolves
+// into it or takes it as depth reads or writes its memory first.
+static bool pass_draws_into(const Command *begin, const Image *image, bool *touches)
+{
+	const Framebuffer *const framebuffer = begin->begin.framebuffer;
+	*touches = framebuffer->depth == image;
+	for (uint32_t i = 0; i < begin->begin.render_pass->color_count; i++) {
+		*touches = *touches || framebuffer->resolves[i] == image;
+		if (framebuffer->attachments[i] == image)
+			return true;
+	}
+	return false;
+}
+
+// Whether a draw with these sets bound may sample the image, through any combined image sampler viewing it.
+static bool sets_view(const DescriptorSet *const *sets, const Image *image)
+{
+	for (uint32_t s = 0; s < V4X_MAX_DESCRIPTOR_SETS; s++) {
+		for (uint32_t b = 0; sets[s] && b < V4X_MAX_DESCRIPTOR_BINDINGS; b++) {
+			if (sets[s]->layout->bindings[b].type == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER &&
+				sets[s]->descriptors[b].image == image)
+				return true;
+		}
+	}
+	return false;
+}
+
+// Whether an image a whole pass stored can stay in eDRAM unresolved: within the scan's reach after the pass's end, a
+// pass draws into it again before any draw may sample it or a command but those below runs; replay is in order, as
+// vkCmdPipelineBarrier records nothing. The rest of the command buffer may read it, so its end resolves what's left.
+static bool resolve_can_wait(VkCommandBuffer buffer, uint32_t end, const Replay *replay, const Image *image)
+{
+	const DescriptorSet *sets[V4X_MAX_DESCRIPTOR_SETS];
+	memcpy(sets, replay->sets, sizeof sets);
+	const uint32_t last = buffer->count - end > RESOLVE_SCAN_COMMANDS ? end + RESOLVE_SCAN_COMMANDS : buffer->count;
+	for (uint32_t c = end + 1; c < last; c++) {
+		const Command *const command = &buffer->commands[c];
+		bool touches = false;
+		switch (command->type) {
+		case COMMAND_BEGIN_RENDER_PASS:
+			if (pass_draws_into(command, image, &touches))
+				return true;
+			if (touches)
+				return false;
+			break;
+		case COMMAND_BIND_DESCRIPTOR_SET:
+			sets[command->descriptor_set.index] = command->descriptor_set.set;
+			break;
+		case COMMAND_DRAW:
+		case COMMAND_DRAW_INDEXED:
+		case COMMAND_DRAW_INDIRECT:
+		case COMMAND_DRAW_INDEXED_INDIRECT:
+			if (sets_view(sets, image))
+				return false;
+			break;
+		case COMMAND_END_RENDER_PASS:
+		case COMMAND_BIND_PIPELINE:
+		case COMMAND_BIND_VERTEX_BUFFER:
+		case COMMAND_BIND_INDEX_BUFFER:
+		case COMMAND_PUSH_CONSTANTS:
+		case COMMAND_SET_VIEWPORT:
+		case COMMAND_SET_SCISSOR:
+		case COMMAND_SET_STENCIL:
+		case COMMAND_SET_DEPTH_BIAS:
+		case COMMAND_SET_BLEND_CONSTANTS:
+		case COMMAND_CLEAR_ATTACHMENTS:
+		case COMMAND_COPY_BUFFER:
+		case COMMAND_UPDATE_BUFFER:
+		case COMMAND_FILL_BUFFER:
+		case COMMAND_BEGIN_QUERY:
+		case COMMAND_END_QUERY:
+		case COMMAND_WRITE_TIMESTAMP:
+			break;
+		// Copies, blits, image clears, events and secondary command buffers may read it.
+		default:
+			return false;
+		}
+	}
+	return false;
+}
+
+// Whether target i's resolve can wait: a whole pass at one sample, of its image's size, stored with nothing cleared, as
+// resolve_part resolves it.
+static bool put_off(VkCommandBuffer buffer, uint32_t index, const Replay *replay, uint32_t i)
+{
+	const Framebuffer *const framebuffer = replay->framebuffer;
+	const Image *const image = framebuffer->attachments[i];
+	return whole_area(replay) && framebuffer->samples == 1 && image->width == framebuffer->width &&
+		image->height == framebuffer->height && !framebuffer->resolves[i] &&
+		resolve_can_wait(buffer, index, replay, image);
+}
+
+// Each stored target's area is resolved into its attachment, the first of them clearing depth for the next pass too, or
+// left unresolved where nothing reads it before its next pass (put_off); a sampled depth image takes the whole of
+// eDRAM's depth, which holds it all. A multisampled target's average goes into its resolve attachment first, clearing
+// nothing if its own image takes it too.
+static void end_render_pass(VkQueue queue, VkCommandBuffer buffer, uint32_t index, Replay *replay,
+	Image *resolved_depth, const Command *next, const PassClears *next_clears, const VkRect2D *next_area)
 {
 	const RenderPass *const render_pass = replay->render_pass;
 	const Framebuffer *const framebuffer = replay->framebuffer;
@@ -1042,22 +1196,32 @@ static void end_render_pass(VkQueue queue, Replay *replay, Image *resolved_depth
 	for (uint32_t i = 0; i < render_pass->color_count; i++) {
 		Image *const resolved = framebuffer->resolves[i];
 		const bool stores = render_pass->store_ops[i] == VK_ATTACHMENT_STORE_OP_STORE;
+		// What a whole pass left unresolved goes in first, as a pass of a smaller area keeps the image around it.
+		const bool whole_put_off = queue->colors[i].unresolved && (!stores || !whole_area(replay));
+		if (whole_put_off)
+			resolve_part(&queue->colors[i], replay->serial);
 		if (!stores && !resolved) {
 			queue->colors[i] = (EdramPart){ .contents = EDRAM_UNKNOWN };
 			continue;
 		}
+		if (whole_put_off)
+			set_target(replay);
 		const float *rgba;
 		const bool clear_color = end_color_clear(replay, i, next, next_clears, next_area, &rgba);
 		if (clear_depth)
 			set_depth_clear(queue, depth, stencil);
 		const VkRect2D stored = stored_area(&queue->colors[i], framebuffer->attachments[i], &replay->area);
-		v4x_profile_pass_event(V4X_PROFILE_END_RESOLVE);
+		const bool waits = stores && !clear_color && !clear_depth && put_off(buffer, index, replay, i);
 		if (resolved)
 			resolve(resolved, i, replay, clear_color && !stores, clear_depth && !stores, rgba);
-		if (stores)
+		if (stores && !waits)
 			resolve(framebuffer->attachments[i], i, replay, clear_color, clear_depth, rgba);
+		if (resolved || !waits)
+			v4x_profile_pass_event(V4X_PROFILE_END_RESOLVE);
+		edram_counts.resolves_put_off += waits;
 		queue->colors[i] =
 			clear_color ? cleared_color(replay, i, rgba, replay->area) : holding_color(replay, i, stored);
+		queue->colors[i].unresolved = waits;
 		if (clear_depth)
 			*depth_part = cleared_depth(framebuffer, replay->depth_tile, depth, stencil, replay->area);
 		clear_depth = false;
@@ -1087,8 +1251,7 @@ static void keep_tiled_depth(VkQueue queue, Replay *replay)
 	}
 	for (uint32_t i = 0; i < V4X_EDRAM_DEPTHS; i++)
 		queue->depths[i] = i ? (EdramPart){ .contents = EDRAM_UNKNOWN } : kept;
-	for (uint32_t i = 0; i < V4X_EDRAM_COLORS; i++)
-		queue->colors[i] = (EdramPart){ .contents = EDRAM_UNKNOWN };
+	lose_parts(queue, replay->serial);
 	replay->depth_part = 0;
 	replay->depth_tile = tile;
 }
@@ -1328,7 +1491,7 @@ static void draw_blit(VkQueue queue, Replay *replay, const DrawnBlit *blit)
 	const VkRect2D stored = stored_area(&held, destination, rect);
 	for (uint32_t i = 0; i < V4X_EDRAM_COLORS; i++) {
 		if (color_overlaps(&queue->colors[i], 0, tiles) || queue->colors[i].image == destination)
-			queue->colors[i] = (EdramPart){ .contents = EDRAM_UNKNOWN };
+			lose_part(&queue->colors[i], replay->serial);
 	}
 	const uint32_t depth_tile = XSDK_EDRAM_TILES - xsdk_gpu_target_tiles(destination->width, destination->height);
 	xsdk_gpu_set_targets(destination->width, destination->height, &target, 1, depth_tile);
@@ -1342,7 +1505,7 @@ static void draw_blit(VkQueue queue, Replay *replay, const DrawnBlit *blit)
 	destination->used_serial = replay->serial;
 	EdramPart part = holding(destination, 0, stored);
 	part.format = XSDK_TARGET_8_8_8_8;
-	keep_colors(queue, &part, 1);
+	(void)keep_colors(queue, &part, 1, replay->serial);
 	// The draw and the resolve point streams, slots and shaders of their own, as a pass's begin does.
 	replay->pipeline_dirty = true;
 	memset(replay->pointed_streams, 0, sizeof replay->pointed_streams);
@@ -1365,7 +1528,8 @@ static void end_pass_command(VkQueue queue, VkCommandBuffer buffer, Replay *repl
 	} else {
 		const Command *const next = next_render_pass(buffer, index);
 		const PassClears *const next_clears = next ? (const PassClears *)(buffer->data + next->begin.clears_at) : NULL;
-		end_render_pass(queue, replay, resolved_depth, next, next_clears, next ? area_of(buffer, next) : NULL);
+		end_render_pass(
+			queue, buffer, index, replay, resolved_depth, next, next_clears, next ? area_of(buffer, next) : NULL);
 	}
 	v4x_profile_pass_ended();
 }
@@ -1865,6 +2029,11 @@ VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit(
 			v4x_profile_commands(buffer->count);
 			for (uint32_t c = 0; c < buffer->count; c++)
 				replay_command(queue, buffer, &replay, c);
+			// Whatever comes after may read what's left unresolved (resolve_can_wait).
+			for (uint32_t c = 0; c < V4X_EDRAM_COLORS; c++) {
+				if (queue->colors[c].unresolved)
+					resolve_part(&queue->colors[c], replay.serial);
+			}
 		}
 	}
 	// One queue replays in order, so semaphores need nothing; the fence submits the ring either way.

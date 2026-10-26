@@ -99,11 +99,14 @@ typedef struct {
 
 V4xShaderCounts v4x_shader_counts(void);
 
-// What render passes' begins did to eDRAM since the device was made: images drawn back for a load op, and resolves
-// made to clear for a clear op, each where eDRAM didn't already hold what the pass begins with.
+// What render passes did to eDRAM since the device was made: images drawn back for a load op, and resolves made to
+// clear for a clear op, each where eDRAM didn't already hold what the pass begins with; resolves passes' ends put off,
+// as nothing read the image before its next pass, and those made later all the same.
 typedef struct {
 	uint32_t drawn_back;
 	uint32_t clear_resolves;
+	uint32_t resolves_put_off;
+	uint32_t late_resolves;
 } V4xEdramCounts;
 
 V4xEdramCounts v4x_edram_counts(void);
