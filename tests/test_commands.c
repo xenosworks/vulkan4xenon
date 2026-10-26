@@ -48,6 +48,9 @@ static void check_names(const Harness *harness)
 	for (uint32_t i = 0; i < sizeof step_1_commands / sizeof step_1_commands[0]; i++)
 		found = found && vkGetDeviceProcAddr(harness->device, step_1_commands[i]);
 	check("commands: step 1's 22 commands are found by name", found);
+	check("commands: vkGetDeviceProcAddr finds itself, as Vulkan-Hpp's dispatcher asks first",
+		vkGetDeviceProcAddr(harness->device, "vkGetDeviceProcAddr") == (PFN_vkVoidFunction)vkGetDeviceProcAddr &&
+			vkGetInstanceProcAddr(harness->instance, "vkGetDeviceProcAddr") == (PFN_vkVoidFunction)vkGetDeviceProcAddr);
 }
 
 static void check_pipeline_cache(const Harness *harness)

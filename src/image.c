@@ -131,7 +131,10 @@ static VkResult check_create_info(const VkImageCreateInfo *info)
 	uint32_t format = 0;
 	if (is_cube(info) || info->imageType == VK_IMAGE_TYPE_3D)
 		return check_cube_or_3d_create_info(info);
-	if (info->imageType != VK_IMAGE_TYPE_2D || info->extent.depth != 1 || info->arrayLayers != 1 || info->flags)
+	// MUTABLE_FORMAT only allows views of other formats, which vkCreateImageView refuses anyway; PPSSPP's libretro
+	// swapchain asks for it.
+	if (info->imageType != VK_IMAGE_TYPE_2D || info->extent.depth != 1 || info->arrayLayers != 1 ||
+		(info->flags & ~(VkImageCreateFlags)VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT))
 		return v4x_host_unsupported("images other than 2D with one layer, cubes and 3D images");
 	if (info->format == VK_FORMAT_D24_UNORM_S8_UINT)
 		return check_depth_create_info(info);

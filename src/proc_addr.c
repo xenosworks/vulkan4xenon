@@ -35,7 +35,9 @@ static const Entry entries[] = {
 	ENTRY(vkEnumerateDeviceExtensionProperties, SCOPE_INSTANCE),
 	ENTRY(vkEnumerateDeviceLayerProperties, SCOPE_INSTANCE),
 	ENTRY(vkCreateDevice, SCOPE_INSTANCE),
-	ENTRY(vkGetDeviceProcAddr, SCOPE_INSTANCE),
+	// A device-level command, its first parameter a VkDevice, so it finds itself: Vulkan-Hpp's dynamic dispatcher asks
+	// vkGetDeviceProcAddr(device, "vkGetDeviceProcAddr") first, and called the null it got (Flycast, milestone 67).
+	ENTRY(vkGetDeviceProcAddr, SCOPE_DEVICE),
 	ENTRY(vkGetPhysicalDeviceDisplayPropertiesKHR, SCOPE_INSTANCE),
 	ENTRY(vkGetPhysicalDeviceDisplayPlanePropertiesKHR, SCOPE_INSTANCE),
 	ENTRY(vkGetDisplayPlaneSupportedDisplaysKHR, SCOPE_INSTANCE),
