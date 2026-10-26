@@ -807,7 +807,18 @@ static void place_colors(VkQueue queue, Replay *replay)
 			(XsdkColorTarget){ .format = framebuffer->targets[i].format, .tile = first + framebuffer->targets[i].tile };
 }
 
-// The colour parts the pass's colour targets or depth reach are lost, as it draws over them.
+// Whether the pass draws or resolves into an image: one of its colour attachments or their resolve attachments.
+static bool pass_writes(const Replay *replay, const Image *image)
+{
+	for (uint32_t i = 0; i < replay->render_pass->color_count; i++) {
+		if (replay->framebuffer->attachments[i] == image || replay->framebuffer->resolves[i] == image)
+			return true;
+	}
+	return false;
+}
+
+// The colour parts the pass's colour targets or depth reach are lost, as it draws over them, and so are those of the
+// images it writes, which it holds afresh where it placed them (begin_render_pass keeps its own).
 static void forget_colors(VkQueue queue, const Replay *replay)
 {
 	const Framebuffer *const framebuffer = replay->framebuffer;
@@ -815,7 +826,8 @@ static void forget_colors(VkQueue queue, const Replay *replay)
 	for (uint32_t i = 0; i < V4X_EDRAM_COLORS; i++) {
 		EdramPart *const part = &queue->colors[i];
 		if (color_overlaps(part, replay->color_tile, framebuffer->color_tiles) ||
-			(has_depth && color_overlaps(part, replay->depth_tile, depth_tiles(framebuffer))))
+			(has_depth && color_overlaps(part, replay->depth_tile, depth_tiles(framebuffer))) ||
+			(part->contents == EDRAM_IMAGE && pass_writes(replay, part->image)))
 			*part = (EdramPart){ .contents = EDRAM_UNKNOWN };
 	}
 }
@@ -927,8 +939,11 @@ static void begin_render_pass(VkQueue queue, Replay *replay)
 	place_colors(queue, replay);
 	place_depth(queue, replay);
 	EdramPart colors[V4X_MAX_COLOR_ATTACHMENTS];
-	for (uint32_t i = 0; i < render_pass->color_count; i++)
+	for (uint32_t i = 0; i < render_pass->color_count; i++) {
 		colors[i] = held_color(queue, replay, i);
+		if (colors[i].contents == EDRAM_IMAGE && colors[i].image != replay->framebuffer->attachments[i])
+			colors[i] = (EdramPart){ .contents = EDRAM_UNKNOWN };
+	}
 	forget_colors(queue, replay);
 	set_target(replay);
 	if (render_pass->has_depth && render_pass->loads_depth && !replay->clears_depth && !replay->draws_image_clear)
@@ -1312,7 +1327,7 @@ static void draw_blit(VkQueue queue, Replay *replay, const DrawnBlit *blit)
 	const EdramPart held = held_part(queue, &target);
 	const VkRect2D stored = stored_area(&held, destination, rect);
 	for (uint32_t i = 0; i < V4X_EDRAM_COLORS; i++) {
-		if (color_overlaps(&queue->colors[i], 0, tiles))
+		if (color_overlaps(&queue->colors[i], 0, tiles) || queue->colors[i].image == destination)
 			queue->colors[i] = (EdramPart){ .contents = EDRAM_UNKNOWN };
 	}
 	const uint32_t depth_tile = XSDK_EDRAM_TILES - xsdk_gpu_target_tiles(destination->width, destination->height);

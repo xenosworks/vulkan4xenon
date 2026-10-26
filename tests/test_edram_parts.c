@@ -9,9 +9,11 @@
 #include "tiled_index.h"
 #include "xsdk/log.h"
 
-// Render passes going back and forth between framebuffers (milestone 66): a main one with depth and a small one drawn
-// between its passes, as an emulator's palette blits go, kept in eDRAM side by side so neither is drawn back; and three
-// of 1280x720, 720 tiles each, more than eDRAM's 2048 hold, so going back to them draws one back, every texel kept.
+// Render passes going back and forth between framebuffers (milestone 66): three of 1280x720, 720 tiles each, more than
+// eDRAM's 2048 hold, so going back to them draws one back, every texel kept; a main one with depth and a small one
+// drawn between its passes, as an emulator's palette blits go, kept in eDRAM side by side so neither is drawn back;
+// then part of the main one blitted into the small one on the GPU while eDRAM holds the small one past the blit's
+// tiles, so the pass loading it after draws it back with the blit.
 
 enum {
 	TOLERANCE = 2,
@@ -27,6 +29,10 @@ enum {
 	// The main framebuffer's texels probed, and each big one's.
 	MAIN_PROBES = ROUNDS + 4,
 	BIG_PROBES = 3,
+	BLIT_PROBES = 3,
+	// The main framebuffer's square blitted into the whole small one, inside its first quad.
+	BLIT_X = 16,
+	BLIT_Y = 16,
 };
 
 typedef enum {
@@ -40,6 +46,7 @@ typedef enum {
 	PASS_MAIN_CLEAR,
 	PASS_MAIN_LOAD,
 	PASS_SMALL,
+	PASS_SMALL_LOAD,
 	PASS_BIG_CLEAR,
 	PASS_BIG_LOAD,
 	PASSES,
@@ -96,6 +103,13 @@ static const VkClearValue big_clears[BIGS] = {
 static const float big_colors[BIGS][4] = { RGBA(220, 40, 40), RGBA(40, 200, 40), RGBA(40, 40, 220) };
 // Each loaded again takes a yellow quad of its own.
 static const float loaded_color[4] = RGBA(230, 210, 30);
+// Drawn into the small framebuffer once the blit is in.
+static const HarnessQuad after_blit_quad = { 40, 40, 16, 16, 0.0f, RGBA(40, 200, 200), false };
+static const Probe blit_probes[BLIT_PROBES] = {
+	{ "the main framebuffer's first quad blitted in", 8, 8, { 220, 40, 40 } },
+	{ "more of it", 20, 50, { 220, 40, 40 } },
+	{ "the quad drawn after the blit", 48, 48, { 40, 200, 200 } },
+};
 
 static HarnessQuad round_quad(uint32_t round)
 {
@@ -184,7 +198,8 @@ static VkResult create_targets(const Harness *harness, Parts *parts)
 {
 	static const uint32_t widths[IMAGES] = { MAIN_WIDTH, SMALL_WIDTH, BIG_WIDTH, BIG_WIDTH, BIG_WIDTH };
 	static const uint32_t heights[IMAGES] = { MAIN_HEIGHT, SMALL_HEIGHT, BIG_HEIGHT, BIG_HEIGHT, BIG_HEIGHT };
-	const VkImageUsageFlags usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+	const VkImageUsageFlags usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
+		VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 	VkResult result = VK_SUCCESS;
 	for (uint32_t i = 0; i < IMAGES && result == VK_SUCCESS; i++)
 		result = harness_image(harness, VK_FORMAT_B8G8R8A8_UNORM, widths[i], heights[i], usage, &parts->images[i],
@@ -201,6 +216,8 @@ static VkResult create_targets(const Harness *harness, Parts *parts)
 		result = create_pass(harness, load, true, load, &parts->passes[PASS_MAIN_LOAD]);
 	if (result == VK_SUCCESS)
 		result = create_pass(harness, dont_care, false, dont_care, &parts->passes[PASS_SMALL]);
+	if (result == VK_SUCCESS)
+		result = create_pass(harness, load, false, dont_care, &parts->passes[PASS_SMALL_LOAD]);
 	if (result == VK_SUCCESS)
 		result = create_pass(harness, clear, false, dont_care, &parts->passes[PASS_BIG_CLEAR]);
 	if (result == VK_SUCCESS)
@@ -317,6 +334,25 @@ static void record_bigs(VkCommandBuffer commands, const Parts *parts)
 	}
 }
 
+// A square of the main framebuffer blitted over the whole small one, drawn on the GPU, then the small one loaded with a
+// quad.
+static void record_blit(VkCommandBuffer commands, const Parts *parts)
+{
+	const VkImageSubresourceLayers layers = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
+	const VkImageBlit region = {
+		.srcSubresource = layers,
+		.srcOffsets = { { BLIT_X, BLIT_Y, 0 }, { BLIT_X + SMALL_WIDTH, BLIT_Y + SMALL_HEIGHT, 1 } },
+		.dstSubresource = layers,
+		.dstOffsets = { { 0, 0, 0 }, { SMALL_WIDTH, SMALL_HEIGHT, 1 } },
+	};
+	vkCmdBlitImage(commands, parts->images[IMAGE_MAIN], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+		parts->images[IMAGE_SMALL], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region, VK_FILTER_NEAREST);
+	begin(commands, parts, parts->passes[PASS_SMALL_LOAD], parts->small, SMALL_WIDTH, SMALL_HEIGHT, NULL, 0,
+		parts->flat_pipeline);
+	harness_push_quad_in(commands, parts->layout, &after_blit_quad, SMALL_WIDTH, SMALL_HEIGHT);
+	vkCmdEndRenderPass(commands);
+}
+
 // Records with record into a command buffer of its own, runs it and waits for it.
 static bool run(const Harness *harness, const Parts *parts, void (*record)(VkCommandBuffer, const Parts *))
 {
@@ -427,22 +463,26 @@ void test_edram_parts(const Harness *harness)
 	static Parts parts;
 	memset(&parts, 0, sizeof parts);
 	const bool built = build(harness, &parts);
-	check("edram parts: five images, five render passes and two pipelines made", built);
+	check("edram parts: five images, six render passes and two pipelines made", built);
+	// The big ones first, so one holds tile 0 and the main one goes past the blit's tiles.
 	const uint32_t before = v4x_edram_counts().drawn_back;
-	const bool main_ran = built && run(harness, &parts, record_main);
-	const uint32_t main_drawn = v4x_edram_counts().drawn_back - before;
-	check("edram parts: a main framebuffer with depth loaded after each of 6 small passes, none drawn back",
-		main_ran && main_drawn == 0);
-	check("edram parts: the main framebuffer holds every quad, its depth kept, and the small one its last",
-		main_ran && main_misses(harness, &parts) == 0);
-	const uint32_t between = v4x_edram_counts().drawn_back;
 	const bool bigs_ran = built && run(harness, &parts, record_bigs);
-	const uint32_t big_drawn = v4x_edram_counts().drawn_back - between;
+	const uint32_t big_drawn = v4x_edram_counts().drawn_back - before;
 	check(
 		"edram parts: three 1280x720 framebuffers loaded again, eDRAM too small for them all, one drawn back at least",
 		bigs_ran && big_drawn >= 1);
 	check("edram parts: each holds its clear colour, its quad and the quad drawn once loaded again",
 		bigs_ran && big_misses(harness, &parts) == 0);
+	const uint32_t between = v4x_edram_counts().drawn_back;
+	const bool main_ran = built && run(harness, &parts, record_main);
+	const uint32_t main_drawn = v4x_edram_counts().drawn_back - between;
+	check("edram parts: a main framebuffer with depth loaded after each of 6 small passes, none drawn back",
+		main_ran && main_drawn == 0);
+	check("edram parts: the main framebuffer holds every quad, its depth kept, and the small one its last",
+		main_ran && main_misses(harness, &parts) == 0);
+	const bool blit_ran = main_ran && run(harness, &parts, record_blit);
+	check("edram parts: the small framebuffer loaded after a blit into it on the GPU holds the blit, drawn back",
+		blit_ran && misses(harness, &parts, IMAGE_SMALL, SMALL_WIDTH, blit_probes, BLIT_PROBES) == 0);
 	xsdk_log_write("edram parts: drawn back %u with the small passes, %u going back to the big ones",
 		(unsigned)main_drawn, (unsigned)big_drawn);
 	destroy(harness, &parts);
