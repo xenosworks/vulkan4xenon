@@ -138,8 +138,10 @@ static VkResult check_create_info(const VkImageCreateInfo *info)
 		return v4x_host_unsupported("images other than 2D with one layer, cubes and 3D images");
 	if (info->format == VK_FORMAT_D24_UNORM_S8_UINT)
 		return check_depth_create_info(info);
-	if (!v4x_image_format(info->format, &format) || !(info->samples & v4x_sample_counts(info->format)))
+	if (!v4x_image_format(info->format, &format) || !(info->samples & v4x_sample_counts(info->format))) {
+		xsdk_log_write("vulkan4xenon: an image of format %d, %d samples", (int)info->format, (int)info->samples);
 		return v4x_host_unsupported("image formats docs/SUPPORT.md doesn't list, or samples their format doesn't take");
+	}
 	// A linear image's memory is the host's to read and write, and compressed blocks are swapped as they're copied.
 	if (info->tiling == VK_IMAGE_TILING_LINEAR &&
 		(info->mipLevels != 1 || (info->usage & ~(VkImageUsageFlags)V4X_LINEAR_IMAGE_USAGE) ||

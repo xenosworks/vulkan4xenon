@@ -760,12 +760,13 @@ Some are there to refuse, as the features they need aren't reported. Each logs w
 | `VK_FORMAT_R32_SFLOAT` | optimal tiling: sampled, nearest filtering only, as filtering 32-bit floats hasn't been tried on the console; colour attachment, unblended, as Xenos's float targets don't blend (milestone 25); buffer: vertex buffer |
 | `VK_FORMAT_R8_UNORM`, `VK_FORMAT_R8G8_UNORM` | optimal tiling: sampled, linear filtering, blit source and destination |
 | `VK_FORMAT_R5G6B5_UNORM_PACK16`, `B5G6R5_UNORM_PACK16`, `A1R5G5B5_UNORM_PACK16`, `R4G4B4A4_UNORM_PACK16`, `B4G4R4A4_UNORM_PACK16`, `R16_UNORM`, `R16_SNORM`, `R8_SNORM`, `R8G8_SNORM`, `B8G8R8A8_SNORM`, `R8_SRGB`, `R8G8_SRGB`, `R8G8B8A8_SRGB`, `B8G8R8A8_SRGB` | optimal tiling: sampled, linear filtering, blit source and destination (milestone 20) |
+| `VK_FORMAT_A8B8G8R8_UNORM_PACK32` | optimal tiling: sampled, linear filtering, blit source and destination (milestone 66); buffer: vertex buffer |
 | `VK_FORMAT_R16G16_UNORM`, `R16G16B16A16_UNORM`, `R16G16_SNORM`, `R16G16B16A16_SNORM`, `R8G8B8A8_SNORM` | optimal tiling: sampled, linear filtering, blit source and destination; buffer: vertex buffer (milestone 20) |
 | `VK_FORMAT_A2R10G10B10_UNORM_PACK32`, `A2B10G10R10_SNORM_PACK32`, `A2R10G10B10_SNORM_PACK32`, `R16_SFLOAT` | optimal tiling: sampled, nearest filtering only, as Xenos filtered them wrong on the console, far from the mean of two texels halfway between them (milestone 20); blit source and destination |
 | `VK_FORMAT_R16G16_SFLOAT`, `R16G16B16A16_SFLOAT` | optimal tiling: sampled, nearest filtering only, as above; blit source and destination; buffer: vertex buffer (milestone 20); colour attachment, unblended, as Xenos's float targets don't blend (milestone 25) |
 | `VK_FORMAT_A2B10G10R10_UNORM_PACK32` | optimal tiling: sampled, nearest filtering only, as the other 10-10-10-2 formats; blit source and destination (milestone 20); colour attachment and blending, as fixed point blends like 8-bit channels (xenia:src/xenia/gpu/render_target_cache.h:122-129; milestone 25) |
 | `VK_FORMAT_BC1_RGB_UNORM_BLOCK`, `BC1_RGBA_UNORM_BLOCK`, `BC2_UNORM_BLOCK`, `BC3_UNORM_BLOCK`, `BC4_UNORM_BLOCK`, `BC5_UNORM_BLOCK`, `BC1_RGB_SRGB_BLOCK`, `BC1_RGBA_SRGB_BLOCK`, `BC2_SRGB_BLOCK`, `BC3_SRGB_BLOCK` | optimal tiling: sampled, linear filtering (milestone 20) |
-| `VK_FORMAT_R32G32_SFLOAT`, `R32G32B32_SFLOAT`, `R32G32B32A32_SFLOAT`, `A8B8G8R8_UNORM_PACK32` | buffer: vertex buffer |
+| `VK_FORMAT_R32G32_SFLOAT`, `R32G32B32_SFLOAT`, `R32G32B32A32_SFLOAT` | buffer: vertex buffer |
 | `VK_FORMAT_A8B8G8R8_SNORM_PACK32`, `A8B8G8R8_USCALED_PACK32`, `A8B8G8R8_SSCALED_PACK32`, `R8G8B8A8_USCALED`, `R8G8B8A8_SSCALED`, `R16G16_USCALED`, `R16G16_SSCALED`, `R16G16B16A16_USCALED`, `R16G16B16A16_SSCALED` | buffer: vertex buffer (milestone 20) |
 
 **On xsdk:** each image format is the xsdk format that holds its bits as Vulkan does: a packed unit in the CPU's byte
@@ -779,6 +780,7 @@ otherwise, the fetch constant's swizzle picks them, which reads the same bits (s
 | `R5G6B5_UNORM_PACK16`; `B5G6R5_UNORM_PACK16` | `XSDK_FORMAT_R5G6B5` | the same; blue, green, red, alpha |
 | `A1R5G5B5_UNORM_PACK16` | `XSDK_FORMAT_A1R5G5B5` | the same |
 | `R4G4B4A4_UNORM_PACK16`; `B4G4R4A4_UNORM_PACK16` | `XSDK_FORMAT_A4R4G4B4` | alpha, red, green, blue; green, red, alpha, blue |
+| `A8B8G8R8_UNORM_PACK32` | `XSDK_FORMAT_R8G8B8A8` | alpha, blue, green, red |
 | `A2B10G10R10_UNORM_PACK32`; `A2R10G10B10_UNORM_PACK32` | `XSDK_FORMAT_A2B10G10R10` | the same; blue, green, red, alpha |
 | `R16_SFLOAT`, `R16G16_SFLOAT`, `R16G16B16A16_SFLOAT` | `XSDK_FORMAT_R16F`, `R16G16F`, `R16G16B16A16F` | the same |
 | `BC1_RGB_UNORM_BLOCK`; `BC1_RGBA_UNORM_BLOCK` | `XSDK_FORMAT_DXT1` | red, green, blue and 1, as BC1 without alpha reads 1 where DXT1 has transparent black; the same |
