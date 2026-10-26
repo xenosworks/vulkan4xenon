@@ -17,10 +17,15 @@ The layer's own shaders go in a bundle of their own, their symbols prefixed:
 
 glslang defaults to xost's copy (tools/glslang/bin/glslang.exe under --xost). Run it from the repository root, so
 paths stay relative and work for a Windows glslang from WSL too.
+
+SPIR-V an app already embeds goes in as it is, so the bundle holds those very words: a .spv file, or a C initialiser
+of its words as `glslc -mfmt=c` writes it, a .inc. Each is named after its GLSL, as shader.vert.spv or
+shader.frag.inc, for the stage.
 """
 
 import argparse
 import os
+import re
 import struct
 import subprocess
 import sys
@@ -36,6 +41,8 @@ DEFAULT_BUNDLE = "v4x_shader_bundle"
 FNV_OFFSET_BASIS = 0xCBF29CE484222325
 FNV_PRIME = 0x100000001B3
 WORDS_PER_LINE = 6
+SPIRV_MAGIC = 0x07230203
+SPIRV_SUFFIXES = (".spv", ".inc")
 
 
 def fnv1a_64(data):
@@ -52,6 +59,20 @@ def compile_spirv(glslang, source, directory):
     if result.returncode != 0:
         sys.exit(f"glslang failed on {source}:\n{result.stdout}{result.stderr}")
     return output.read_bytes()
+
+
+def read_spirv(source):
+    """SPIR-V an app embeds: a .spv's bytes, or a .inc's words, which are the app's on any host."""
+    if source.suffix == ".spv":
+        return source.read_bytes()
+    words = [int(word, 16) for word in re.findall(r"0x[0-9A-Fa-f]{1,8}", source.read_text())]
+    if not words or words[0] != SPIRV_MAGIC:
+        sys.exit(f"{source}: no SPIR-V words in it")
+    return struct.pack(f"<{len(words)}I", *words)
+
+
+def stage_suffix(source):
+    return Path(source.stem).suffix if source.suffix in SPIRV_SUFFIXES else source.suffix
 
 
 def lower(xost, spirv_bytes, source, optimize=False, instanced=False):
@@ -178,7 +199,10 @@ def main():
     Path("build").mkdir(exist_ok=True)
     with tempfile.TemporaryDirectory(dir="build") as directory:
         for source in args.sources:
-            spirv_bytes = compile_spirv(glslang, source, directory)
+            if source.suffix in SPIRV_SUFFIXES:
+                spirv_bytes = read_spirv(source)
+            else:
+                spirv_bytes = compile_spirv(glslang, source, directory)
             for instanced in (False, True):
                 container, literals, resources, clip_planes = lower(args.xost.resolve(), spirv_bytes, source,
                                                                     args.optimize, instanced)
@@ -187,7 +211,7 @@ def main():
                                 "literals": literals, "resources": resources, "clip_planes": clip_planes,
                                 "instanced": instanced})
                 # A fragment shader has no variant, nor does a vertex shader already lowered instanced.
-                if source.suffix != ".vert" or any(resource[0] == "instance" for resource in resources):
+                if stage_suffix(source) != ".vert" or any(resource[0] == "instance" for resource in resources):
                     break
     write_outputs(args.output, shaders, args.sources, args.bundle)
 

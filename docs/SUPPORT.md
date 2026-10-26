@@ -86,7 +86,8 @@ Some are there to refuse, as the features they need aren't reported. Each logs w
 - `vkCreateShaderModule` takes standard SPIR-V and looks it up in the app's `v4x_shader_bundle`, which
   `tools/build_shaders.py` writes: GLSL → `glslang -V` → xost → a Xenos container. The key is a 64-bit FNV-1a of the
   SPIR-V and its size (`include/vulkan4xenon.h`), and whether the container is a vertex shader's instanced variant
-  (below).
+  (below). SPIR-V an app embeds already, a `.spv` or the C initialiser `glslc -mfmt=c` writes, a `.inc`, goes in as it
+  is, so the bundle holds the app's own words (RetroArch's, xsdk milestone 65).
 - SPIR-V the bundle doesn't hold is compiled on the console the first time a module is made from it, through xost's
   compiler in xsdk (`xsdk_xsc_compile`), at xsdk's register split with the optimiser on, and kept till the device goes
   (xsdk:docs/scope/shader-compiling.md, step 3); so is an instanced variant the bundle lacks, the first time a pipeline
@@ -101,6 +102,8 @@ Some are there to refuse, as the features they need aren't reported. Each logs w
 - SPIR-V xost refuses returns `VK_ERROR_FEATURE_NOT_PRESENT`, logged with xost's reason, and so does a shader whose
   hardware loop a bare uniform counts, which Vulkan's GLSL has none of. `vkCreateShaderModule` doesn't list that
   result: a deviation.
+- GLSL's helper functions, which glslang leaves as calls, are inlined; a helper with control flow, an early `return`
+  or an `if` in it, is refused (xost:docs/xsc.md; xsdk milestone 65).
 - The shader subset is xost's (xost:docs/xsc.md): no bitwise operations. A shader of each kind has 64 registers,
   xsdk's split, which xost builds for (xsdk:docs/HARDWARE.md, "Pixel shaders past 16 registers, milestone 24").
 - `if`/`else` in either stage, nested, in an unrolled loop's body and around `gl_FragDepth` (milestone 21;
