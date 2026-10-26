@@ -165,7 +165,8 @@ enum {
 	V4X_INDEX_COPY_PARTS = 4,
 	V4X_INDEX_COPY_PART_BYTES = 256 * 1024,
 	// The memory passes past eDRAM record into, one after another (queue.c, tile_room): two and a half rooms, so a room
-	// taken from the start again holds only passes at least half a room of recordings old, which the GPU has likely run.
+	// taken from the start again holds only passes at least half a room of recordings old, which the GPU has likely
+	// run.
 	V4X_TILE_SPACE_DWORDS = V4X_TILE_RECORDING_DWORDS * 5 / 2,
 	// A recording starts on a 128-byte line, as xsdk's stream segments do (xsdk:src/gpu.c, SEGMENT_ALIGN_DWORDS).
 	V4X_TILE_ALIGN_DWORDS = 32,
@@ -478,7 +479,7 @@ typedef struct {
 	uint32_t height;
 } FramebufferSubpasses;
 
-// A copy between a buffer and the whole of an image's level, in some of its layers or 3D slices, kept in the command
+// A copy between a buffer and a region of an image's level, in some of its layers or 3D slices, kept in the command
 // buffer's data.
 typedef struct {
 	// The buffer's bytes at the copy's offset, and their GPU address, 0 in cached memory.
@@ -486,6 +487,11 @@ typedef struct {
 	uint32_t address;
 	Image *image;
 	uint32_t level;
+	// The region's corner and size in texels, the whole level in a compressed format.
+	uint32_t x;
+	uint32_t y;
+	uint32_t width;
+	uint32_t height;
 	uint32_t row_bytes;
 	// The image's first layer or slice and how many, each one's rows slice_bytes after the last's in the buffer.
 	uint32_t first_slice;

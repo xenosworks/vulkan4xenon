@@ -59,7 +59,20 @@ enum {
 	BYTES_AREA = 32,
 	// The target again, after a pass that only clears it, read back with no draw between to wait for.
 	CLEARED_TARGET_AT = BYTES_AT + BYTES_AREA,
-	READBACK_BYTES = CLEARED_TARGET_AT + TARGET_WIDTH * TARGET_HEIGHT * 4,
+	// Part of the drawn target from (2, 2), its corner the clear's and the direct quad's corner at (18, 18) in it.
+	TARGET_PART_X = 2,
+	TARGET_PART_Y = 2,
+	TARGET_PART_SIDE = 20,
+	TARGET_PART_AT = CLEARED_TARGET_AT + TARGET_WIDTH * TARGET_HEIGHT * 4,
+	// An RGBA8 image of the chain's base's top left, a part of its bottom right quadrant copied over it at (5, 3).
+	PART_WIDTH = 16,
+	PART_HEIGHT = 8,
+	PART_X = 5,
+	PART_Y = 3,
+	PART_REGION_WIDTH = 4,
+	PART_REGION_HEIGHT = 2,
+	PART_AT = TARGET_PART_AT + TARGET_PART_SIDE * TARGET_PART_SIDE * 4,
+	READBACK_BYTES = PART_AT + PART_WIDTH * PART_HEIGHT * 4,
 	// Where each image's texels sit in the staging buffer, for the copies in.
 	CHAIN_SOURCE_AT = 0,
 	CLEARED_SOURCE_AT = CHAIN_SOURCE_AT + CHAIN_SIDE * CHAIN_SIDE * 4,
@@ -79,6 +92,7 @@ enum {
 	IMAGE_HOST_LINEAR,
 	IMAGE_HOST_COPIED,
 	IMAGE_LINEAR,
+	IMAGE_PART,
 	IMAGES,
 };
 
@@ -99,6 +113,7 @@ static const ImageSpec image_specs[IMAGES] = {
 	[IMAGE_HOST_LINEAR] = { VK_FORMAT_R8G8B8A8_UNORM, LINEAR_WIDTH, LINEAR_HEIGHT, 1, VK_IMAGE_TILING_LINEAR },
 	[IMAGE_HOST_COPIED] = { VK_FORMAT_R8G8B8A8_UNORM, LINEAR_WIDTH, LINEAR_HEIGHT, 1, VK_IMAGE_TILING_OPTIMAL },
 	[IMAGE_LINEAR] = { VK_FORMAT_R8G8B8A8_UNORM, LINEAR_WIDTH, LINEAR_HEIGHT, 1, VK_IMAGE_TILING_LINEAR },
+	[IMAGE_PART] = { VK_FORMAT_R8G8B8A8_UNORM, PART_WIDTH, PART_HEIGHT, 1, VK_IMAGE_TILING_OPTIMAL },
 };
 
 enum {
@@ -478,6 +493,13 @@ static void record_draws(const Scene *scene)
 	vkCmdEndRenderPass(commands);
 	const VkBufferImageCopy region = level_region(TARGET_AT, 0, TARGET_WIDTH, TARGET_HEIGHT);
 	vkCmdCopyImageToBuffer(commands, scene->target, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, scene->readback, 1, &region);
+	const VkBufferImageCopy part = {
+		.bufferOffset = TARGET_PART_AT,
+		.imageSubresource = { COLOR, 0, 0, 1 },
+		.imageOffset = { TARGET_PART_X, TARGET_PART_Y, 0 },
+		.imageExtent = { TARGET_PART_SIDE, TARGET_PART_SIDE, 1 },
+	};
+	vkCmdCopyImageToBuffer(commands, scene->target, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, scene->readback, 1, &part);
 	// A pass that only clears: its resolves are the GPU's one work before the copy after, so no draw is waited for.
 	const VkClearValue cyan_clear = { .color = { .float32 = { 0.0f, 1.0f, 1.0f, 1.0f } } };
 	const VkRenderPassBeginInfo clear_pass = {
@@ -519,8 +541,25 @@ static bool target_holds(const Scene *scene, uint32_t x, uint32_t y, const uint8
 	return false;
 }
 
+// Part of the target read back as PPSSPP reads part of a framebuffer: each texel the whole target's at its offset.
+static bool target_part_holds(const Scene *scene)
+{
+	for (uint32_t y = 0; y < TARGET_PART_SIDE; y++) {
+		for (uint32_t x = 0; x < TARGET_PART_SIDE; x++) {
+			const uint8_t *const texel = read_texel(scene, TARGET_PART_AT, TARGET_PART_SIDE, 4, x, y);
+			if (memcmp(texel, read_texel(scene, TARGET_AT, TARGET_WIDTH, 4, x + TARGET_PART_X, y + TARGET_PART_Y), 4))
+				return false;
+		}
+	}
+	const uint8_t *const corner = read_texel(scene, TARGET_PART_AT, TARGET_PART_SIDE, 4, 0, 0);
+	const uint8_t *const quad = read_texel(scene, TARGET_PART_AT, TARGET_PART_SIDE, 4, 18, 18);
+	return !memcmp(corner, blue, 4) && !memcmp(quad, red, 4);
+}
+
 static void check_draws(const Scene *scene)
 {
+	check("copies: part of an image the GPU drew reads back from an offset, its clear and its quad in place",
+		target_part_holds(scene));
 	check("copies: an image the GPU drew reads back through vkCmdCopyImageToBuffer, its quad in place",
 		target_holds(scene, 20, 20, red));
 	check("copies: a colour cleared on the CPU is what the next pass loads, around its quads",
@@ -602,6 +641,17 @@ static void record_images(const Scene *scene)
 		copy_out(scene, IMAGE_CLEARED, level, cleared_at(level));
 	copy_out(scene, IMAGE_COPIED, 0, COPIED_AT);
 	copy_out(scene, IMAGE_HOST_COPIED, 0, HOST_COPIED_AT);
+	// The chain's base's top left, its rows 64 texels long, then part of its bottom right over it.
+	VkBufferImageCopy part = level_region(CHAIN_SOURCE_AT, 0, PART_WIDTH, PART_HEIGHT);
+	part.bufferRowLength = CHAIN_SIDE;
+	vkCmdCopyBufferToImage(
+		commands, scene->staging, images[IMAGE_PART], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &part);
+	part.bufferOffset = CHAIN_SOURCE_AT + (CHAIN_SIDE / 2 * CHAIN_SIDE + CHAIN_SIDE / 2) * 4;
+	part.imageOffset = (VkOffset3D){ PART_X, PART_Y, 0 };
+	part.imageExtent = (VkExtent3D){ PART_REGION_WIDTH, PART_REGION_HEIGHT, 1 };
+	vkCmdCopyBufferToImage(
+		commands, scene->staging, images[IMAGE_PART], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &part);
+	copy_out(scene, IMAGE_PART, 0, PART_AT);
 	vkCmdFillBuffer(commands, scene->readback, FILL_AT, FILL_BYTES, FILL_WORD);
 	const uint8_t update[UPDATE_BYTES] = { 1, 2, 3, 4, 5, 6, 7, 8 };
 	vkCmdUpdateBuffer(commands, scene->readback, UPDATE_AT, sizeof update, update);
@@ -658,6 +708,20 @@ static bool cleared_holds(const Scene *scene)
 			for (uint32_t x = 0; x < size; x++)
 				holds = holds &&
 					scene->read[cleared_at(level) + y * size + x] == (level ? CLEARED_VALUE : cleared_base(x, y));
+	}
+	return holds;
+}
+
+// The bottom right quadrant's colour in the part copied, the top left's around it.
+static bool part_holds(const Scene *scene)
+{
+	bool holds = true;
+	for (uint32_t y = 0; y < PART_HEIGHT; y++) {
+		for (uint32_t x = 0; x < PART_WIDTH; x++) {
+			const bool in =
+				x >= PART_X && x < PART_X + PART_REGION_WIDTH && y >= PART_Y && y < PART_Y + PART_REGION_HEIGHT;
+			holds = holds && same_texel(read_texel(scene, PART_AT, PART_WIDTH, 4, x, y), quadrants[in ? 3 : 0], 4, 0);
+		}
 	}
 	return holds;
 }
@@ -719,6 +783,8 @@ static void check_images(const Harness *harness, const Scene *scene, const VkSub
 	check("copies: a nearest blit to twice the size repeats each texel two by two", big_holds(scene));
 	check("copies: a clear fills the levels asked, in the packed tail, and leaves level 0", cleared_holds(scene));
 	check("copies: a level copied between optimal images reads back the same", copied_holds(scene));
+	check("copies: part of a level written from a buffer at an offset, in rows longer than it, and the rest kept",
+		part_holds(scene));
 	check("copies: a linear image the host wrote at its row pitch copies to an optimal image and on to a linear one",
 		linear_holds(harness, scene, host_layout));
 	check("copies: buffers filled, updated and copied at unaligned offsets hold what was written, and no more",
@@ -740,7 +806,8 @@ static void check_refusals(const Scene *scene)
 			copy_image(scene->commands, scene->images[IMAGE_CHAIN], scene->images[IMAGE_COPIED], 1, 1);
 		refused = refused && vkEndCommandBuffer(scene->commands) == VK_ERROR_FEATURE_NOT_PRESENT;
 	}
-	check("copies: two draws an indirect command, blits between formats and copies of part of a level are refused",
+	check(
+		"copies: two draws an indirect command, blits between formats and image copies of part of a level are refused",
 		refused);
 }
 

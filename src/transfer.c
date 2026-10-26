@@ -138,6 +138,25 @@ static void upload_blocks(Image *image, const LevelCopy *copy, uint32_t slice)
 	}
 }
 
+// A region's rows: whole rows as they are, part of each through a row of the level's own, read and written back.
+// memcpy from and into write-combined memory is safe, as v4x_transfer_copy_buffer says.
+static void upload_texels(Image *image, const LevelCopy *copy, uint32_t slice)
+{
+	const uint32_t layer = copy->first_slice + slice;
+	const uint8_t *const from = slice_rows(copy, slice);
+	if (copy->width == level_size(image->width, copy->level)) {
+		xsdk_texture_upload_slice_rows(
+			&image->texture, copy->level, layer, copy->y, copy->height, from, copy->row_bytes);
+		return;
+	}
+	const uint32_t texel_bytes = v4x_texel_bytes(image->format);
+	for (uint32_t y = 0; y < copy->height; y++) {
+		xsdk_texture_download_slice_rows(&image->texture, copy->level, layer, copy->y + y, 1, rows[ROW_OUT], 0);
+		memcpy(rows[ROW_OUT] + copy->x * texel_bytes, from + y * copy->row_bytes, copy->width * texel_bytes);
+		xsdk_texture_upload_slice_rows(&image->texture, copy->level, layer, copy->y + y, 1, rows[ROW_OUT], 0);
+	}
+}
+
 void v4x_transfer_buffer_to_image(VkQueue queue, const LevelCopy *copy)
 {
 	Image *const image = copy->image;
@@ -146,8 +165,7 @@ void v4x_transfer_buffer_to_image(VkQueue queue, const LevelCopy *copy)
 		if (is_compressed(image))
 			upload_blocks(image, copy, i);
 		else
-			xsdk_texture_upload_slice_rows(&image->texture, copy->level, copy->first_slice + i, 0,
-				level_rows(image, copy->level), slice_rows(copy, i), copy->row_bytes);
+			upload_texels(image, copy, i);
 	}
 	image_written(queue, image);
 }
@@ -164,18 +182,34 @@ static void download_blocks(const Image *image, const LevelCopy *copy, uint32_t 
 	}
 }
 
+// A region's rows, whole rows as they are and part of each through a row of the CPU's.
+static void download_texels(const Image *image, const LevelCopy *copy, uint32_t slice)
+{
+	const uint32_t layer = copy->first_slice + slice;
+	uint8_t *const to = slice_rows(copy, slice);
+	if (copy->width == level_size(image->width, copy->level)) {
+		xsdk_texture_download_slice_rows(
+			&image->texture, copy->level, layer, copy->y, copy->height, to, copy->row_bytes);
+		return;
+	}
+	const uint32_t texel_bytes = v4x_texel_bytes(image->format);
+	for (uint32_t y = 0; y < copy->height; y++) {
+		xsdk_texture_download_slice_rows(&image->texture, copy->level, layer, copy->y + y, 1, rows[ROW_OUT], 0);
+		memcpy(to + y * copy->row_bytes, rows[ROW_OUT] + copy->x * texel_bytes, copy->width * texel_bytes);
+	}
+}
+
 void v4x_transfer_image_to_buffer(VkQueue queue, const LevelCopy *copy)
 {
 	const Image *const image = copy->image;
-	const uint32_t height = level_rows(image, copy->level);
+	const uint32_t height = is_compressed(image) ? level_rows(image, copy->level) : copy->height;
 	wait_for_image(queue, image);
 	wait_for_draws(queue);
 	for (uint32_t i = 0; i < copy->slice_count; i++) {
 		if (is_compressed(image))
 			download_blocks(image, copy, i);
 		else
-			xsdk_texture_download_slice_rows(
-				&image->texture, copy->level, copy->first_slice + i, 0, height, slice_rows(copy, i), copy->row_bytes);
+			download_texels(image, copy, i);
 	}
 	buffer_written(copy->address, (copy->slice_count - 1) * copy->slice_bytes + height * copy->row_bytes);
 }

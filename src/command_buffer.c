@@ -472,24 +472,38 @@ typedef struct {
 	uint32_t count;
 } Slices;
 
-// Whether a region is the whole of a level of a colour image across and down, from its corner, in some of its layers
-// or 3D slices, and which: a cube's faces are its layers, a 3D image's slices its depth.
-static bool whole_level(
+// Whether a region lies in a level of a colour image, all of it across and down in a compressed format, in some of its
+// layers or 3D slices, and which: a cube's faces are its layers, a 3D image's slices its depth.
+static bool in_level(
 	const Image *image, const VkImageSubresourceLayers *layers, VkOffset3D offset, VkExtent3D extent, Slices *slices)
 {
 	const uint32_t level = layers->mipLevel;
+	if (!image->is_texture || level >= image->texture.levels)
+		return false;
+	const uint32_t width = level_size(image->width, level);
+	const uint32_t height = level_size(image->height, level);
 	const bool is_3d = image->texture.dimension == XSDK_TEXTURE_3D;
 	*slices =
 		is_3d ? (Slices){ (uint32_t)offset.z, extent.depth } : (Slices){ layers->baseArrayLayer, layers->layerCount };
 	const bool one_layer = is_3d ? !layers->baseArrayLayer && layers->layerCount == 1 : !offset.z && extent.depth == 1;
-	return image->is_texture && level < image->texture.levels && !offset.x && !offset.y &&
-		extent.width == level_size(image->width, level) && extent.height == level_size(image->height, level) &&
-		one_layer && slices->count && slices->first < image->texture.depth &&
-		slices->count <= image->texture.depth - slices->first;
+	const bool whole = !offset.x && !offset.y && extent.width == width && extent.height == height;
+	return offset.x >= 0 && offset.y >= 0 && extent.width && extent.height &&
+		extent.width <= width - (uint32_t)offset.x && extent.height <= height - (uint32_t)offset.y &&
+		(whole || !v4x_format(image->format)->compressed) && one_layer && slices->count &&
+		slices->first < image->texture.depth && slices->count <= image->texture.depth - slices->first;
 }
 
-// Whole levels between a buffer and an image, in tightly packed rows or rows bufferRowLength texels long, each layer's
-// or slice's rows bufferImageHeight rows after the last's.
+// Whether a region is the whole of such a level across and down, from its corner.
+static bool whole_level(
+	const Image *image, const VkImageSubresourceLayers *layers, VkOffset3D offset, VkExtent3D extent, Slices *slices)
+{
+	return in_level(image, layers, offset, extent, slices) && !offset.x && !offset.y &&
+		extent.width == level_size(image->width, layers->mipLevel) &&
+		extent.height == level_size(image->height, layers->mipLevel);
+}
+
+// Regions of levels between a buffer and an image, in tightly packed rows or rows bufferRowLength texels long, each
+// layer's or slice's rows bufferImageHeight rows after the last's.
 static void record_level_copies(VkCommandBuffer commandBuffer, CommandType type, const Buffer *buffer, Image *image,
 	uint32_t regionCount, const VkBufferImageCopy *pRegions)
 {
@@ -497,18 +511,23 @@ static void record_level_copies(VkCommandBuffer commandBuffer, CommandType type,
 		const VkBufferImageCopy *const region = &pRegions[i];
 		const uint32_t level = region->imageSubresource.mipLevel;
 		Slices slices;
-		if (!whole_level(image, &region->imageSubresource, region->imageOffset, region->imageExtent, &slices) ||
+		if (!in_level(image, &region->imageSubresource, region->imageOffset, region->imageExtent, &slices) ||
 			(region->bufferOffset + buffer->offset_bytes) % 4) {
-			commandBuffer->result = v4x_host_unsupported("copies of less than a whole level, or at unaligned offsets");
+			commandBuffer->result =
+				v4x_host_unsupported("copies past a level, of less than a compressed level, or at unaligned offsets");
 			return;
 		}
-		const uint32_t row_texels = region->bufferRowLength ? region->bufferRowLength : level_size(image->width, level);
-		const uint32_t rows = region->bufferImageHeight ? region->bufferImageHeight : level_size(image->height, level);
+		const uint32_t row_texels = region->bufferRowLength ? region->bufferRowLength : region->imageExtent.width;
+		const uint32_t rows = region->bufferImageHeight ? region->bufferImageHeight : region->imageExtent.height;
 		const uint32_t row_bytes = v4x_texel_blocks(image->format, row_texels) * v4x_texel_bytes(image->format);
 		const LevelCopy copy = { .buffer = buffer_bytes(buffer, region->bufferOffset),
 			.address = buffer_address(buffer, region->bufferOffset),
 			.image = image,
 			.level = level,
+			.x = (uint32_t)region->imageOffset.x,
+			.y = (uint32_t)region->imageOffset.y,
+			.width = region->imageExtent.width,
+			.height = region->imageExtent.height,
 			.row_bytes = row_bytes,
 			.first_slice = slices.first,
 			.slice_count = slices.count,

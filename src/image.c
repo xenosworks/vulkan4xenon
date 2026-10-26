@@ -315,9 +315,13 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateImageView(VkDevice device, const VkImageV
 	const uint32_t level_count = range->levelCount == VK_REMAINING_MIP_LEVELS ? levels : range->levelCount;
 	const uint32_t layers = image->texture.dimension == XSDK_TEXTURE_CUBE ? XSDK_CUBE_FACES : 1;
 	const uint32_t layer_count = range->layerCount == VK_REMAINING_ARRAY_LAYERS ? layers : range->layerCount;
-	if (pCreateInfo->viewType != whole_view_type(image) || pCreateInfo->format != image->format ||
+	const VkImageViewType whole = whole_view_type(image);
+	// A 2D image's one layer as a 2D array, which shaders sample as 2D: the layer can only be 0.
+	const bool array_of_one = whole == VK_IMAGE_VIEW_TYPE_2D && pCreateInfo->viewType == VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+	if ((pCreateInfo->viewType != whole && !array_of_one) || pCreateInfo->format != image->format ||
 		range->baseMipLevel || level_count != levels || range->baseArrayLayer || layer_count != layers)
-		return v4x_host_unsupported("image views other than the whole of an image in its format, a cube's as a cube");
+		return v4x_host_unsupported(
+			"image views other than the whole of an image in its format and type, or a 2D array");
 	const VkComponentMapping *const mapping = &pCreateInfo->components;
 	const V4xFormat *const format = v4x_format(image->format);
 	const uint8_t *const own = format ? format->channels : depth_channels;

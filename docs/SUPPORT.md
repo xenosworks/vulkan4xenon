@@ -504,8 +504,9 @@ Some are there to refuse, as the features they need aren't reported. Each logs w
     mask, filtered linearly or not, and compared through a comparison sampler (Samplers);
   - cleared by `vkCmdClearDepthStencilImage`, every word of its memory takes the clear on the CPU at replay, for a
     shader to sample, as well as the next pass to load it.
-- Image views: the whole of an image in its format, a 2D image's as 2D, a cube's as a cube and a 3D image's as 3D; a 2D
-  view of a face, or an array view, returns `VK_ERROR_FEATURE_NOT_PRESENT`. A component mapping sets the fetch
+- Image views: the whole of an image in its format, a 2D image's as 2D or as a 2D array of its one layer, which a shader
+  samples as 2D, a cube's as a cube and a 3D image's as 3D; a 2D view of a face, or any other array view, returns
+  `VK_ERROR_FEATURE_NOT_PRESENT`. A component mapping sets the fetch
   constant's swizzle (`xsdk_texture_swizzle`), so a view samples any of the format's channels, 0 or 1 as each of red,
   green, blue and alpha, the format's own picked as Formats ("On xsdk") has them; a swizzled view of a depth image
   returns `VK_ERROR_FEATURE_NOT_PRESENT`.
@@ -578,12 +579,14 @@ Some are there to refuse, as the features they need aren't reported. Each logs w
 
   What they write the GPU reads afresh: the range goes out of its vertex and texture caches, and an image written is
   no longer what eDRAM holds. Copies of depth images return `VK_ERROR_FEATURE_NOT_PRESENT`.
-- `vkCmdCopyBufferToImage` and `vkCmdCopyImageToBuffer` copy whole mip levels, to or from tightly packed rows or rows
-  `bufferRowLength` texels long, at 4-byte-aligned offsets, in runs of whole words where the rows are word-aligned
-  (`xsdk_texture_upload_slice_rows`, `xsdk_texture_download_slice_rows`). A compressed level goes a row of blocks at a
-  time, each 16-bit word's bytes swapped (Images). A copy out reads the GPU's write-combined memory, so it's slow. A
-  region may cover any of a cube's layers or a 3D image's slices, each one's rows `bufferImageHeight` rows, or the
-  level's height, after the last's (milestone 23).
+- `vkCmdCopyBufferToImage` and `vkCmdCopyImageToBuffer` copy any part of a mip level, to or from tightly packed rows
+  or rows `bufferRowLength` texels long, at 4-byte-aligned offsets, in runs of whole words where the rows are
+  word-aligned (`xsdk_texture_upload_slice_rows`, `xsdk_texture_download_slice_rows`). A region of whole rows goes
+  straight in or out; one of part of each row goes a row at a time through a row of the CPU's, read from the level and,
+  on the way in, written back. A compressed level goes whole, a row of blocks at a time, each 16-bit word's bytes
+  swapped (Images); part of one returns `VK_ERROR_FEATURE_NOT_PRESENT`. A copy out reads the GPU's write-combined
+  memory, so it's slow. A region may cover any of a cube's layers or a 3D image's slices, each one's rows
+  `bufferImageHeight` rows, or the region's height, after the last's (milestone 23).
 - `vkCmdCopyImage` copies whole levels of one size between formats of one texel size, the bits as they are, a row at a
   time, as many of a cube's layers or a 3D image's slices as the other gives. A copy between a compressed and an
   uncompressed format, which Vulkan allows, fails the command buffer, as their 16-bit words lie in different orders.

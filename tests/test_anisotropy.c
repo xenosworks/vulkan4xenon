@@ -428,6 +428,25 @@ static void destroy(const Harness *harness, Scene *scene)
 	vkFreeMemory(device, scene->staging_memory, NULL);
 }
 
+// The image's one layer as a 2D array, as PPSSPP views every texture, and a view of its levels past the first refused.
+static bool views_as_array(const Harness *harness, const Scene *scene)
+{
+	VkImageViewCreateInfo view_info = {
+		.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+		.image = scene->image,
+		.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY,
+		.format = VK_FORMAT_R8G8B8A8_UNORM,
+		.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, LEVELS, 0, 1 },
+	};
+	VkImageView view = VK_NULL_HANDLE;
+	const bool made = vkCreateImageView(harness->device, &view_info, NULL, &view) == VK_SUCCESS;
+	vkDestroyImageView(harness->device, view, NULL);
+	view_info.subresourceRange.baseMipLevel = 1;
+	view_info.subresourceRange.levelCount = LEVELS - 1;
+	const bool part = vkCreateImageView(harness->device, &view_info, NULL, &view) == VK_ERROR_FEATURE_NOT_PRESENT;
+	return made && part;
+}
+
 void test_anisotropy(const Harness *harness)
 {
 	VkPhysicalDeviceFeatures features;
@@ -439,6 +458,8 @@ void test_anisotropy(const Harness *harness)
 	Scene scene = { .render_pass = VK_NULL_HANDLE };
 	const bool built = build(harness, &scene) && upload(harness, &scene);
 	check("anisotropy: a striped image with its levels copied in, and samplers without anisotropy and with 16", built);
+	check("anisotropy: a 2D array view of the image's one layer, and none of its levels past the first",
+		built && views_as_array(harness, &scene));
 	const bool recorded = built && harness->swapchain && harness_ok("recording", record(harness, &scene));
 	uint32_t misses = 0;
 	const uint32_t frames =
