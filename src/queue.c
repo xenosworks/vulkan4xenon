@@ -191,6 +191,7 @@ static void apply_dynamic(const Pipeline *pipeline, Replay *replay)
 static void apply_pipeline(const Pipeline *pipeline, Replay *replay)
 {
 	AppliedState *const applied = &replay->applied;
+	v4x_profile_count(V4X_PROFILE_PIPELINES, 1);
 	applied->pipeline = pipeline;
 	xsdk_gpu_set_shaders(&pipeline->vertex, &pipeline->pixel);
 	if (changed(replay, &applied->vertex_literals, &pipeline->vertex_source, sizeof pipeline->vertex_source))
@@ -282,6 +283,8 @@ static void read_uniform_buffer(const Replay *replay, const V4xShaderResource *r
 // The CPU's copy of a uniform block, read and written into its registers.
 static void read_block(const Replay *replay, const StageResource *stage_resource)
 {
+	v4x_profile_count(V4X_PROFILE_BLOCKS_READ, 1);
+	v4x_profile_count(V4X_PROFILE_QUADS_READ, stage_resource->resource.count);
 	read_uniform_buffer(replay, &stage_resource->resource);
 	write_constants(stage_resource->vertex, stage_resource->resource.first, block, stage_resource->resource.count);
 }
@@ -301,6 +304,7 @@ static bool load_uniform_buffer(const Replay *replay, const V4xShaderResource *r
 	if (address % LOAD_ALIGNMENT_BYTES || descriptor->range_bytes < resource->count * 16)
 		return false;
 	const uint32_t count = (resource->count + V4X_CONSTANT_GROUP - 1) / V4X_CONSTANT_GROUP * V4X_CONSTANT_GROUP;
+	v4x_profile_count(V4X_PROFILE_BLOCKS_LOADED, 1);
 	v4x_profile_lap(V4X_PROFILE_RESOURCES);
 	if (vertex)
 		xsdk_gpu_load_vertex_constants(resource->first, address, count);
@@ -354,6 +358,7 @@ static void point_texture(Replay *replay, uint32_t slot, const Descriptor *descr
 	PointedTexture *const pointed = &replay->pointed_textures[slot];
 	if (pointed->texture == descriptor->texture && pointed->sampler == descriptor->sampler)
 		return;
+	v4x_profile_count(V4X_PROFILE_TEXTURES, 1);
 	xsdk_gpu_set_texture(slot, descriptor->texture, &descriptor->sampler->state);
 	descriptor->image->used_serial = replay->serial;
 	*pointed = (PointedTexture){ .texture = descriptor->texture, .sampler = descriptor->sampler };
@@ -417,6 +422,7 @@ static void apply_resources(const Pipeline *pipeline, Replay *replay)
 		apply_loops(pipeline, replay);
 	for (uint32_t i = plan[PLAN_PUSH]; i < plan[PLAN_PUSH + 1]; i++) {
 		const StageResource *const r = &resources[i];
+		v4x_profile_count(V4X_PROFILE_QUADS_PUSHED, r->push_count);
 		write_constants(r->vertex, r->resource.first + r->push_first, push_run(replay, r->push_first, r->push_count),
 			r->push_count);
 	}
@@ -984,7 +990,7 @@ static void wait_for_span(const TileSpan *span)
 		return;
 	v4x_profile_wait_start();
 	const NTSTATUS status = xsdk_gpu_wait(span->fence, IDLE_TIMEOUT_MS);
-	v4x_profile_wait_end();
+	v4x_profile_wait_end(V4X_PROFILE_WAIT_SPAN);
 	if (!NT_SUCCESS(status))
 		xsdk_log_write("vulkan4xenon: a pass past eDRAM's recording didn't finish: 0x%08X", (unsigned)status);
 }
@@ -1220,6 +1226,7 @@ static void point_streams(Replay *replay, int32_t first_vertex)
 		if (replay->pointed_streams[s].address == stream.address &&
 			replay->pointed_streams[s].size_bytes == stream.size_bytes)
 			continue;
+		v4x_profile_count(V4X_PROFILE_STREAMS, 1);
 		xsdk_gpu_set_vertices(s, stream.address, stream.size_bytes);
 		replay->pointed_streams[s] = stream;
 	}
@@ -1691,7 +1698,9 @@ VKAPI_ATTR VkResult VKAPI_CALL vkQueueBindSparse(
 
 VKAPI_ATTR VkResult VKAPI_CALL vkQueueWaitIdle(VkQueue queue)
 {
+	const uint32_t began = v4x_profile_fence_wait_start();
 	const NTSTATUS status = xsdk_gpu_wait(xsdk_gpu_fence(), IDLE_TIMEOUT_MS);
+	v4x_profile_fence_wait_end(began);
 	if (!NT_SUCCESS(status)) {
 		xsdk_log_write("vulkan4xenon: the GPU didn't go idle: 0x%08X", (unsigned)status);
 		return VK_ERROR_DEVICE_LOST;

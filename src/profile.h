@@ -8,6 +8,39 @@
 // The submit's timing, in a build made with make V4X_PROFILE=1; without it every hook is empty, and compiles to
 // nothing. A lap charges the time since the last lap to a stage, so the stages add up to the submit.
 
+// Where the replay waits for the GPU, for the 10 s log.
+typedef enum {
+	// A copy into a buffer, for every draw since the CPU last waited (transfer.c, wait_for_draws).
+	V4X_PROFILE_WAIT_DRAWS,
+	// What a submission used: an image, queries or repeated indices (transfer.c, wait_for_serial).
+	V4X_PROFILE_WAIT_USED,
+	// Room for a pass past eDRAM's recording (queue.c, wait_for_span).
+	V4X_PROFILE_WAIT_SPAN,
+	V4X_PROFILE_WAIT_SITES,
+} V4xProfileWait;
+
+// What the 10 s log counts a present.
+typedef enum {
+	// Uniform blocks the GPU loaded, and those the CPU read, and their quads.
+	V4X_PROFILE_BLOCKS_LOADED,
+	V4X_PROFILE_BLOCKS_READ,
+	V4X_PROFILE_QUADS_READ,
+	// Quads of push constants written.
+	V4X_PROFILE_QUADS_PUSHED,
+	// Pipelines applied whole, textures and streams pointed.
+	V4X_PROFILE_PIPELINES,
+	V4X_PROFILE_TEXTURES,
+	V4X_PROFILE_STREAMS,
+	// Bytes copied on the CPU: into images, rows of them read back to copy part of a row, out of images, between
+	// images, and into buffers.
+	V4X_PROFILE_UPLOAD_BYTES,
+	V4X_PROFILE_PARTIAL_ROWS,
+	V4X_PROFILE_DOWNLOAD_BYTES,
+	V4X_PROFILE_IMAGE_COPY_BYTES,
+	V4X_PROFILE_BUFFER_BYTES,
+	V4X_PROFILE_COUNTS,
+} V4xProfileCount;
+
 #ifdef V4X_PROFILE
 // Counts a submit and starts its laps; the first also learns what a lap costs.
 void v4x_profile_submit(void);
@@ -21,7 +54,12 @@ void v4x_profile_draw(void);
 void v4x_profile_present(void);
 // Time a wait for the GPU in the replay, for the 10 s log; the stage the wait falls in still counts it too.
 void v4x_profile_wait_start(void);
-void v4x_profile_wait_end(void);
+void v4x_profile_wait_end(V4xProfileWait site);
+void v4x_profile_count(V4xProfileCount what, uint32_t amount);
+// Time a wait for a fence outside the submit, on any thread (vkWaitForFences, vkQueueWaitIdle); start returns when it
+// began, for end. Threads waiting at once race on the totals, which a log can bear.
+uint32_t v4x_profile_fence_wait_start(void);
+void v4x_profile_fence_wait_end(uint32_t began);
 // Time a pass past eDRAM's begin and end (src/queue.c), a wait for the GPU between begin and begun counted as its too.
 void v4x_profile_tiles_begin(void);
 void v4x_profile_tiles_begun(void);
@@ -59,8 +97,25 @@ static inline void v4x_profile_wait_start(void)
 {
 }
 
-static inline void v4x_profile_wait_end(void)
+static inline void v4x_profile_wait_end(V4xProfileWait site)
 {
+	(void)site;
+}
+
+static inline void v4x_profile_count(V4xProfileCount what, uint32_t amount)
+{
+	(void)what;
+	(void)amount;
+}
+
+static inline uint32_t v4x_profile_fence_wait_start(void)
+{
+	return 0;
+}
+
+static inline void v4x_profile_fence_wait_end(uint32_t began)
+{
+	(void)began;
 }
 
 static inline void v4x_profile_tiles_begin(void)

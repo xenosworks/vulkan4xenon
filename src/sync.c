@@ -4,6 +4,7 @@
 
 #include "host.h"
 #include "objects.h"
+#include "profile.h"
 #include "xsdk/gpu.h"
 #include "xsdk/log.h"
 
@@ -84,12 +85,16 @@ static VkResult wait_one(Fence *fence, uint64_t timeout_ns)
 		return VK_TIMEOUT;
 	const bool forever = timeout_ns == UINT64_MAX;
 	uint64_t left_ms = (timeout_ns + NANOSECONDS_PER_MILLISECOND - 1) / NANOSECONDS_PER_MILLISECOND;
+	const uint32_t began = v4x_profile_fence_wait_start();
 	while (forever || left_ms) {
 		const uint32_t slice = forever || left_ms > WAIT_SLICE_MS ? WAIT_SLICE_MS : (uint32_t)left_ms;
-		if (NT_SUCCESS(xsdk_gpu_wait(fence->number, slice)))
+		if (NT_SUCCESS(xsdk_gpu_wait(fence->number, slice))) {
+			v4x_profile_fence_wait_end(began);
 			return signaled(fence) ? VK_SUCCESS : VK_TIMEOUT;
+		}
 		left_ms -= forever ? 0 : slice;
 	}
+	v4x_profile_fence_wait_end(began);
 	return VK_TIMEOUT;
 }
 

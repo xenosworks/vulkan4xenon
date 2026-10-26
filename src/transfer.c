@@ -56,7 +56,7 @@ static void wait_for_serial(VkQueue queue, uint32_t serial, const char *what)
 		return;
 	v4x_profile_wait_start();
 	const NTSTATUS status = xsdk_gpu_wait(fence, IDLE_TIMEOUT_MS);
-	v4x_profile_wait_end();
+	v4x_profile_wait_end(V4X_PROFILE_WAIT_USED);
 	if (!NT_SUCCESS(status))
 		xsdk_log_write("vulkan4xenon: the GPU didn't finish with %s: 0x%08X", what, (unsigned)status);
 }
@@ -96,7 +96,7 @@ static void wait_for_draws(VkQueue queue)
 		return;
 	v4x_profile_wait_start();
 	const NTSTATUS status = xsdk_gpu_wait(xsdk_gpu_fence(), IDLE_TIMEOUT_MS);
-	v4x_profile_wait_end();
+	v4x_profile_wait_end(V4X_PROFILE_WAIT_DRAWS);
 	if (!NT_SUCCESS(status))
 		xsdk_log_write(
 			"vulkan4xenon: the GPU didn't finish its draws for a copy into a buffer: 0x%08X", (unsigned)status);
@@ -118,6 +118,13 @@ static void image_written(VkQueue queue, const Image *image)
 		if (queue->colors[i].image == image)
 			queue->colors[i] = (EdramPart){ .contents = EDRAM_UNKNOWN };
 	}
+}
+
+// The bytes a copy's region holds in the image, for the profile.
+static uint32_t region_bytes(const Image *image, const LevelCopy *copy)
+{
+	return v4x_texel_blocks(image->format, copy->width) * v4x_texel_bytes(image->format) *
+		v4x_texel_blocks(image->format, copy->height) * copy->slice_count;
 }
 
 // A layer's or 3D slice's rows in the copy's buffer.
@@ -150,6 +157,7 @@ static void upload_texels(Image *image, const LevelCopy *copy, uint32_t slice)
 		return;
 	}
 	const uint32_t texel_bytes = v4x_texel_bytes(image->format);
+	v4x_profile_count(V4X_PROFILE_PARTIAL_ROWS, copy->height);
 	for (uint32_t y = 0; y < copy->height; y++) {
 		xsdk_texture_download_slice_rows(&image->texture, copy->level, layer, copy->y + y, 1, rows[ROW_OUT], 0);
 		memcpy(rows[ROW_OUT] + copy->x * texel_bytes, from + y * copy->row_bytes, copy->width * texel_bytes);
@@ -161,6 +169,7 @@ void v4x_transfer_buffer_to_image(VkQueue queue, const LevelCopy *copy)
 {
 	Image *const image = copy->image;
 	wait_for_image(queue, image);
+	v4x_profile_count(V4X_PROFILE_UPLOAD_BYTES, region_bytes(image, copy));
 	for (uint32_t i = 0; i < copy->slice_count; i++) {
 		if (is_compressed(image))
 			upload_blocks(image, copy, i);
@@ -205,6 +214,7 @@ void v4x_transfer_image_to_buffer(VkQueue queue, const LevelCopy *copy)
 	const uint32_t height = is_compressed(image) ? level_rows(image, copy->level) : copy->height;
 	wait_for_image(queue, image);
 	wait_for_draws(queue);
+	v4x_profile_count(V4X_PROFILE_DOWNLOAD_BYTES, region_bytes(image, copy));
 	for (uint32_t i = 0; i < copy->slice_count; i++) {
 		if (is_compressed(image))
 			download_blocks(image, copy, i);
@@ -224,6 +234,9 @@ void v4x_transfer_copy_image(VkQueue queue, const Command *command)
 	wait_for_image(queue, source);
 	wait_for_image(queue, destination);
 	const uint32_t height = level_rows(source, from_level);
+	v4x_profile_count(V4X_PROFILE_IMAGE_COPY_BYTES,
+		height * v4x_texel_blocks(source->format, level_size(source->width, from_level)) *
+			v4x_texel_bytes(source->format) * command->image_copy.slice_count);
 	for (uint32_t i = 0; i < command->image_copy.slice_count; i++) {
 		const uint32_t from = command->image_copy.source_slice + i;
 		const uint32_t to = command->image_copy.destination_slice + i;
@@ -352,6 +365,7 @@ void v4x_transfer_clear(VkQueue queue, const Command *command)
 void v4x_transfer_copy_buffer(VkQueue queue, const Command *command, volatile const void *source)
 {
 	wait_for_draws(queue);
+	v4x_profile_count(V4X_PROFILE_BUFFER_BYTES, command->buffer_copy.size_bytes);
 	memcpy((void *)(uintptr_t)command->buffer_copy.destination, (const void *)(uintptr_t)source,
 		command->buffer_copy.size_bytes);
 	buffer_written(command->buffer_copy.address, command->buffer_copy.size_bytes);
@@ -360,6 +374,7 @@ void v4x_transfer_copy_buffer(VkQueue queue, const Command *command, volatile co
 void v4x_transfer_fill_buffer(VkQueue queue, const Command *command)
 {
 	wait_for_draws(queue);
+	v4x_profile_count(V4X_PROFILE_BUFFER_BYTES, command->buffer_copy.size_bytes);
 	volatile uint32_t *const words = (volatile uint32_t *)(uintptr_t)command->buffer_copy.destination;
 	for (uint32_t i = 0; i < command->buffer_copy.size_bytes / 4; i++)
 		words[i] = command->buffer_copy.data;

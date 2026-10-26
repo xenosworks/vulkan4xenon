@@ -45,18 +45,41 @@ static uint64_t command_ticks[COMMAND_TYPES];
 static uint32_t command_laps[COMMAND_TYPES];
 static uint64_t logged_command_ticks[COMMAND_TYPES];
 static uint32_t logged_command_laps[COMMAND_TYPES];
-// The replay's waits for the GPU: their ticks and count, both at the last log, and when the one going on began.
-static uint64_t wait_ticks;
-static uint32_t waits;
-static uint64_t logged_wait_ticks;
-static uint32_t logged_waits;
+// The replay's waits for the GPU by site: their ticks and count, both at the last log, and when the one going on began.
+static uint64_t wait_ticks[V4X_PROFILE_WAIT_SITES];
+static uint32_t waits[V4X_PROFILE_WAIT_SITES];
+static uint64_t logged_wait_ticks[V4X_PROFILE_WAIT_SITES];
+static uint32_t logged_waits[V4X_PROFILE_WAIT_SITES];
 static uint32_t wait_began;
+// The app's waits for fences, likewise.
+static uint64_t fence_wait_ticks;
+static uint32_t fence_waits;
+static uint64_t logged_fence_wait_ticks;
+static uint32_t logged_fence_waits;
+// V4xProfileCount's counts, and theirs at the last log.
+static uint64_t counts[V4X_PROFILE_COUNTS];
+static uint64_t logged_counts[V4X_PROFILE_COUNTS];
+static const char *const count_names[V4X_PROFILE_COUNTS] = {
+	"uniform blocks the GPU loaded",
+	"uniform blocks the CPU read",
+	"quads the CPU read from uniform blocks",
+	"push constant quads written",
+	"pipelines applied whole",
+	"textures pointed",
+	"streams pointed",
+	"bytes copied into images",
+	"rows read back to copy part of a row",
+	"bytes copied out of images",
+	"bytes copied between images",
+	"bytes copied into buffers",
+};
 // When the pass past eDRAM's begin or end being timed started, and whether a wait now falls in its begin.
 static uint32_t tiles_began;
 static bool in_tiled_begin;
 
 static void log_commands(void);
 static void log_waits(void);
+static void log_counts(void);
 
 // The low word alone: a lap is far shorter than its 86 s wrap.
 static uint32_t time_base(void)
@@ -139,6 +162,7 @@ void v4x_profile_present(void)
 	v4x_profile_log("the last 10 s", &logged, &totals);
 	log_commands();
 	log_waits();
+	log_counts();
 	logged = totals;
 	logged_at = now;
 }
@@ -148,15 +172,31 @@ void v4x_profile_wait_start(void)
 	wait_began = time_base();
 }
 
-void v4x_profile_wait_end(void)
+void v4x_profile_wait_end(V4xProfileWait site)
 {
 	const uint32_t ticks = time_base() - wait_began;
-	wait_ticks += ticks;
-	waits++;
+	wait_ticks[site] += ticks;
+	waits[site]++;
 	if (!in_tiled_begin)
 		return;
 	totals.tiled_wait_ticks += ticks;
 	totals.tiled_waits++;
+}
+
+void v4x_profile_count(V4xProfileCount what, uint32_t amount)
+{
+	counts[what] += amount;
+}
+
+uint32_t v4x_profile_fence_wait_start(void)
+{
+	return time_base();
+}
+
+void v4x_profile_fence_wait_end(uint32_t began)
+{
+	fence_wait_ticks += time_base() - began;
+	fence_waits++;
 }
 
 void v4x_profile_tiles_begin(void)
@@ -287,15 +327,49 @@ static void log_commands(void)
 	}
 }
 
-// Since the last log, the replay's waits for the GPU: their time a present, and how many, in tenths.
+// A wait's line: its time a present, and how many, in tenths.
+static void log_wait(const char *what, uint64_t ticks, uint32_t count, uint32_t presents)
+{
+	const uint32_t tenths = each((uint64_t)count * 10, presents);
+	xsdk_log_write("vulkan4xenon: profile, the last 10 s: %s, %u us a present, %u.%u a present", what,
+		(unsigned)each(nanoseconds(ticks) / 1000, presents), (unsigned)(tenths / 10), (unsigned)(tenths % 10));
+}
+
+// Since the last log, the replay's waits for the GPU, all and at each site, then the app's waits for fences.
 static void log_waits(void)
 {
+	static const char *const sites[V4X_PROFILE_WAIT_SITES] = {
+		"of them for draws before a copy into a buffer",
+		"for what a submission used",
+		"for room for a pass past eDRAM",
+	};
 	const uint32_t presents = totals.presents - logged.presents;
-	const uint32_t us = each(nanoseconds(wait_ticks - logged_wait_ticks) / 1000, presents);
-	const uint32_t tenths = each((uint64_t)(waits - logged_waits) * 10, presents);
-	xsdk_log_write(
-		"vulkan4xenon: profile, the last 10 s: the replay's waits for the GPU, %u us a present, %u.%u a present",
-		(unsigned)us, (unsigned)(tenths / 10), (unsigned)(tenths % 10));
-	logged_wait_ticks = wait_ticks;
-	logged_waits = waits;
+	uint64_t ticks = 0;
+	uint32_t count = 0;
+	for (uint32_t s = 0; s < V4X_PROFILE_WAIT_SITES; s++) {
+		ticks += wait_ticks[s] - logged_wait_ticks[s];
+		count += waits[s] - logged_waits[s];
+	}
+	log_wait("the replay's waits for the GPU", ticks, count, presents);
+	for (uint32_t s = 0; s < V4X_PROFILE_WAIT_SITES; s++) {
+		log_wait(sites[s], wait_ticks[s] - logged_wait_ticks[s], waits[s] - logged_waits[s], presents);
+		logged_wait_ticks[s] = wait_ticks[s];
+		logged_waits[s] = waits[s];
+	}
+	log_wait("the app's waits for fences, outside the submit", fence_wait_ticks - logged_fence_wait_ticks,
+		fence_waits - logged_fence_waits, presents);
+	logged_fence_wait_ticks = fence_wait_ticks;
+	logged_fence_waits = fence_waits;
+}
+
+// Since the last log, each count a present.
+static void log_counts(void)
+{
+	const uint32_t presents = totals.presents - logged.presents;
+	for (uint32_t c = 0; c < V4X_PROFILE_COUNTS; c++) {
+		const uint32_t tenths = each((counts[c] - logged_counts[c]) * 10, presents);
+		xsdk_log_write("vulkan4xenon: profile, the last 10 s: %s, %u.%u a present", count_names[c],
+			(unsigned)(tenths / 10), (unsigned)(tenths % 10));
+		logged_counts[c] = counts[c];
+	}
 }
