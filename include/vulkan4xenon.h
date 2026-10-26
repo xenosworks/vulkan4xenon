@@ -99,6 +99,15 @@ typedef struct {
 
 V4xShaderCounts v4x_shader_counts(void);
 
+// What render passes' begins did to eDRAM since the device was made: images drawn back for a load op, and resolves
+// made to clear for a clear op, each where eDRAM didn't already hold what the pass begins with.
+typedef struct {
+	uint32_t drawn_back;
+	uint32_t clear_resolves;
+} V4xEdramCounts;
+
+V4xEdramCounts v4x_edram_counts(void);
+
 // The parts of vkQueueSubmit a profile build times, made with make V4X_PROFILE=1 (docs/ROADMAP.md, milestone 29).
 typedef enum {
 	// The replay's loop and switch, from one command to the next push or draw.

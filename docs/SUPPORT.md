@@ -413,17 +413,23 @@ Some are there to refuse, as the features they need aren't reported. Each logs w
     so the draws after it skip no hidden pixels early.
 - How an untiled pass maps (docs/ROADMAP.md, milestones 4, 25 and 27):
   - the pass draws into eDRAM, each colour attachment a colour target of its own in its format, one after another
-    from tile 0 at the subpass's samples (`xsdk_gpu_set_targets_samples`), and depth where eDRAM holds its image's, or
-    the clear it wants at its size and samples;
-    a depth eDRAM doesn't hold goes ending at tile 2048, or just under a depth image eDRAM holds there when that stays
-    above the pass's colour, so a pass with a smaller depth of its own leaves the earlier one alone, as a pass without
+    at the subpass's samples (`xsdk_gpu_set_targets_samples`), and depth where eDRAM holds its image's, or the clear
+    it wants at its size and samples;
+  - the colour targets start where eDRAM holds what one of them begins with: the image it loads, the clear it
+    clears to, or its own image. Otherwise they take the lowest tiles that hold nothing tracked and leave a new
+    depth its room at the top, or tile 0 when none do, or when the depth would land on them (milestone 66). So
+    passes going back and forth between framebuffers that fit together, such as an emulator's main framebuffer and
+    a small one it draws palette lookups into between its passes, find each other still in eDRAM, and none is drawn
+    back;
+    a depth eDRAM doesn't hold goes ending at tile 2048, or just under a depth image eDRAM holds there when that misses
+    the pass's colour, so a pass with a smaller depth of its own leaves the earlier one alone, as a pass without
     depth does (milestone 14). Up to four depths are tracked, each lost when a pass's colour or depth reaches its
-    tiles, and a depth below the end of a pass's colour targets is lost to them;
+    tiles;
   - its end resolves each colour target's area into its attachment's image, converted to the image's format
     (`xsdk_gpu_resolve_target`, or `xsdk_gpu_resolve_texture_rect` for a smaller area);
-  - the layer tracks what each of the last pass's colour targets holds, at its tile and in its format, and what each
-    depth holds, and over which rectangle: values a resolve cleared it to, at a framebuffer's size, or an image's
-    contents;
+  - the layer tracks what up to eight colour targets hold, the newest passes', at their tiles and in their formats,
+    each lost when a pass's colour or depth reaches its tiles, and what each depth holds, and over which rectangle:
+    values a resolve cleared it to, at a framebuffer's size, or an image's contents;
   - a clear finds its values there over its area, or beginning the pass resolves into the attachment to set them,
     copying junk the pass then overwrites, a resolve for each colour attachment that clears;
   - a load finds its image there over its area, or the layer draws the image back in, texel for texel, with its own

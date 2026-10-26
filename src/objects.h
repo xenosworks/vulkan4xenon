@@ -160,6 +160,8 @@ enum {
 	V4X_SUBMIT_FENCES = 64,
 	// The depths eDRAM keeps track of at once.
 	V4X_EDRAM_DEPTHS = 4,
+	// And the colour targets, so passes going back and forth between framebuffers find theirs still there.
+	V4X_EDRAM_COLORS = 8,
 	// GPU memory for indexed instanced draws' repeated indices (transfer.c), in parts filled in turn; a part holds the
 	// most a draw repeats, a packet's 65535 indices of 32 bits.
 	V4X_INDEX_COPY_PARTS = 4,
@@ -183,8 +185,9 @@ typedef struct {
 
 struct VkQueue_T {
 	VkDevice device;
-	// The last pass's colour targets, from tile 0 (render_pass.c).
-	EdramPart colors[V4X_MAX_COLOR_ATTACHMENTS];
+	// Colour targets wherever passes placed them (queue.c, place_colors), newest first; during a pass, its target i's
+	// at i.
+	EdramPart colors[V4X_EDRAM_COLORS];
 	// Depths at tiles of their own, so a pass with depth of its own needn't take an earlier pass's (milestone 14).
 	EdramPart depths[V4X_EDRAM_DEPTHS];
 	// The depth and stencil resolves clear to, as last given to xsdk_gpu_set_depth_clear.
@@ -456,7 +459,8 @@ typedef struct {
 } RenderPassSubpasses;
 
 // One subpass's attachments' images, and the colour targets they draw into, one after another in eDRAM from tile 0,
-// with the tiles they take all together; or past eDRAM's tiles, the tiled pass they draw in.
+// which a pass moves up as a whole to where it places them (queue.c, place_colors), with the tiles they take all
+// together; or past eDRAM's tiles, the tiled pass they draw in.
 typedef struct {
 	Image *attachments[V4X_MAX_COLOR_ATTACHMENTS];
 	// Each colour attachment's resolve attachment, or NULL.

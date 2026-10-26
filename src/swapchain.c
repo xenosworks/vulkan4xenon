@@ -147,7 +147,7 @@ static void forget_edram_after_system_draws(VkQueue queue)
 	if (stats.system_draws == queue->system_draws)
 		return;
 	queue->system_draws = stats.system_draws;
-	for (uint32_t i = 0; i < V4X_MAX_COLOR_ATTACHMENTS; i++)
+	for (uint32_t i = 0; i < V4X_EDRAM_COLORS; i++)
 		queue->colors[i] = (EdramPart){ .contents = EDRAM_UNKNOWN };
 	for (uint32_t i = 0; i < V4X_EDRAM_DEPTHS; i++)
 		queue->depths[i] = (EdramPart){ .contents = EDRAM_UNKNOWN };

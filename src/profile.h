@@ -83,10 +83,10 @@ void v4x_profile_tiles_ended(uint32_t dwords);
 // Time the GPU takes on a submit, from the first hook to the second, by its clock.
 void v4x_profile_gpu_begin(void);
 void v4x_profile_gpu_end(void);
-// A render pass for the trace: its begin and end, each timed from the first hook to the second, what it did, and the
-// textures it pointed.
+// A render pass for the trace: its begin and end, each timed from the first hook to the second, where its colour went,
+// what it did, and the textures it pointed.
 void v4x_profile_pass_begin(const Framebuffer *framebuffer, const RenderPass *render_pass, const VkRect2D *area);
-void v4x_profile_pass_begun(void);
+void v4x_profile_pass_begun(uint32_t color_tile);
 void v4x_profile_pass_end(void);
 void v4x_profile_pass_ended(void);
 void v4x_profile_pass_event(V4xProfilePassEvent event);
@@ -177,8 +177,9 @@ static inline void v4x_profile_pass_begin(
 	(void)area;
 }
 
-static inline void v4x_profile_pass_begun(void)
+static inline void v4x_profile_pass_begun(uint32_t color_tile)
 {
+	(void)color_tile;
 }
 
 static inline void v4x_profile_pass_end(void)

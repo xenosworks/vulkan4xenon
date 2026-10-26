@@ -27,8 +27,10 @@ enum {
 	GPU_PENDING = 8,
 	// What a slot holds until the GPU writes its clock.
 	GPU_UNWRITTEN = 0xFFFFFFFF,
-	// The passes the trace keeps, and the textures each.
+	// The passes the trace keeps, from the present after it's armed, and the textures each; it logs them at the present
+	// after they're all kept, or after TRACE_PRESENTS presents.
 	TRACE_PASSES = 1024,
+	TRACE_PRESENTS = 8,
 	TRACE_TEXTURES = 4,
 	// The next present's passes are traced after the third 10 s log of this many draws a present or more, so a game
 	// has settled past its menus and loading.
@@ -140,6 +142,7 @@ static uint32_t logged_gpu_counted;
 static PassTrace trace[TRACE_PASSES];
 static uint32_t trace_count;
 static TraceState trace_state;
+static uint32_t trace_presents;
 // The 10 s logs of TRACE_DRAWS a present or more so far.
 static uint32_t logs;
 static PassTrace *pass;
@@ -227,7 +230,7 @@ void v4x_profile_present(void)
 	if (!calibrated)
 		return;
 	totals.presents++;
-	if (trace_state == TRACE_RECORDING) {
+	if (trace_state == TRACE_RECORDING && (trace_count == TRACE_PASSES || ++trace_presents == TRACE_PRESENTS)) {
 		log_trace();
 		trace_state = TRACE_DONE;
 	} else if (trace_state == TRACE_ARMED) {
@@ -313,7 +316,6 @@ void v4x_profile_pass_begin(const Framebuffer *framebuffer, const RenderPass *re
 		.height = framebuffer->height,
 		.samples = framebuffer->samples,
 		.color_count = render_pass->color_count,
-		.tile = colors ? framebuffer->targets[0].tile : 0,
 		.load_op = colors ? render_pass->load_ops[0] : 0,
 		.store_op = colors ? render_pass->store_ops[0] : 0,
 		.has_depth = render_pass->has_depth,
@@ -324,11 +326,12 @@ void v4x_profile_pass_begin(const Framebuffer *framebuffer, const RenderPass *re
 	pass_started = time_base();
 }
 
-void v4x_profile_pass_begun(void)
+void v4x_profile_pass_begun(uint32_t color_tile)
 {
 	if (!pass)
 		return;
 	pass->begin_ticks = time_base() - pass_started;
+	pass->tile = color_tile;
 	pass_draws = totals.draws;
 }
 
@@ -575,11 +578,13 @@ static void log_gpu(void)
 	logged_gpu_counted = gpu_counted;
 }
 
-// One present's passes, a line each: the image of its first attachment and its size, samples, colour attachments and
-// first tile; its first attachment's load and store ops; its depth's; its area; what it did; the textures it pointed.
+// The passes traced, a line each: the image of its first attachment and its size, samples, colour attachments and
+// the first tile it placed them at; its first attachment's load and store ops; its depth's; its area; what it did; the
+// textures it pointed.
 static void log_trace(void)
 {
-	xsdk_log_write("vulkan4xenon: profile, a present's %u passes", (unsigned)trace_count);
+	xsdk_log_write(
+		"vulkan4xenon: profile, %u passes over %u presents", (unsigned)trace_count, (unsigned)trace_presents);
 	for (uint32_t i = 0; i < trace_count; i++) {
 		const PassTrace *const p = &trace[i];
 		xsdk_log_write(

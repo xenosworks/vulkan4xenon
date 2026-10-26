@@ -76,6 +76,9 @@ typedef struct {
 	const Framebuffer *framebuffer;
 	// The render area, which the pass clears, loads and stores alone.
 	VkRect2D area;
+	// Where the pass's colour targets went (place_colors): the framebuffer's, moved up from tile 0 to color_tile.
+	uint32_t color_tile;
+	XsdkColorTarget targets[V4X_MAX_COLOR_ATTACHMENTS];
 	// The depth image's own clear covers all of it, past a smaller area, so it's drawn (clear_image_depth).
 	bool draws_image_clear;
 	// Where the pass's depth is, in queue->depths and in eDRAM (place_depth).
@@ -107,6 +110,9 @@ typedef struct {
 	// In a tiled pass, whose commands go into its recording (begin_tiled_pass).
 	bool tiling;
 } Replay;
+
+// What render passes' begins did to eDRAM, for the tests; the queue's external synchronization guards it.
+static V4xEdramCounts edram_counts;
 
 // A block's registers on their way into the constants; the queue is externally synchronized, so one copy will do.
 static float block[V4X_FLOAT_CONSTANTS * 4] __attribute__((aligned(16)));
@@ -463,12 +469,12 @@ static void set_depth_clear(VkQueue queue, float depth, uint32_t stencil)
 	queue->stencil_clear = stencil;
 }
 
-// The colour targets one after another from tile 0 (render_pass.c), and depth where place_depth put it
-// (docs/ROADMAP.md, milestones 4, 14 and 25), at the pass's samples.
+// The colour targets where place_colors put them, and depth where place_depth put it (docs/ROADMAP.md, milestones 4,
+// 14 and 25), at the pass's samples.
 static void set_target(const Replay *replay)
 {
 	const Framebuffer *const framebuffer = replay->framebuffer;
-	xsdk_gpu_set_targets_samples(framebuffer->width, framebuffer->height, framebuffer->samples, framebuffer->targets,
+	xsdk_gpu_set_targets_samples(framebuffer->width, framebuffer->height, framebuffer->samples, replay->targets,
 		replay->render_pass->color_count, replay->depth_tile);
 }
 
@@ -477,7 +483,7 @@ static void set_one_target(const Replay *replay, uint32_t i)
 {
 	const Framebuffer *const framebuffer = replay->framebuffer;
 	xsdk_gpu_set_targets_samples(
-		framebuffer->width, framebuffer->height, framebuffer->samples, &framebuffer->targets[i], 1, replay->depth_tile);
+		framebuffer->width, framebuffer->height, framebuffer->samples, &replay->targets[i], 1, replay->depth_tile);
 }
 
 static VkRect2D whole(const Framebuffer *framebuffer)
@@ -530,14 +536,15 @@ static bool same_size(const EdramPart *part, const Framebuffer *framebuffer)
 		part->samples == framebuffer->samples;
 }
 
-static EdramPart cleared_color(const Framebuffer *framebuffer, uint32_t target, const float rgba[4], VkRect2D area)
+static EdramPart cleared_color(const Replay *replay, uint32_t target, const float rgba[4], VkRect2D area)
 {
+	const Framebuffer *const framebuffer = replay->framebuffer;
 	EdramPart part = { .contents = EDRAM_CLEARED,
 		.width = framebuffer->width,
 		.height = framebuffer->height,
 		.samples = framebuffer->samples,
-		.tile = framebuffer->targets[target].tile,
-		.format = framebuffer->targets[target].format,
+		.tile = replay->targets[target].tile,
+		.format = replay->targets[target].format,
 		.area = area };
 	memcpy(part.rgba, rgba, sizeof part.rgba);
 	return part;
@@ -567,24 +574,28 @@ static EdramPart holding(const Image *image, uint32_t tile, VkRect2D area)
 		.area = area };
 }
 
-static EdramPart holding_color(const Framebuffer *framebuffer, uint32_t target, VkRect2D area)
+static EdramPart holding_color(const Replay *replay, uint32_t target, VkRect2D area)
 {
-	EdramPart part = holding(framebuffer->attachments[target], framebuffer->targets[target].tile, area);
-	part.format = framebuffer->targets[target].format;
+	EdramPart part = holding(replay->framebuffer->attachments[target], replay->targets[target].tile, area);
+	part.format = replay->targets[target].format;
 	return part;
 }
 
-// What eDRAM holds where colour target i goes: what the last pass left at that tile in that format, or nothing known,
-// as anything else there may be part of another target.
-static EdramPart held_color(VkQueue queue, const Framebuffer *framebuffer, uint32_t target)
+// What eDRAM holds where a colour target goes: what a pass left at that tile in that format, or nothing known, as
+// anything else there may be part of another target.
+static EdramPart held_part(VkQueue queue, const XsdkColorTarget *wanted)
 {
-	const XsdkColorTarget *const wanted = &framebuffer->targets[target];
-	for (uint32_t i = 0; i < V4X_MAX_COLOR_ATTACHMENTS; i++) {
+	for (uint32_t i = 0; i < V4X_EDRAM_COLORS; i++) {
 		const EdramPart *const part = &queue->colors[i];
 		if (part->contents != EDRAM_UNKNOWN && part->tile == wanted->tile && part->format == wanted->format)
 			return *part;
 	}
 	return (EdramPart){ .contents = EDRAM_UNKNOWN };
+}
+
+static EdramPart held_color(VkQueue queue, const Replay *replay, uint32_t target)
+{
+	return held_part(queue, &replay->targets[target]);
 }
 
 // Whether eDRAM's colour target i is what its load op wants over the area.
@@ -618,10 +629,15 @@ static bool part_overlaps(const EdramPart *part, uint32_t first, uint32_t tiles)
 		first < part->tile + xsdk_gpu_target_sample_tiles(part->width, part->height, part->samples);
 }
 
-// Whether tiles first to first + tiles stay above the pass's colour and miss every depth image eDRAM holds.
-static bool depth_tiles_free(VkQueue queue, uint32_t first, uint32_t tiles, uint32_t color_tiles)
+static bool ranges_overlap(uint32_t first, uint32_t tiles, uint32_t other_first, uint32_t other_tiles)
 {
-	if (first < color_tiles)
+	return first < other_first + other_tiles && other_first < first + tiles;
+}
+
+// Whether tiles first to first + tiles miss the pass's colour and every depth image eDRAM holds.
+static bool depth_tiles_free(VkQueue queue, uint32_t first, uint32_t tiles, uint32_t color_first, uint32_t color_tiles)
+{
+	if (ranges_overlap(first, tiles, color_first, color_tiles))
 		return false;
 	for (uint32_t i = 0; i < V4X_EDRAM_DEPTHS; i++) {
 		if (queue->depths[i].contents == EDRAM_IMAGE && part_overlaps(&queue->depths[i], first, tiles))
@@ -633,45 +649,61 @@ static bool depth_tiles_free(VkQueue queue, uint32_t first, uint32_t tiles, uint
 // Where a depth eDRAM doesn't hold goes: ending at the top, as milestone 4 placed every depth, or else just under a
 // depth image eDRAM holds, so that image keeps its depth for a later pass to load; at the top all the same when
 // neither fits.
-static uint32_t new_depth_tile(VkQueue queue, uint32_t tiles, uint32_t color_tiles)
+static uint32_t new_depth_tile(VkQueue queue, uint32_t tiles, uint32_t color_first, uint32_t color_tiles)
 {
 	const uint32_t top = XSDK_EDRAM_TILES - tiles;
-	if (depth_tiles_free(queue, top, tiles, color_tiles))
+	if (depth_tiles_free(queue, top, tiles, color_first, color_tiles))
 		return top;
 	for (uint32_t i = 0; i < V4X_EDRAM_DEPTHS; i++) {
 		const EdramPart *const part = &queue->depths[i];
 		if (part->contents == EDRAM_IMAGE && part->tile >= tiles &&
-			depth_tiles_free(queue, part->tile - tiles, tiles, color_tiles))
+			depth_tiles_free(queue, part->tile - tiles, tiles, color_first, color_tiles))
 			return part->tile - tiles;
 	}
 	return top;
 }
 
-// Places the pass's depth: where eDRAM holds its image's, or the clear the pass wants at its size, or at new tiles.
-// Whatever depth the pass's colour or depth then reaches is lost, as colour drawn over it overwrites it.
+// The tiles a depth at the framebuffer's size takes.
+static uint32_t depth_tiles(const Framebuffer *framebuffer)
+{
+	return xsdk_gpu_target_sample_tiles(framebuffer->width, framebuffer->height, framebuffer->samples);
+}
+
+// Where the pass's depth goes with its colour from color_first: where eDRAM holds its image's, or the clear the pass
+// wants at its size, in part; else new tiles, part V4X_EDRAM_DEPTHS.
+static uint32_t choose_depth(VkQueue queue, const Replay *replay, uint32_t color_first, uint32_t *part)
+{
+	const RenderPass *const render_pass = replay->render_pass;
+	const Framebuffer *const framebuffer = replay->framebuffer;
+	const uint32_t color_tiles = framebuffer->color_tiles;
+	*part = V4X_EDRAM_DEPTHS;
+	for (uint32_t i = 0; i < V4X_EDRAM_DEPTHS && render_pass->has_depth; i++) {
+		const EdramPart *const depth = &queue->depths[i];
+		// The pass's colour targets would draw over it.
+		if (part_overlaps(depth, color_first, color_tiles))
+			continue;
+		// Another size's depth lies at another pitch, and may not fit where it is.
+		if ((depth->contents == EDRAM_IMAGE && depth->image == framebuffer->depth && same_size(depth, framebuffer)) ||
+			(*part == V4X_EDRAM_DEPTHS && replay->clears_depth && depth_ready(depth, replay)))
+			*part = i;
+	}
+	if (*part < V4X_EDRAM_DEPTHS)
+		return queue->depths[*part].tile;
+	return new_depth_tile(queue, depth_tiles(framebuffer), color_first, render_pass->has_depth ? color_tiles : 0);
+}
+
+// Places the pass's depth as choose_depth says, its colour placed. Whatever depth the pass's colour or depth then
+// reaches is lost, as colour drawn over it overwrites it.
 static void place_depth(VkQueue queue, Replay *replay)
 {
 	const RenderPass *const render_pass = replay->render_pass;
 	const Framebuffer *const framebuffer = replay->framebuffer;
-	const uint32_t tiles = xsdk_gpu_target_sample_tiles(framebuffer->width, framebuffer->height, framebuffer->samples);
-	const uint32_t color_tiles = framebuffer->color_tiles;
-	uint32_t part = V4X_EDRAM_DEPTHS;
-	for (uint32_t i = 0; i < V4X_EDRAM_DEPTHS && render_pass->has_depth; i++) {
-		const EdramPart *const depth = &queue->depths[i];
-		// The pass's colour targets would draw over a depth below their end.
-		if (depth->tile < color_tiles)
-			continue;
-		// Another size's depth lies at another pitch, and may not fit where it is.
-		if ((depth->contents == EDRAM_IMAGE && depth->image == framebuffer->depth && same_size(depth, framebuffer)) ||
-			(part == V4X_EDRAM_DEPTHS && replay->clears_depth && depth_ready(depth, replay)))
-			part = i;
-	}
-	const uint32_t tile = part < V4X_EDRAM_DEPTHS
-		? queue->depths[part].tile
-		: new_depth_tile(queue, tiles, render_pass->has_depth ? color_tiles : 0);
+	const uint32_t tiles = depth_tiles(framebuffer);
+	uint32_t part;
+	const uint32_t tile = choose_depth(queue, replay, replay->color_tile, &part);
 	for (uint32_t i = 0; i < V4X_EDRAM_DEPTHS; i++) {
 		if (i != part &&
-			(part_overlaps(&queue->depths[i], 0, color_tiles) ||
+			(part_overlaps(&queue->depths[i], replay->color_tile, framebuffer->color_tiles) ||
 				(render_pass->has_depth && part_overlaps(&queue->depths[i], tile, tiles))))
 			queue->depths[i] = (EdramPart){ .contents = EDRAM_UNKNOWN };
 	}
@@ -684,6 +716,124 @@ static void place_depth(VkQueue queue, Replay *replay)
 		part = V4X_EDRAM_DEPTHS - 1;
 	replay->depth_part = part;
 	replay->depth_tile = render_pass->has_depth ? tile : XSDK_EDRAM_TILES - tiles;
+}
+
+// The tiles a colour part takes, at its format's size.
+static uint32_t color_part_tiles(const EdramPart *part)
+{
+	return xsdk_gpu_color_target_sample_tiles(part->width, part->height, part->format, part->samples);
+}
+
+static bool color_overlaps(const EdramPart *part, uint32_t first, uint32_t tiles)
+{
+	return part->contents != EDRAM_UNKNOWN && ranges_overlap(part->tile, color_part_tiles(part), first, tiles);
+}
+
+// Whether a part kept for target i saves its begin's work: the clear it clears to, the image it loads, or its own
+// image, whose tiles another framebuffer's parts then keep.
+static bool part_serves(const EdramPart *part, const Replay *replay, uint32_t i)
+{
+	if (replay->render_pass->load_ops[i] == VK_ATTACHMENT_LOAD_OP_CLEAR)
+		return part->contents == EDRAM_CLEARED && !memcmp(part->rgba, replay->clears->colors[i], sizeof part->rgba);
+	return part->contents == EDRAM_IMAGE && part->image == replay->framebuffer->attachments[i];
+}
+
+// Whether tiles first to first + tiles hold no colour or depth eDRAM keeps.
+static bool tiles_unkept(VkQueue queue, uint32_t first, uint32_t tiles)
+{
+	for (uint32_t i = 0; i < V4X_EDRAM_COLORS; i++) {
+		if (color_overlaps(&queue->colors[i], first, tiles))
+			return false;
+	}
+	for (uint32_t i = 0; i < V4X_EDRAM_DEPTHS; i++) {
+		if (part_overlaps(&queue->depths[i], first, tiles))
+			return false;
+	}
+	return true;
+}
+
+// The lower of best and first, if the colour fits from first below room without reaching anything eDRAM keeps.
+static uint32_t lower_unkept(VkQueue queue, uint32_t best, uint32_t first, uint32_t tiles, uint32_t room)
+{
+	return first < best && first + tiles <= room && tiles_unkept(queue, first, tiles) ? first : best;
+}
+
+// Where the pass's colour starts: where eDRAM keeps a part that serves one of its targets; else the lowest tiles,
+// from 0 or the end of a part kept, that reach nothing kept and leave a new depth room at the top; else tile 0.
+static uint32_t color_tile(VkQueue queue, const Replay *replay)
+{
+	const Framebuffer *const framebuffer = replay->framebuffer;
+	const uint32_t tiles = framebuffer->color_tiles;
+	for (uint32_t t = 0; t < replay->render_pass->color_count; t++) {
+		const XsdkColorTarget *const target = &framebuffer->targets[t];
+		for (uint32_t i = 0; i < V4X_EDRAM_COLORS; i++) {
+			const EdramPart *const part = &queue->colors[i];
+			if (part->format == target->format && same_size(part, framebuffer) && part->tile >= target->tile &&
+				part->tile - target->tile + tiles <= XSDK_EDRAM_TILES && part_serves(part, replay, t))
+				return part->tile - target->tile;
+		}
+	}
+	const uint32_t room = XSDK_EDRAM_TILES - (replay->render_pass->has_depth ? depth_tiles(framebuffer) : 0);
+	uint32_t best = lower_unkept(queue, UINT32_MAX, 0, tiles, room);
+	for (uint32_t i = 0; i < V4X_EDRAM_COLORS; i++) {
+		const EdramPart *const part = &queue->colors[i];
+		if (part->contents != EDRAM_UNKNOWN)
+			best = lower_unkept(queue, best, part->tile + color_part_tiles(part), tiles, room);
+	}
+	for (uint32_t i = 0; i < V4X_EDRAM_DEPTHS; i++) {
+		const EdramPart *const part = &queue->depths[i];
+		if (part->contents != EDRAM_UNKNOWN)
+			best = lower_unkept(queue, best,
+				part->tile + xsdk_gpu_target_sample_tiles(part->width, part->height, part->samples), tiles, room);
+	}
+	return best == UINT32_MAX ? 0 : best;
+}
+
+// Places the pass's colour targets as one, the framebuffer's layout moved up to color_tile, so a pass going back to a
+// framebuffer finds eDRAM still holding it (xenia:src/xenia/gpu/registers.h:742, a target's base is any tile); where
+// its depth would land on them, from tile 0, where it never does.
+static void place_colors(VkQueue queue, Replay *replay)
+{
+	const Framebuffer *const framebuffer = replay->framebuffer;
+	uint32_t first = color_tile(queue, replay);
+	uint32_t part;
+	const uint32_t depth = choose_depth(queue, replay, first, &part);
+	if (replay->render_pass->has_depth &&
+		ranges_overlap(depth, depth_tiles(framebuffer), first, framebuffer->color_tiles))
+		first = 0;
+	replay->color_tile = first;
+	for (uint32_t i = 0; i < replay->render_pass->color_count; i++)
+		replay->targets[i] =
+			(XsdkColorTarget){ .format = framebuffer->targets[i].format, .tile = first + framebuffer->targets[i].tile };
+}
+
+// The colour parts the pass's colour targets or depth reach are lost, as it draws over them.
+static void forget_colors(VkQueue queue, const Replay *replay)
+{
+	const Framebuffer *const framebuffer = replay->framebuffer;
+	const bool has_depth = replay->render_pass->has_depth;
+	for (uint32_t i = 0; i < V4X_EDRAM_COLORS; i++) {
+		EdramPart *const part = &queue->colors[i];
+		if (color_overlaps(part, replay->color_tile, framebuffer->color_tiles) ||
+			(has_depth && color_overlaps(part, replay->depth_tile, depth_tiles(framebuffer))))
+			*part = (EdramPart){ .contents = EDRAM_UNKNOWN };
+	}
+}
+
+// The pass's parts first, target i's at i for its end; then the others kept, newest first, as many as fit.
+static void keep_colors(VkQueue queue, const EdramPart *parts, uint32_t count)
+{
+	EdramPart kept[V4X_EDRAM_COLORS];
+	uint32_t n = 0;
+	for (; n < count; n++)
+		kept[n] = parts[n];
+	for (uint32_t i = 0; i < V4X_EDRAM_COLORS && n < V4X_EDRAM_COLORS; i++) {
+		if (queue->colors[i].contents != EDRAM_UNKNOWN)
+			kept[n++] = queue->colors[i];
+	}
+	for (; n < V4X_EDRAM_COLORS; n++)
+		kept[n] = (EdramPart){ .contents = EDRAM_UNKNOWN };
+	memcpy(queue->colors, kept, sizeof kept);
 }
 
 // Depth never leaves eDRAM, so loading it after eDRAM lost it finds undefined contents.
@@ -725,10 +875,11 @@ static void draw_back(VkQueue queue, const Replay *replay, EdramPart *colors)
 		if (render_pass->color_count > 1)
 			set_one_target(replay, i);
 		v4x_profile_pass_event(V4X_PROFILE_DRAWN_BACK);
+		edram_counts.drawn_back++;
 		v4x_blit_draw(&queue->blit, &framebuffer->attachments[i]->texture, framebuffer->width, framebuffer->height,
 			&replay->area, 0, 1);
 		framebuffer->attachments[i]->used_serial = replay->serial;
-		colors[i] = holding_color(framebuffer, i, replay->area);
+		colors[i] = holding_color(replay, i, replay->area);
 		drawn = true;
 	}
 	if (drawn && render_pass->color_count > 1)
@@ -752,13 +903,15 @@ static void clear_targets(VkQueue queue, const Replay *replay, EdramPart *colors
 		if (color_ready(&colors[i], replay, i))
 			continue;
 		v4x_profile_pass_event(V4X_PROFILE_CLEAR_RESOLVE);
+		edram_counts.clear_resolves++;
 		resolve(framebuffer->attachments[i], i, replay, true, depth_left, replay->clears->colors[i]);
-		colors[i] = cleared_color(framebuffer, i, replay->clears->colors[i], replay->area);
+		colors[i] = cleared_color(replay, i, replay->clears->colors[i], replay->area);
 		depth_left = false;
 		resolved = true;
 	}
 	if (depth_left) {
 		v4x_profile_pass_event(V4X_PROFILE_CLEAR_RESOLVE);
+		edram_counts.clear_resolves++;
 		resolve(framebuffer->attachments[0], 0, replay, false, true, replay->clears->colors[0]);
 	}
 	if (resolved || depth_left)
@@ -771,12 +924,12 @@ static void clear_targets(VkQueue queue, const Replay *replay, EdramPart *colors
 static void begin_render_pass(VkQueue queue, Replay *replay)
 {
 	const RenderPass *const render_pass = replay->render_pass;
-	const Framebuffer *const framebuffer = replay->framebuffer;
+	place_colors(queue, replay);
 	place_depth(queue, replay);
 	EdramPart colors[V4X_MAX_COLOR_ATTACHMENTS];
-	for (uint32_t i = 0; i < V4X_MAX_COLOR_ATTACHMENTS; i++)
-		colors[i] =
-			i < render_pass->color_count ? held_color(queue, framebuffer, i) : (EdramPart){ .contents = EDRAM_UNKNOWN };
+	for (uint32_t i = 0; i < render_pass->color_count; i++)
+		colors[i] = held_color(queue, replay, i);
+	forget_colors(queue, replay);
 	set_target(replay);
 	if (render_pass->has_depth && render_pass->loads_depth && !replay->clears_depth && !replay->draws_image_clear)
 		check_depth_kept(queue, replay);
@@ -784,7 +937,7 @@ static void begin_render_pass(VkQueue queue, Replay *replay)
 		clear_image_depth(queue, replay, &queue->depths[replay->depth_part]);
 	draw_back(queue, replay, colors);
 	clear_targets(queue, replay, colors);
-	memcpy(queue->colors, colors, sizeof queue->colors);
+	keep_colors(queue, colors, render_pass->color_count);
 	replay->pipeline_dirty = true;
 	replay->clip_planes_on = false;
 	// Drawing an image back and resolves point streams and slots of their own.
@@ -889,7 +1042,7 @@ static void end_render_pass(VkQueue queue, Replay *replay, Image *resolved_depth
 		if (stores)
 			resolve(framebuffer->attachments[i], i, replay, clear_color, clear_depth, rgba);
 		queue->colors[i] =
-			clear_color ? cleared_color(framebuffer, i, rgba, replay->area) : holding_color(framebuffer, i, stored);
+			clear_color ? cleared_color(replay, i, rgba, replay->area) : holding_color(replay, i, stored);
 		if (clear_depth)
 			*depth_part = cleared_depth(framebuffer, replay->depth_tile, depth, stencil, replay->area);
 		clear_depth = false;
@@ -919,7 +1072,7 @@ static void keep_tiled_depth(VkQueue queue, Replay *replay)
 	}
 	for (uint32_t i = 0; i < V4X_EDRAM_DEPTHS; i++)
 		queue->depths[i] = i ? (EdramPart){ .contents = EDRAM_UNKNOWN } : kept;
-	for (uint32_t i = 0; i < V4X_MAX_COLOR_ATTACHMENTS; i++)
+	for (uint32_t i = 0; i < V4X_EDRAM_COLORS; i++)
 		queue->colors[i] = (EdramPart){ .contents = EDRAM_UNKNOWN };
 	replay->depth_part = 0;
 	replay->depth_tile = tile;
@@ -1156,9 +1309,10 @@ static void draw_blit(VkQueue queue, Replay *replay, const DrawnBlit *blit)
 		if (part_overlaps(&queue->depths[i], 0, tiles))
 			queue->depths[i] = (EdramPart){ .contents = EDRAM_UNKNOWN };
 	}
-	const VkRect2D stored = stored_area(&queue->colors[0], destination, rect);
-	for (uint32_t i = 0; i < V4X_MAX_COLOR_ATTACHMENTS; i++) {
-		if (queue->colors[i].tile < tiles)
+	const EdramPart held = held_part(queue, &target);
+	const VkRect2D stored = stored_area(&held, destination, rect);
+	for (uint32_t i = 0; i < V4X_EDRAM_COLORS; i++) {
+		if (color_overlaps(&queue->colors[i], 0, tiles))
 			queue->colors[i] = (EdramPart){ .contents = EDRAM_UNKNOWN };
 	}
 	const uint32_t depth_tile = XSDK_EDRAM_TILES - xsdk_gpu_target_tiles(destination->width, destination->height);
@@ -1171,8 +1325,9 @@ static void draw_blit(VkQueue queue, Replay *replay, const DrawnBlit *blit)
 		rect->extent.width, rect->extent.height, 0);
 	blit->source->used_serial = replay->serial;
 	destination->used_serial = replay->serial;
-	queue->colors[0] = holding(destination, 0, stored);
-	queue->colors[0].format = XSDK_TARGET_8_8_8_8;
+	EdramPart part = holding(destination, 0, stored);
+	part.format = XSDK_TARGET_8_8_8_8;
+	keep_colors(queue, &part, 1);
 	// The draw and the resolve point streams, slots and shaders of their own, as a pass's begin does.
 	replay->pipeline_dirty = true;
 	memset(replay->pointed_streams, 0, sizeof replay->pointed_streams);
@@ -1444,11 +1599,12 @@ static void begin_command(VkQueue queue, VkCommandBuffer buffer, Replay *replay,
 	if (depth)
 		depth->clear_pending = false;
 	v4x_profile_pass_begin(replay->framebuffer, replay->render_pass, &replay->area);
+	replay->color_tile = 0;
 	if (replay->framebuffer->tiled)
 		begin_tiled_pass(queue, replay);
 	else
 		begin_render_pass(queue, replay);
-	v4x_profile_pass_begun();
+	v4x_profile_pass_begun(replay->framebuffer->tiled ? 0 : replay->color_tile);
 }
 
 // A depth image's depth lives in eDRAM, so its clear waits for the next pass to load it; a sampled one's texture
@@ -1666,6 +1822,11 @@ static void replay_command(VkQueue queue, VkCommandBuffer buffer, Replay *replay
 	}
 	// What the pushes and draws didn't charge to their own stages: the other commands, and their dispatch.
 	v4x_profile_command(command->type);
+}
+
+V4xEdramCounts v4x_edram_counts(void)
+{
+	return edram_counts;
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit(
