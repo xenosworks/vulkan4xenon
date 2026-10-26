@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <time.h>
 
+#include "xsdk/gpu.h"
 #include "xsdk/log.h"
 
 // The submit's stages timed with the CPU's time base (docs/ROADMAP.md, milestone 29). Only the queue's calls change the
@@ -18,7 +19,52 @@ enum {
 	COMMAND_TYPES = 64,
 	// A command type's line in the 10 s log once it takes this share of the submits, in hundredths.
 	COMMAND_LOG_HUNDREDTHS = 2,
+	// Submits whose GPU clocks the ring keeps, more than a 10 s log reads; each takes a begin and an end slot of 4
+	// words, the clock's 3 and one to keep slots 16 bytes apart.
+	GPU_SUBMITS = 1024,
+	GPU_SLOT_WORDS = 4,
+	// The newest submits the log leaves for the next, as the GPU may not have reached them.
+	GPU_PENDING = 8,
+	// What a slot holds until the GPU writes its clock.
+	GPU_UNWRITTEN = 0xFFFFFFFF,
+	// The passes the trace keeps, and the textures each.
+	TRACE_PASSES = 1024,
+	TRACE_TEXTURES = 4,
+	// The next present's passes are traced after the third 10 s log of this many draws a present or more, so a game
+	// has settled past its menus and loading.
+	TRACE_AT_LOG = 3,
+	TRACE_DRAWS = 300,
 };
+
+// A render pass the trace kept.
+typedef struct {
+	uint32_t image;
+	uint32_t width;
+	uint32_t height;
+	uint32_t samples;
+	uint32_t color_count;
+	uint32_t tile;
+	uint32_t load_op;
+	uint32_t store_op;
+	bool has_depth;
+	bool loads_depth;
+	bool clears_depth;
+	bool tiled;
+	VkRect2D area;
+	uint32_t events[V4X_PROFILE_PASS_EVENTS];
+	uint32_t draws;
+	uint32_t textures[TRACE_TEXTURES];
+	uint32_t texture_count;
+	uint32_t begin_ticks;
+	uint32_t end_ticks;
+} PassTrace;
+
+typedef enum {
+	TRACE_WAITING,
+	TRACE_ARMED,
+	TRACE_RECORDING,
+	TRACE_DONE,
+} TraceState;
 
 static const char *const stage_names[V4X_PROFILE_STAGES] = {
 	"dispatch",
@@ -72,14 +118,39 @@ static const char *const count_names[V4X_PROFILE_COUNTS] = {
 	"bytes copied out of images",
 	"bytes copied between images",
 	"bytes copied into buffers",
+	"literal registers written",
+	"pipelines applied whole again",
 };
 // When the pass past eDRAM's begin or end being timed started, and whether a wait now falls in its begin.
 static uint32_t tiles_began;
 static bool in_tiled_begin;
 
+// The GPU's clocks at each submit's begin and end, in a ring of GPU memory taken at the first submit; the submits so
+// far, and the first the log hasn't read.
+static volatile uint32_t *gpu_clocks;
+static uint32_t gpu_submits;
+static uint32_t gpu_read;
+// The GPU's time on the submits the logs read, in its clock's ticks, and how many it read; both at the last log.
+static uint64_t gpu_ticks;
+static uint32_t gpu_counted;
+static uint64_t logged_gpu_ticks;
+static uint32_t logged_gpu_counted;
+// The trace of one present's passes, and the pass being traced, if any, with the draws before it and when its begin
+// or end started.
+static PassTrace trace[TRACE_PASSES];
+static uint32_t trace_count;
+static TraceState trace_state;
+// The 10 s logs of TRACE_DRAWS a present or more so far.
+static uint32_t logs;
+static PassTrace *pass;
+static uint32_t pass_draws;
+static uint32_t pass_started;
+
 static void log_commands(void);
 static void log_waits(void);
 static void log_counts(void);
+static void log_gpu(void);
+static void log_trace(void);
 
 // The low word alone: a lap is far shorter than its 86 s wrap.
 static uint32_t time_base(void)
@@ -156,6 +227,12 @@ void v4x_profile_present(void)
 	if (!calibrated)
 		return;
 	totals.presents++;
+	if (trace_state == TRACE_RECORDING) {
+		log_trace();
+		trace_state = TRACE_DONE;
+	} else if (trace_state == TRACE_ARMED) {
+		trace_state = TRACE_RECORDING;
+	}
 	const time_t now = seconds();
 	if (now - logged_at < LOG_SECONDS)
 		return;
@@ -163,8 +240,130 @@ void v4x_profile_present(void)
 	log_commands();
 	log_waits();
 	log_counts();
+	log_gpu();
+	const bool busy = totals.draws - logged.draws >= TRACE_DRAWS * (totals.presents - logged.presents);
 	logged = totals;
 	logged_at = now;
+	if (busy && ++logs == TRACE_AT_LOG && trace_state == TRACE_WAITING)
+		trace_state = TRACE_ARMED;
+}
+
+static volatile uint32_t *gpu_slot(uint32_t submit, uint32_t end)
+{
+	return &gpu_clocks[((submit % GPU_SUBMITS) * 2 + end) * GPU_SLOT_WORDS];
+}
+
+static void write_gpu_clock(uint32_t end)
+{
+	volatile uint32_t *const slot = gpu_slot(gpu_submits, end);
+	for (uint32_t i = 0; i < GPU_SLOT_WORDS; i++)
+		slot[i] = GPU_UNWRITTEN;
+	// Out of the CPU's write-combining before the GPU writes over it.
+	__asm__ volatile("sync" ::: "memory");
+	xsdk_gpu_write_clock(xsdk_gpu_address(slot), true);
+}
+
+// Once the GPU is done with what came before, so submits' times don't overlap.
+void v4x_profile_gpu_begin(void)
+{
+	if (!gpu_clocks)
+		gpu_clocks = xsdk_gpu_alloc(GPU_SUBMITS * 2 * GPU_SLOT_WORDS * sizeof(uint32_t));
+	if (gpu_clocks)
+		write_gpu_clock(0);
+}
+
+void v4x_profile_gpu_end(void)
+{
+	if (!gpu_clocks)
+		return;
+	write_gpu_clock(1);
+	gpu_submits++;
+}
+
+static bool gpu_written(volatile const uint32_t *slot)
+{
+	return slot[0] != GPU_UNWRITTEN || slot[2] != GPU_UNWRITTEN;
+}
+
+// The submits the GPU has passed since the last log, but the newest; one the ring lost is skipped.
+static void read_gpu_clocks(void)
+{
+	if (gpu_submits - gpu_read > GPU_SUBMITS)
+		gpu_read = gpu_submits - GPU_SUBMITS;
+	for (; gpu_read + GPU_PENDING < gpu_submits; gpu_read++) {
+		volatile const uint32_t *const begin = gpu_slot(gpu_read, 0);
+		volatile const uint32_t *const end = gpu_slot(gpu_read, 1);
+		if (!gpu_written(begin) || !gpu_written(end))
+			continue;
+		gpu_ticks += xsdk_gpu_clock_value(end) - xsdk_gpu_clock_value(begin);
+		gpu_counted++;
+	}
+}
+
+void v4x_profile_pass_begin(const Framebuffer *framebuffer, const RenderPass *render_pass, const VkRect2D *area)
+{
+	pass = NULL;
+	if (trace_state != TRACE_RECORDING || trace_count == TRACE_PASSES)
+		return;
+	pass = &trace[trace_count++];
+	const bool colors = render_pass->color_count != 0;
+	const Image *const image = colors ? framebuffer->attachments[0] : framebuffer->depth;
+	*pass = (PassTrace){ .image = image ? image->texture.address : 0,
+		.width = framebuffer->width,
+		.height = framebuffer->height,
+		.samples = framebuffer->samples,
+		.color_count = render_pass->color_count,
+		.tile = colors ? framebuffer->targets[0].tile : 0,
+		.load_op = colors ? render_pass->load_ops[0] : 0,
+		.store_op = colors ? render_pass->store_ops[0] : 0,
+		.has_depth = render_pass->has_depth,
+		.loads_depth = render_pass->loads_depth,
+		.clears_depth = render_pass->clears_depth,
+		.tiled = framebuffer->tiled,
+		.area = *area };
+	pass_started = time_base();
+}
+
+void v4x_profile_pass_begun(void)
+{
+	if (!pass)
+		return;
+	pass->begin_ticks = time_base() - pass_started;
+	pass_draws = totals.draws;
+}
+
+void v4x_profile_pass_end(void)
+{
+	if (!pass)
+		return;
+	pass->draws = totals.draws - pass_draws;
+	pass_started = time_base();
+}
+
+void v4x_profile_pass_ended(void)
+{
+	if (!pass)
+		return;
+	pass->end_ticks = time_base() - pass_started;
+	pass = NULL;
+}
+
+void v4x_profile_pass_event(V4xProfilePassEvent event)
+{
+	if (pass)
+		pass->events[event]++;
+}
+
+void v4x_profile_pass_texture(uint32_t address)
+{
+	if (!pass)
+		return;
+	for (uint32_t i = 0; i < pass->texture_count; i++) {
+		if (pass->textures[i] == address)
+			return;
+	}
+	if (pass->texture_count < TRACE_TEXTURES)
+		pass->textures[pass->texture_count++] = address;
 }
 
 void v4x_profile_wait_start(void)
@@ -360,6 +559,42 @@ static void log_waits(void)
 		fence_waits - logged_fence_waits, presents);
 	logged_fence_wait_ticks = fence_wait_ticks;
 	logged_fence_waits = fence_waits;
+}
+
+// Since the last log, the GPU's time on the submits a present, by its clock at 498.75 ticks a microsecond.
+static void log_gpu(void)
+{
+	read_gpu_clocks();
+	const uint32_t presents = totals.presents - logged.presents;
+	xsdk_log_write(
+		"vulkan4xenon: profile, the last 10 s: the GPU's time on the submits, %u us a present, over %u "
+		"submits it finished",
+		(unsigned)each((gpu_ticks - logged_gpu_ticks) * 4 / 1995, presents),
+		(unsigned)(gpu_counted - logged_gpu_counted));
+	logged_gpu_ticks = gpu_ticks;
+	logged_gpu_counted = gpu_counted;
+}
+
+// One present's passes, a line each: the image of its first attachment and its size, samples, colour attachments and
+// first tile; its first attachment's load and store ops; its depth's; its area; what it did; the textures it pointed.
+static void log_trace(void)
+{
+	xsdk_log_write("vulkan4xenon: profile, a present's %u passes", (unsigned)trace_count);
+	for (uint32_t i = 0; i < trace_count; i++) {
+		const PassTrace *const p = &trace[i];
+		xsdk_log_write(
+			"vulkan4xenon: profile, pass %u: image %08X %ux%u s%u c%u tile %u%s; load %u store %u; depth "
+			"%u load %u clear %u; area %d,%d %ux%u; drew back %u, clear resolves %u, %u draws, end resolves "
+			"%u; textures %08X %08X %08X %08X; begin %u ns, end %u ns",
+			(unsigned)i, (unsigned)p->image, (unsigned)p->width, (unsigned)p->height, (unsigned)p->samples,
+			(unsigned)p->color_count, (unsigned)p->tile, p->tiled ? " tiled" : "", (unsigned)p->load_op,
+			(unsigned)p->store_op, p->has_depth, p->loads_depth, p->clears_depth, (int)p->area.offset.x,
+			(int)p->area.offset.y, (unsigned)p->area.extent.width, (unsigned)p->area.extent.height,
+			(unsigned)p->events[V4X_PROFILE_DRAWN_BACK], (unsigned)p->events[V4X_PROFILE_CLEAR_RESOLVE],
+			(unsigned)p->draws, (unsigned)p->events[V4X_PROFILE_END_RESOLVE], (unsigned)p->textures[0],
+			(unsigned)p->textures[1], (unsigned)p->textures[2], (unsigned)p->textures[3],
+			(unsigned)nanoseconds(p->begin_ticks), (unsigned)nanoseconds(p->end_ticks));
+	}
 }
 
 // Since the last log, each count a present.

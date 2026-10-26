@@ -3444,7 +3444,10 @@ stages add up to the submit. The first submit times 10,000 laps back to back, to
   waits for the GPU (step 6), all and at each place the replay waits, each in microseconds and times a present; a wait
   is counted in its stage as well. Since milestone 66's measurement of PPSSPP, also the app's own waits for fences
   outside the submit, and counts a present: uniform blocks the GPU loaded and the CPU read, push quads, pipelines
-  applied, textures and streams pointed, and the bytes the CPU copied into and out of images and into buffers.
+  applied, textures and streams pointed, and the bytes the CPU copied into and out of images and into buffers; the
+  GPU's time on the submits by its clock, each submit's from when the GPU finished the one before; and once, after the
+  third log of 300 draws a present or more, a line for each render pass of the next present: its image, size, ops
+  and area, what its begin and end did, its draws, the textures it pointed, and its begin's and end's time.
 
 **Closed on 2026-10-19 short of its targets, by the user's choice** (results/2026-10-19-milestone-29/):
 - `draws_4000`'s submit costs 0.575 us a draw and `states_1000`'s 0.93 to 0.97. Most of what's left is xsdk's own

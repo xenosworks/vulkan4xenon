@@ -3,6 +3,9 @@
 
 #include <stdint.h>
 
+#include <vulkan/vulkan.h>
+
+#include "objects.h"
 #include "vulkan4xenon.h"
 
 // The submit's timing, in a build made with make V4X_PROFILE=1; without it every hook is empty, and compiles to
@@ -38,8 +41,20 @@ typedef enum {
 	V4X_PROFILE_DOWNLOAD_BYTES,
 	V4X_PROFILE_IMAGE_COPY_BYTES,
 	V4X_PROFILE_BUFFER_BYTES,
+	// Literal registers written, and pipelines applied whole though the pipeline was the one applied.
+	V4X_PROFILE_LITERALS,
+	V4X_PROFILE_PIPELINES_AGAIN,
 	V4X_PROFILE_COUNTS,
 } V4xProfileCount;
+
+// What a render pass did, for the trace of one present's passes the 10 s log gives once.
+typedef enum {
+	// Drew an image back into eDRAM, resolved to clear at its begin, resolved at its end.
+	V4X_PROFILE_DRAWN_BACK,
+	V4X_PROFILE_CLEAR_RESOLVE,
+	V4X_PROFILE_END_RESOLVE,
+	V4X_PROFILE_PASS_EVENTS,
+} V4xProfilePassEvent;
 
 #ifdef V4X_PROFILE
 // Counts a submit and starts its laps; the first also learns what a lap costs.
@@ -65,6 +80,17 @@ void v4x_profile_tiles_begin(void);
 void v4x_profile_tiles_begun(void);
 void v4x_profile_tiles_end(void);
 void v4x_profile_tiles_ended(uint32_t dwords);
+// Time the GPU takes on a submit, from the first hook to the second, by its clock.
+void v4x_profile_gpu_begin(void);
+void v4x_profile_gpu_end(void);
+// A render pass for the trace: its begin and end, each timed from the first hook to the second, what it did, and the
+// textures it pointed.
+void v4x_profile_pass_begin(const Framebuffer *framebuffer, const RenderPass *render_pass, const VkRect2D *area);
+void v4x_profile_pass_begun(void);
+void v4x_profile_pass_end(void);
+void v4x_profile_pass_ended(void);
+void v4x_profile_pass_event(V4xProfilePassEvent event);
+void v4x_profile_pass_texture(uint32_t address);
 #else
 static inline void v4x_profile_submit(void)
 {
@@ -133,6 +159,44 @@ static inline void v4x_profile_tiles_end(void)
 static inline void v4x_profile_tiles_ended(uint32_t dwords)
 {
 	(void)dwords;
+}
+
+static inline void v4x_profile_gpu_begin(void)
+{
+}
+
+static inline void v4x_profile_gpu_end(void)
+{
+}
+
+static inline void v4x_profile_pass_begin(
+	const Framebuffer *framebuffer, const RenderPass *render_pass, const VkRect2D *area)
+{
+	(void)framebuffer;
+	(void)render_pass;
+	(void)area;
+}
+
+static inline void v4x_profile_pass_begun(void)
+{
+}
+
+static inline void v4x_profile_pass_end(void)
+{
+}
+
+static inline void v4x_profile_pass_ended(void)
+{
+}
+
+static inline void v4x_profile_pass_event(V4xProfilePassEvent event)
+{
+	(void)event;
+}
+
+static inline void v4x_profile_pass_texture(uint32_t address)
+{
+	(void)address;
 }
 #endif
 

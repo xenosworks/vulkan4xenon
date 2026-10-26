@@ -113,6 +113,7 @@ static float block[V4X_FLOAT_CONSTANTS * 4] __attribute__((aligned(16)));
 
 static void write_literals(const V4xShader *shader, bool vertex)
 {
+	v4x_profile_count(V4X_PROFILE_LITERALS, shader->literal_count);
 	for (uint32_t i = 0; i < shader->literal_count; i++) {
 		const V4xShaderLiteral *const literal = &shader->literals[i];
 		if (vertex)
@@ -192,6 +193,7 @@ static void apply_pipeline(const Pipeline *pipeline, Replay *replay)
 {
 	AppliedState *const applied = &replay->applied;
 	v4x_profile_count(V4X_PROFILE_PIPELINES, 1);
+	v4x_profile_count(V4X_PROFILE_PIPELINES_AGAIN, applied->pipeline == pipeline);
 	applied->pipeline = pipeline;
 	xsdk_gpu_set_shaders(&pipeline->vertex, &pipeline->pixel);
 	if (changed(replay, &applied->vertex_literals, &pipeline->vertex_source, sizeof pipeline->vertex_source))
@@ -359,6 +361,7 @@ static void point_texture(Replay *replay, uint32_t slot, const Descriptor *descr
 	if (pointed->texture == descriptor->texture && pointed->sampler == descriptor->sampler)
 		return;
 	v4x_profile_count(V4X_PROFILE_TEXTURES, 1);
+	v4x_profile_pass_texture(descriptor->texture->address);
 	xsdk_gpu_set_texture(slot, descriptor->texture, &descriptor->sampler->state);
 	descriptor->image->used_serial = replay->serial;
 	*pointed = (PointedTexture){ .texture = descriptor->texture, .sampler = descriptor->sampler };
@@ -721,6 +724,7 @@ static void draw_back(VkQueue queue, const Replay *replay, EdramPart *colors)
 			continue;
 		if (render_pass->color_count > 1)
 			set_one_target(replay, i);
+		v4x_profile_pass_event(V4X_PROFILE_DRAWN_BACK);
 		v4x_blit_draw(&queue->blit, &framebuffer->attachments[i]->texture, framebuffer->width, framebuffer->height,
 			&replay->area, 0, 1);
 		framebuffer->attachments[i]->used_serial = replay->serial;
@@ -747,13 +751,16 @@ static void clear_targets(VkQueue queue, const Replay *replay, EdramPart *colors
 	for (uint32_t i = 0; i < render_pass->color_count; i++) {
 		if (color_ready(&colors[i], replay, i))
 			continue;
+		v4x_profile_pass_event(V4X_PROFILE_CLEAR_RESOLVE);
 		resolve(framebuffer->attachments[i], i, replay, true, depth_left, replay->clears->colors[i]);
 		colors[i] = cleared_color(framebuffer, i, replay->clears->colors[i], replay->area);
 		depth_left = false;
 		resolved = true;
 	}
-	if (depth_left)
+	if (depth_left) {
+		v4x_profile_pass_event(V4X_PROFILE_CLEAR_RESOLVE);
 		resolve(framebuffer->attachments[0], 0, replay, false, true, replay->clears->colors[0]);
+	}
 	if (resolved || depth_left)
 		set_target(replay);
 	if (clears_depth)
@@ -833,6 +840,7 @@ static bool end_depth_clear(const Replay *replay, const Command *next, const Pas
 // resolve clears as it would; so does a vkCmdResolveImage's destination, sample 0 at 2 and 4 samples.
 static void resolve_depth(Image *depth, uint32_t serial)
 {
+	v4x_profile_pass_event(V4X_PROFILE_END_RESOLVE);
 	xsdk_gpu_set_resolve_clears(false, false);
 	xsdk_gpu_resolve_depth_texture(&depth->texture);
 	depth->used_serial = serial;
@@ -875,6 +883,7 @@ static void end_render_pass(VkQueue queue, Replay *replay, Image *resolved_depth
 		if (clear_depth)
 			set_depth_clear(queue, depth, stencil);
 		const VkRect2D stored = stored_area(&queue->colors[i], framebuffer->attachments[i], &replay->area);
+		v4x_profile_pass_event(V4X_PROFILE_END_RESOLVE);
 		if (resolved)
 			resolve(resolved, i, replay, clear_color && !stores, clear_depth && !stores, rgba);
 		if (stores)
@@ -1180,13 +1189,15 @@ static const VkRect2D *area_of(VkCommandBuffer buffer, const Command *begin)
 static void end_pass_command(VkQueue queue, VkCommandBuffer buffer, Replay *replay, uint32_t index)
 {
 	Image *const resolved_depth = buffer->commands[index].resolved_depth;
+	v4x_profile_pass_end();
 	if (replay->framebuffer->tiled) {
 		end_tiled_pass(queue, replay, resolved_depth);
-		return;
+	} else {
+		const Command *const next = next_render_pass(buffer, index);
+		const PassClears *const next_clears = next ? (const PassClears *)(buffer->data + next->begin.clears_at) : NULL;
+		end_render_pass(queue, replay, resolved_depth, next, next_clears, next ? area_of(buffer, next) : NULL);
 	}
-	const Command *const next = next_render_pass(buffer, index);
-	const PassClears *const next_clears = next ? (const PassClears *)(buffer->data + next->begin.clears_at) : NULL;
-	end_render_pass(queue, replay, resolved_depth, next, next_clears, next ? area_of(buffer, next) : NULL);
+	v4x_profile_pass_ended();
 }
 
 static void prepare_draw(Replay *replay)
@@ -1432,10 +1443,12 @@ static void begin_command(VkQueue queue, VkCommandBuffer buffer, Replay *replay,
 	}
 	if (depth)
 		depth->clear_pending = false;
+	v4x_profile_pass_begin(replay->framebuffer, replay->render_pass, &replay->area);
 	if (replay->framebuffer->tiled)
 		begin_tiled_pass(queue, replay);
 	else
 		begin_render_pass(queue, replay);
+	v4x_profile_pass_begun();
 }
 
 // A depth image's depth lives in eDRAM, so its clear waits for the next pass to load it; a sampled one's texture
@@ -1664,6 +1677,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit(
 	// Mapped memory is coherent, so the app may have written any of it; one invalidate covers it all, as xsdk's set-up
 	// covers memory (xsdk:src/gpu_setup.c).
 	xsdk_gpu_invalidate(0, ALL_MEMORY_BYTES);
+	v4x_profile_gpu_begin();
 	queue->serial = queue->serial + 1 ? queue->serial + 1 : 1;
 	v4x_profile_lap(V4X_PROFILE_SUBMIT);
 	for (uint32_t i = 0; i < submitCount; i++) {
@@ -1678,6 +1692,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit(
 		}
 	}
 	// One queue replays in order, so semaphores need nothing; the fence submits the ring either way.
+	v4x_profile_gpu_end();
 	const uint32_t submitted = xsdk_gpu_fence();
 	queue->submit_fences[queue->serial % V4X_SUBMIT_FENCES] = submitted;
 	v4x_sync_submitted(v4x_object(fence), submitted);
