@@ -143,6 +143,8 @@ static uint32_t logged_gpu_counted;
 // The trace of one present's passes, and the pass being traced, if any, with the draws before it and when its begin
 // or end started.
 static PassTrace trace[TRACE_PASSES];
+// The GPU's clock at each traced pass's begin and end, taken with the first traced pass.
+static volatile uint32_t *trace_clocks;
 static uint32_t trace_count;
 static TraceState trace_state;
 static uint32_t trace_presents;
@@ -266,14 +268,25 @@ static volatile uint32_t *gpu_slot(uint32_t submit, uint32_t end)
 	return &gpu_clocks[((submit % GPU_SUBMITS) * 2 + end) * GPU_SLOT_WORDS];
 }
 
-static void write_gpu_clock(uint32_t end)
+// Has the GPU copy its clock into the slot once it's done with what came before.
+static void write_clock_at(volatile uint32_t *slot)
 {
-	volatile uint32_t *const slot = gpu_slot(gpu_submits, end);
 	for (uint32_t i = 0; i < GPU_SLOT_WORDS; i++)
 		slot[i] = GPU_UNWRITTEN;
 	// Out of the CPU's write-combining before the GPU writes over it.
 	__asm__ volatile("sync" ::: "memory");
 	xsdk_gpu_write_clock(xsdk_gpu_address(slot), true);
+}
+
+static void write_gpu_clock(uint32_t end)
+{
+	write_clock_at(gpu_slot(gpu_submits, end));
+}
+
+// A traced pass's clock slot, at its begin or end, or NULL without the memory.
+static volatile uint32_t *trace_slot(const PassTrace *traced, uint32_t end)
+{
+	return trace_clocks ? &trace_clocks[((uint32_t)(traced - trace) * 2 + end) * GPU_SLOT_WORDS] : NULL;
 }
 
 // Once the GPU is done with what came before, so submits' times don't overlap.
@@ -333,6 +346,10 @@ void v4x_profile_pass_begin(const Framebuffer *framebuffer, const RenderPass *re
 		.clears_depth = render_pass->clears_depth,
 		.tiled = framebuffer->tiled,
 		.area = *area };
+	if (!trace_clocks)
+		trace_clocks = xsdk_gpu_alloc(TRACE_PASSES * 2 * GPU_SLOT_WORDS * sizeof(uint32_t));
+	if (trace_clocks)
+		write_clock_at(trace_slot(pass, 0));
 	pass_started = time_base();
 }
 
@@ -358,6 +375,8 @@ void v4x_profile_pass_ended(void)
 	if (!pass)
 		return;
 	pass->end_ticks = time_base() - pass_started;
+	if (trace_clocks)
+		write_clock_at(trace_slot(pass, 1));
 	pass = NULL;
 }
 
@@ -604,8 +623,19 @@ static void log_gpu(void)
 // The passes traced, a line each: the image of its first attachment and its size, samples, colour attachments and
 // the first tile it placed them at; its first attachment's load and store ops; its depth's; its area; what it did; the
 // textures it pointed.
+// A traced pass's time on the GPU in microseconds, by its clock at 498.75 ticks a microsecond, or UINT32_MAX unknown.
+static uint32_t trace_gpu_us(const PassTrace *traced)
+{
+	volatile const uint32_t *const begin = trace_slot(traced, 0);
+	volatile const uint32_t *const end = trace_slot(traced, 1);
+	if (!begin || !gpu_written(begin) || !gpu_written(end))
+		return UINT32_MAX;
+	return (uint32_t)((xsdk_gpu_clock_value(end) - xsdk_gpu_clock_value(begin)) * 4 / 1995);
+}
+
 static void log_trace(void)
 {
+	(void)xsdk_gpu_wait(xsdk_gpu_fence(), 1000);
 	xsdk_log_write(
 		"vulkan4xenon: profile, %u passes over %u presents", (unsigned)trace_count, (unsigned)trace_presents);
 	for (uint32_t i = 0; i < trace_count; i++) {
@@ -613,7 +643,7 @@ static void log_trace(void)
 		xsdk_log_write(
 			"vulkan4xenon: profile, pass %u: image %08X %ux%u s%u c%u tile %u%s; load %u store %u; depth "
 			"%u load %u clear %u; area %d,%d %ux%u; drew back %u, clear resolves %u, %u draws, end resolves "
-			"%u; textures %08X %08X %08X %08X; begin %u ns, end %u ns",
+			"%u; textures %08X %08X %08X %08X; begin %u ns, end %u ns; GPU %d us",
 			(unsigned)i, (unsigned)p->image, (unsigned)p->width, (unsigned)p->height, (unsigned)p->samples,
 			(unsigned)p->color_count, (unsigned)p->tile, p->tiled ? " tiled" : "", (unsigned)p->load_op,
 			(unsigned)p->store_op, p->has_depth, p->loads_depth, p->clears_depth, (int)p->area.offset.x,
@@ -621,7 +651,7 @@ static void log_trace(void)
 			(unsigned)p->events[V4X_PROFILE_DRAWN_BACK], (unsigned)p->events[V4X_PROFILE_CLEAR_RESOLVE],
 			(unsigned)p->draws, (unsigned)p->events[V4X_PROFILE_END_RESOLVE], (unsigned)p->textures[0],
 			(unsigned)p->textures[1], (unsigned)p->textures[2], (unsigned)p->textures[3],
-			(unsigned)nanoseconds(p->begin_ticks), (unsigned)nanoseconds(p->end_ticks));
+			(unsigned)nanoseconds(p->begin_ticks), (unsigned)nanoseconds(p->end_ticks), (int)trace_gpu_us(p));
 	}
 }
 
