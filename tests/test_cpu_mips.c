@@ -9,9 +9,10 @@
 
 // Mip chains made by linear blits on the CPU (milestone 67), as RetroArch makes its menu's: each level of a format of
 // 8-bit channels the mean of the texels under it, byte by byte. A 64x32 R8G8B8A8 level blitted to half, and a 32x2
-// B8G8R8A8 chain to 16x1 and 8x1, where the height stays, are read back texel by texel; and a 256x256 chain blitted
+// B8G8R8A8 chain to 16x1 and 8x1, where the height stays, are read back texel by texel; a 256x256 chain blitted
 // down linearly must take at most a third of the time the same chain takes nearest, which still unpacks and packs each
-// texel.
+// texel; and blitted right after its base is copied in, which keeps each level the CPU writes for the blit after,
+// at most half the time it takes alone, reading its base back from the image, and hold the same texels.
 
 enum {
 	FENCE_TIMEOUT_NS = 1000000000,
@@ -28,8 +29,12 @@ enum {
 	// A mean within 1 of the exact one, which the float path's rounding to even may give at a tie; a wrong texel pair
 	// is 2 or more away in a channel, as texels step by 4 or more in one channel across and in one down.
 	TOLERANCE = 1,
-	// The linear chain against the nearest one.
+	// The linear chain against the nearest one, and the chain alone against the chain after its base's copy.
 	TIME_RATIO = 3,
+	KEPT_RATIO = 2,
+	// The timed chain's level 2, read back.
+	TIMED_READ_LEVEL = 2,
+	TIMED_READ_SIDE = TIMED_SIDE >> TIMED_READ_LEVEL,
 	// Staging: the wide base, the flat base, the timed base.
 	WIDE_AT = 0,
 	FLAT_AT = WIDE_AT + WIDE_WIDTH * WIDE_HEIGHT * TEXEL_BYTES,
@@ -38,7 +43,8 @@ enum {
 	// Read back: the wide level 1, then the flat level 2.
 	WIDE_READ_AT = 0,
 	FLAT_READ_AT = WIDE_READ_AT + WIDE_WIDTH / 2 * WIDE_HEIGHT / 2 * TEXEL_BYTES,
-	READBACK_BYTES = FLAT_READ_AT + FLAT_WIDTH / 4 * TEXEL_BYTES,
+	TIMED_READ_AT = FLAT_READ_AT + FLAT_WIDTH / 4 * TEXEL_BYTES,
+	READBACK_BYTES = TIMED_READ_AT + TIMED_READ_SIDE * TIMED_READ_SIDE * TEXEL_BYTES,
 	MAX_MISSES_LOGGED = 4,
 	MICROSECONDS_PER_SECOND = 1000000,
 	NANOSECONDS_PER_MICROSECOND = 1000,
@@ -294,7 +300,21 @@ static void check_levels(const Harness *harness, const Scene *scene)
 				0);
 }
 
-// The 256x256 chain blitted down once linearly and once nearest, from the same base, each replay timed.
+// The timed chain's base and level 1 as the test works them out.
+static uint8_t timed_base[TIMED_SIDE * TIMED_SIDE * TEXEL_BYTES];
+static uint8_t timed_half[TIMED_SIDE / 2 * TIMED_SIDE / 2 * TEXEL_BYTES];
+
+static void half_of(const uint8_t *source, uint32_t from_side, uint8_t *out)
+{
+	for (uint32_t y = 0; y < from_side / 2; y++) {
+		for (uint32_t x = 0; x < from_side / 2; x++)
+			box_mean(source, from_side, from_side, from_side / 2, from_side / 2, x, y,
+				out + (y * from_side / 2 + x) * TEXEL_BYTES);
+	}
+}
+
+// The 256x256 chain blitted down once linearly and once nearest, from a base copied in before, each replay timed; then
+// linearly again right after the base's copy, in one command buffer, timed and read back at level 2.
 static void check_time(const Harness *harness, const Scene *scene)
 {
 	uint64_t times[2] = { 0, 0 };
@@ -309,10 +329,29 @@ static void check_time(const Harness *harness, const Scene *scene)
 			blit_down(scene, scene->timed, TIMED_SIDE, TIMED_SIDE, level, filters[i]);
 		ran = ran && submit(harness, scene->commands, &times[i]);
 	}
-	xsdk_log_write("cpu mips: a 256x256 chain blitted down took %llu us linearly and %llu us nearest",
-		(unsigned long long)times[0], (unsigned long long)times[1]);
+	uint64_t kept_us = 0;
+	bool kept_ran = ran && begin(scene->commands);
+	copy_in(scene, scene->timed, TIMED_AT, TIMED_SIDE, TIMED_SIDE);
+	for (uint32_t level = 1; level < TIMED_LEVELS; level++)
+		blit_down(scene, scene->timed, TIMED_SIDE, TIMED_SIDE, level, VK_FILTER_LINEAR);
+	kept_ran = kept_ran && submit(harness, scene->commands, &kept_us) && begin(scene->commands);
+	copy_out(scene, scene->timed, TIMED_READ_LEVEL, TIMED_READ_SIDE, TIMED_READ_SIDE, TIMED_READ_AT);
+	uint64_t read_us;
+	kept_ran = kept_ran && submit(harness, scene->commands, &read_us);
+	xsdk_log_write(
+		"cpu mips: a 256x256 chain blitted down took %llu us linearly and %llu us nearest, and %llu us "
+		"linearly right after its base's copy",
+		(unsigned long long)times[0], (unsigned long long)times[1], (unsigned long long)kept_us);
 	check("cpu mips: a 256x256 chain blitted down linearly takes at most a third of the time nearest does",
 		ran && TIME_RATIO * times[0] <= times[1]);
+	check("cpu mips: a 256x256 chain blitted right after its base's copy takes at most half the time it does alone",
+		kept_ran && KEPT_RATIO * kept_us <= times[0]);
+	fill_base(timed_base, TIMED_SIDE, TIMED_SIDE);
+	half_of(timed_base, TIMED_SIDE, timed_half);
+	check("cpu mips: a 256x256 chain blitted right after its base's copy holds at 64x64 the means of its means",
+		kept_ran &&
+			wrong_texels(scene->read + TIMED_READ_AT, timed_half, TIMED_SIDE / 2, TIMED_SIDE / 2, TIMED_READ_SIDE,
+				TIMED_READ_SIDE, "the chain's 64x64 level") == 0);
 }
 
 static void destroy(const Harness *harness, const Scene *scene)

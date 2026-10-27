@@ -12,10 +12,12 @@
 // Copies, clears and blits, which the CPU runs as it replays them (docs/ROADMAP.md, section 3), each waiting first for
 // the GPU to be done with what it reads or writes.
 
-void v4x_transfer_buffer_to_image(VkQueue queue, const LevelCopy *copy);
+// A copy or blit is given the command after it in its command buffer, or NULL: if that one blits from the level it
+// writes, the CPU keeps the level's rows for it (src/transfer.c, keep_for).
+void v4x_transfer_buffer_to_image(VkQueue queue, const LevelCopy *copy, const Command *next);
 void v4x_transfer_image_to_buffer(VkQueue queue, const LevelCopy *copy);
 void v4x_transfer_copy_image(VkQueue queue, const Command *command);
-void v4x_transfer_blit(VkQueue queue, const Command *command);
+void v4x_transfer_blit(VkQueue queue, const Command *command, const Command *next);
 void v4x_transfer_clear(VkQueue queue, const Command *command);
 // A copy into a buffer from source: another buffer's bytes, or vkCmdUpdateBuffer's in the command buffer's data.
 void v4x_transfer_copy_buffer(VkQueue queue, const Command *command, volatile const void *source);

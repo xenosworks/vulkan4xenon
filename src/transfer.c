@@ -3,6 +3,7 @@
 #include <altivec.h>
 #include <assert.h>
 #include <math.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <vulkan/vulkan.h>
@@ -34,12 +35,25 @@ enum {
 	// The bits of an index the GPU takes (xenia:src/xenia/gpu/dxbc_shader_translator.cc:346-374).
 	INDEX_MASK = 0xFFFFFF,
 	QUAD_BYTES = 16,
+	// The largest level kept for the blit after its write: 512x512 at 4 bytes.
+	KEPT_BYTES = 1u << 20,
 };
 
 // Rows of texels on their way between images; the queue is externally synchronized, so one set will do.
 static uint8_t rows[ROWS][ROW_BYTES] __attribute__((aligned(16)));
 // A draw's indices on their way into their copies, likewise.
 static uint32_t indices[V4X_MAX_DRAW_VERTICES];
+
+// A whole level the CPU just wrote, kept in cached memory when the next command blits from it, so that blit takes its
+// rows from here: reading a tiled level back from write-combined memory ran at 18.5 MB/s on the console, 2.2 s of
+// RetroArch's start blitting its menu's mip chains (2026-10-27). Two buffers, as a blit reads one level while it keeps
+// the next. The command that may take it is the one after the command that kept it, so nothing came between.
+static uint8_t *kept_rows[2];
+static struct {
+	const Command *reader;
+	uint32_t buffer;
+	uint32_t row_bytes;
+} kept;
 
 static uint32_t level_size(uint32_t size, uint32_t level)
 {
@@ -169,17 +183,56 @@ static void upload_texels(Image *image, const LevelCopy *copy, uint32_t slice)
 	}
 }
 
-void v4x_transfer_buffer_to_image(VkQueue queue, const LevelCopy *copy)
+// Where to keep a whole level of one layer or slice that the CPU writes, rows row_bytes long, in buffer: if the next
+// command blits from it, and it fits; else NULL.
+static uint8_t *keep_for(const Command *next, const Image *image, uint32_t level, uint32_t slice, uint32_t row_bytes,
+	uint32_t row_count, uint32_t buffer)
+{
+	if (!next || next->type != COMMAND_BLIT_IMAGE || next->image_copy.source != image ||
+		next->image_copy.source_level != level || next->image_copy.source_slice != slice ||
+		next->image_copy.slice_count != 1 || row_bytes * row_count > KEPT_BYTES)
+		return NULL;
+	if (!kept_rows[buffer])
+		kept_rows[buffer] = malloc(KEPT_BYTES);
+	return kept_rows[buffer];
+}
+
+// A whole level of one layer or slice, uncompressed, kept as keep_for says: its rows into the kept buffer, then from
+// there into the image.
+static bool upload_kept(Image *image, const LevelCopy *copy, const Command *next)
+{
+	const uint32_t width = level_size(image->width, copy->level);
+	const uint32_t row_bytes = width * v4x_texel_bytes(image->format);
+	if (is_compressed(image) || copy->x || copy->y || copy->width != width ||
+		copy->height != level_size(image->height, copy->level) || copy->slice_count != 1)
+		return false;
+	uint8_t *const keep = keep_for(next, image, copy->level, copy->first_slice, row_bytes, copy->height, 0);
+	if (!keep)
+		return false;
+	const uint8_t *const from = slice_rows(copy, 0);
+	for (uint32_t y = 0; y < copy->height; y++)
+		memcpy(keep + y * row_bytes, from + y * copy->row_bytes, row_bytes);
+	xsdk_texture_upload_slice_rows(&image->texture, copy->level, copy->first_slice, 0, copy->height, keep, row_bytes);
+	kept.reader = next;
+	kept.buffer = 0;
+	kept.row_bytes = row_bytes;
+	return true;
+}
+
+void v4x_transfer_buffer_to_image(VkQueue queue, const LevelCopy *copy, const Command *next)
 {
 	Image *const image = copy->image;
 	wait_for_image(queue, image);
 	v4x_profile_count(V4X_PROFILE_UPLOAD_BYTES, region_bytes(image, copy));
 	v4x_profile_count(V4X_PROFILE_UPLOAD_UNCACHED_BYTES, copy->address ? region_bytes(image, copy) : 0);
-	for (uint32_t i = 0; i < copy->slice_count; i++) {
-		if (is_compressed(image))
-			upload_blocks(image, copy, i);
-		else
-			upload_texels(image, copy, i);
+	kept.reader = NULL;
+	if (!upload_kept(image, copy, next)) {
+		for (uint32_t i = 0; i < copy->slice_count; i++) {
+			if (is_compressed(image))
+				upload_blocks(image, copy, i);
+			else
+				upload_texels(image, copy, i);
+		}
 	}
 	image_written(queue, image);
 }
@@ -351,8 +404,20 @@ static void box_row(const BlitRow *blit, uint32_t below)
 	}
 }
 
-// A destination layer's or 3D slice's level from the source's.
-static void blit_slice(const Command *command, const BlitRow *blit, uint32_t from, uint32_t to)
+// A source row into row, from the level kept for the blit if there is one, else from the image.
+static void source_row(const Image *image, uint32_t level, uint32_t slice, uint32_t y, const uint8_t *kept_level,
+	uint32_t row_bytes, uint32_t row)
+{
+	if (kept_level)
+		memcpy(rows[row], kept_level + y * row_bytes, row_bytes);
+	else
+		xsdk_texture_download_slice_rows(&image->texture, level, slice, y, 1, rows[row], 0);
+}
+
+// A destination layer's or 3D slice's level from the source's, the source's rows from from_kept if not NULL, and the
+// destination's kept in to_kept too if not NULL.
+static void blit_slice(
+	const Command *command, const BlitRow *blit, uint32_t from, uint32_t to, const uint8_t *from_kept, uint8_t *to_kept)
 {
 	const Image *const source = command->image_copy.source;
 	Image *const destination = command->image_copy.destination;
@@ -360,23 +425,27 @@ static void blit_slice(const Command *command, const BlitRow *blit, uint32_t fro
 	const uint32_t to_level = command->image_copy.destination_level;
 	const uint32_t from_height = level_size(source->height, from_level);
 	const uint32_t to_height = level_size(destination->height, to_level);
+	const uint32_t from_row_bytes = blit->from_width * blit->format->texel_bytes;
+	const uint32_t to_row_bytes = blit->to_width * blit->format->texel_bytes;
 	const bool box = box_blit(blit, from_height, to_height);
 	const bool two_rows = !box || from_height != to_height;
 	for (uint32_t y = 0; y < to_height; y++) {
 		const Taps down = taps(y, to_height, from_height, blit->linear);
-		xsdk_texture_download_slice_rows(&source->texture, from_level, from, down.first, 1, rows[ROW_ABOVE], 0);
+		source_row(source, from_level, from, down.first, from_kept, from_row_bytes, ROW_ABOVE);
 		if (two_rows)
-			xsdk_texture_download_slice_rows(&source->texture, from_level, from, down.second, 1, rows[ROW_BELOW], 0);
+			source_row(source, from_level, from, down.second, from_kept, from_row_bytes, ROW_BELOW);
 		if (box)
 			box_row(blit, two_rows ? ROW_BELOW : ROW_ABOVE);
 		else
 			blit_row(blit, down.towards_second);
 		xsdk_texture_upload_slice_rows(&destination->texture, to_level, to, y, 1, rows[ROW_OUT], 0);
+		if (to_kept)
+			memcpy(to_kept + y * to_row_bytes, rows[ROW_OUT], to_row_bytes);
 	}
 }
 
 // Images of formats the CPU unpacks (vkCmdBlitImage), a destination row at a time, each layer or 3D slice into its own.
-void v4x_transfer_blit(VkQueue queue, const Command *command)
+void v4x_transfer_blit(VkQueue queue, const Command *command, const Command *next)
 {
 	const Image *const source = command->image_copy.source;
 	Image *const destination = command->image_copy.destination;
@@ -386,11 +455,27 @@ void v4x_transfer_blit(VkQueue queue, const Command *command)
 		.from_width = level_size(source->width, from_level),
 		.to_width = level_size(destination->width, to_level),
 		.linear = command->image_copy.linear };
+	// The level the command before kept for this one (keep_for), then where this one keeps its own for the next.
+	const uint8_t *const from_kept = kept.reader == command ? kept_rows[kept.buffer] : NULL;
+	assert(!from_kept || kept.row_bytes == blit.from_width * blit.format->texel_bytes);
+	const uint32_t buffer = from_kept ? 1 - kept.buffer : 0;
+	const uint32_t to_row_bytes = blit.to_width * blit.format->texel_bytes;
+	kept.reader = NULL;
+	uint8_t *const to_kept = command->image_copy.slice_count == 1
+		? keep_for(next, destination, to_level, command->image_copy.destination_slice, to_row_bytes,
+			  level_size(destination->height, to_level), buffer)
+		: NULL;
 	wait_for_image(queue, source);
 	wait_for_image(queue, destination);
 	for (uint32_t i = 0; i < command->image_copy.slice_count; i++)
-		blit_slice(command, &blit, command->image_copy.source_slice + i, command->image_copy.destination_slice + i);
+		blit_slice(command, &blit, command->image_copy.source_slice + i, command->image_copy.destination_slice + i,
+			from_kept, to_kept);
 	image_written(queue, destination);
+	if (to_kept) {
+		kept.reader = next;
+		kept.buffer = buffer;
+		kept.row_bytes = to_row_bytes;
+	}
 }
 
 // Each level takes the one row of the texel over and over.

@@ -1885,6 +1885,12 @@ static void end_query(Replay *replay)
 	replay->query_address = 0;
 }
 
+// The command after index in its command buffer, or NULL.
+static const Command *next_command(VkCommandBuffer buffer, uint32_t index)
+{
+	return index + 1 < buffer->count ? &buffer->commands[index + 1] : NULL;
+}
+
 static void replay_command(VkQueue queue, VkCommandBuffer buffer, Replay *replay, uint32_t index)
 {
 	const Command *const command = &buffer->commands[index];
@@ -1919,7 +1925,8 @@ static void replay_command(VkQueue queue, VkCommandBuffer buffer, Replay *replay
 		v4x_profile_lap(V4X_PROFILE_PUSH);
 		break;
 	case COMMAND_COPY_BUFFER_TO_IMAGE:
-		v4x_transfer_buffer_to_image(queue, (const LevelCopy *)(buffer->data + command->state_at));
+		v4x_transfer_buffer_to_image(
+			queue, (const LevelCopy *)(buffer->data + command->state_at), next_command(buffer, index));
 		break;
 	case COMMAND_COPY_IMAGE_TO_BUFFER:
 		v4x_transfer_image_to_buffer(queue, (const LevelCopy *)(buffer->data + command->state_at));
@@ -1928,7 +1935,7 @@ static void replay_command(VkQueue queue, VkCommandBuffer buffer, Replay *replay
 		v4x_transfer_copy_image(queue, command);
 		break;
 	case COMMAND_BLIT_IMAGE:
-		v4x_transfer_blit(queue, command);
+		v4x_transfer_blit(queue, command, next_command(buffer, index));
 		break;
 	case COMMAND_DRAW_BLIT: {
 		const DrawnBlit *const blit = (const DrawnBlit *)(buffer->data + command->state_at);
