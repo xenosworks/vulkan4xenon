@@ -90,6 +90,7 @@ static VkResult wait_one(Fence *fence, uint64_t timeout_ns)
 		const uint32_t slice = forever || left_ms > WAIT_SLICE_MS ? WAIT_SLICE_MS : (uint32_t)left_ms;
 		if (NT_SUCCESS(xsdk_gpu_wait(fence->number, slice))) {
 			v4x_profile_fence_wait_end(began);
+			v4x_profile_call_end(V4X_PROFILE_CALL_FENCE_WAIT, began);
 			return signaled(fence) ? VK_SUCCESS : VK_TIMEOUT;
 		}
 		left_ms -= forever ? 0 : slice;

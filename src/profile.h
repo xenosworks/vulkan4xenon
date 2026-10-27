@@ -23,6 +23,16 @@ typedef enum {
 	V4X_PROFILE_WAIT_SITES,
 } V4xProfileWait;
 
+// The calls the 10 s log times and puts in its timeline, whichever thread makes them.
+typedef enum {
+	V4X_PROFILE_CALL_SUBMIT,
+	V4X_PROFILE_CALL_FENCE_WAIT,
+	V4X_PROFILE_CALL_ACQUIRE,
+	V4X_PROFILE_CALL_PRESENT,
+	V4X_PROFILE_CALL_IDLE_WAIT,
+	V4X_PROFILE_CALLS,
+} V4xProfileCall;
+
 // What the 10 s log counts a present.
 typedef enum {
 	// Uniform blocks the GPU loaded, and those the CPU read, and their quads.
@@ -89,6 +99,9 @@ void v4x_profile_count(V4xProfileCount what, uint32_t amount);
 // began, for end. Threads waiting at once race on the totals, which a log can bear.
 uint32_t v4x_profile_fence_wait_start(void);
 void v4x_profile_fence_wait_end(uint32_t began);
+// Time a call that may block, from start to end, on any thread, for the 10 s log and its timeline of the last calls.
+uint32_t v4x_profile_call_start(void);
+void v4x_profile_call_end(V4xProfileCall call, uint32_t began);
 // Time a pass past eDRAM's begin and end (src/queue.c), a wait for the GPU between begin and begun counted as its too.
 void v4x_profile_tiles_begin(void);
 void v4x_profile_tiles_begun(void);
@@ -158,6 +171,17 @@ static inline uint32_t v4x_profile_fence_wait_start(void)
 
 static inline void v4x_profile_fence_wait_end(uint32_t began)
 {
+	(void)began;
+}
+
+static inline uint32_t v4x_profile_call_start(void)
+{
+	return 0;
+}
+
+static inline void v4x_profile_call_end(V4xProfileCall call, uint32_t began)
+{
+	(void)call;
 	(void)began;
 }
 

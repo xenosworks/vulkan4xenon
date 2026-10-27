@@ -118,6 +118,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkAcquireNextImageKHR(VkDevice device, VkSwapchai
 {
 	(void)device;
 	(void)semaphore;
+	const uint32_t began = v4x_profile_call_start();
 	Swapchain *const object = v4x_object(swapchain);
 	// xsdk_present hands out one buffer until it's presented (docs/SUPPORT.md).
 	if (object->acquired)
@@ -136,6 +137,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkAcquireNextImageKHR(VkDevice device, VkSwapchai
 	object->acquired = true;
 	v4x_sync_signal(v4x_object(fence));
 	*pImageIndex = object->acquired_index;
+	v4x_profile_call_end(V4X_PROFILE_CALL_ACQUIRE, began);
 	return VK_SUCCESS;
 }
 
@@ -155,6 +157,7 @@ static void forget_edram_after_system_draws(VkQueue queue)
 
 VKAPI_ATTR VkResult VKAPI_CALL vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR *pPresentInfo)
 {
+	const uint32_t began = v4x_profile_call_start();
 	VkResult result = VK_SUCCESS;
 	for (uint32_t i = 0; i < pPresentInfo->swapchainCount; i++) {
 		Swapchain *const swapchain = v4x_object(pPresentInfo->pSwapchains[i]);
@@ -171,6 +174,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkQueuePresentKHR(VkQueue queue, const VkPresentI
 			result = presented;
 	}
 	forget_edram_after_system_draws(queue);
+	v4x_profile_call_end(V4X_PROFILE_CALL_PRESENT, began);
 	v4x_profile_present();
 	return result;
 }

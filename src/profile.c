@@ -1,12 +1,14 @@
 #include "profile.h"
 
 #include <assert.h>
+#include <pthread.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <time.h>
 
 #include "xsdk/gpu.h"
 #include "xsdk/log.h"
+#include "xsdk/present.h"
 
 // The submit's stages timed with the CPU's time base (docs/ROADMAP.md, milestone 29). Only the queue's calls change the
 // totals, so the queue's external synchronization guards them.
@@ -35,7 +37,10 @@ enum {
 	// The next present's passes are traced after the third 10 s log of this many draws a present or more, so a game
 	// has settled past its menus and loading.
 	TRACE_AT_LOG = 3,
-	TRACE_DRAWS = 300,
+	TRACE_DRAWS = 200,
+	// The calls the timeline keeps, the last ones before each 10 s log, and the tenths of a millisecond in a tick
+	// count.
+	TIMELINE_CALLS = 64,
 };
 
 // A render pass the trace kept.
@@ -104,6 +109,28 @@ static uint64_t fence_wait_ticks;
 static uint32_t fence_waits;
 static uint64_t logged_fence_wait_ticks;
 static uint32_t logged_fence_waits;
+// A call the timeline kept: what, when it began and ended in time base ticks, its thread, the hardware thread it ran
+// on (its processor control region's address, r13, xsdk:src/thread.c), and xsdk's flips when it ended.
+typedef struct {
+	V4xProfileCall call;
+	uint32_t began;
+	uint32_t ended;
+	uint32_t thread;
+	uint32_t processor;
+	uint32_t flips;
+} TimelineCall;
+
+// Each call's ticks, count and longest, at the last log too; and the timeline, a ring the next call's slot counts
+// round, which threads take with an atomic add.
+static uint64_t call_ticks[V4X_PROFILE_CALLS];
+static uint32_t call_counts[V4X_PROFILE_CALLS];
+static uint32_t call_longest[V4X_PROFILE_CALLS];
+static uint64_t logged_call_ticks[V4X_PROFILE_CALLS];
+static uint32_t logged_call_counts[V4X_PROFILE_CALLS];
+static TimelineCall timeline[TIMELINE_CALLS];
+static uint32_t timeline_next;
+static XsdkPresentStats logged_present_stats;
+
 // The layer's eDRAM counts and xsdk's, at the last log.
 static V4xEdramCounts logged_edram;
 static XsdkGpuStats logged_gpu_stats;
@@ -443,6 +470,31 @@ void v4x_profile_fence_wait_end(uint32_t began)
 	fence_waits++;
 }
 
+uint32_t v4x_profile_call_start(void)
+{
+	return time_base();
+}
+
+void v4x_profile_call_end(V4xProfileCall call, uint32_t began)
+{
+	const uint32_t ended = time_base();
+	const uint32_t ticks = ended - began;
+	call_ticks[call] += ticks;
+	call_counts[call]++;
+	call_longest[call] = ticks > call_longest[call] ? ticks : call_longest[call];
+	uint32_t processor;
+	__asm__ volatile("mr %0, 13" : "=r"(processor));
+	XsdkPresentStats stats;
+	xsdk_present_stats(&stats);
+	const uint32_t slot = __atomic_fetch_add(&timeline_next, 1, __ATOMIC_RELAXED) % TIMELINE_CALLS;
+	timeline[slot] = (TimelineCall){ .call = call,
+		.began = began,
+		.ended = ended,
+		.thread = (uint32_t)(uintptr_t)pthread_self(),
+		.processor = processor,
+		.flips = stats.flips };
+}
+
 void v4x_profile_tiles_begin(void)
 {
 	tiles_began = time_base();
@@ -701,12 +753,49 @@ static void log_pass_stages(uint32_t presents)
 	logged_pass_begins = pass_begins;
 }
 
+// Since the last log: each call's time a present, how many and the longest; xsdk's vblanks, flips, vblanks that showed
+// the last frame again and flips past vblank's end; then the timeline of the last calls, each from the first's begin.
+static void log_calls(uint32_t presents)
+{
+	static const char *const names[V4X_PROFILE_CALLS] = { "submit", "fence wait", "acquire", "present", "idle wait" };
+	for (uint32_t c = 0; c < V4X_PROFILE_CALLS; c++) {
+		const uint32_t count = call_counts[c] - logged_call_counts[c];
+		const uint32_t tenths = each((uint64_t)count * 10, presents);
+		xsdk_log_write("vulkan4xenon: profile, the last 10 s: %ss, %u us a present, %u.%u a present, the longest %u us",
+			names[c], (unsigned)each(nanoseconds(call_ticks[c] - logged_call_ticks[c]) / 1000, presents),
+			(unsigned)(tenths / 10), (unsigned)(tenths % 10), (unsigned)(nanoseconds(call_longest[c]) / 1000));
+		logged_call_ticks[c] = call_ticks[c];
+		logged_call_counts[c] = call_counts[c];
+		call_longest[c] = 0;
+	}
+	XsdkPresentStats stats;
+	xsdk_present_stats(&stats);
+	xsdk_log_write(
+		"vulkan4xenon: profile, the last 10 s: xsdk's vblanks %u, flips %u, vblanks showing the last frame "
+		"again %u, flips past vblank %u; the longest wait for a buffer since the start %u us",
+		(unsigned)(stats.vblanks - logged_present_stats.vblanks), (unsigned)(stats.flips - logged_present_stats.flips),
+		(unsigned)(stats.missed - logged_present_stats.missed), (unsigned)(stats.late - logged_present_stats.late),
+		(unsigned)stats.longest_wait_us);
+	logged_present_stats = stats;
+	const uint32_t next = timeline_next;
+	const uint32_t first = next > TIMELINE_CALLS ? next - TIMELINE_CALLS : 0;
+	const uint32_t origin = timeline[first % TIMELINE_CALLS].began;
+	for (uint32_t i = first; i < next; i++) {
+		const TimelineCall *const t = &timeline[i % TIMELINE_CALLS];
+		xsdk_log_write("vulkan4xenon: profile, timeline: %s by thread %08X on %08X from %u us to %u us, flips %u",
+			names[t->call], (unsigned)t->thread, (unsigned)t->processor,
+			(unsigned)(nanoseconds(t->began - origin) / 1000), (unsigned)(nanoseconds(t->ended - origin) / 1000),
+			(unsigned)t->flips);
+	}
+}
+
 // Since the last log, each count a present.
 static void log_counts(void)
 {
 	const uint32_t presents = totals.presents - logged.presents;
 	log_edram(presents);
 	log_pass_stages(presents);
+	log_calls(presents);
 	for (uint32_t c = 0; c < V4X_PROFILE_COUNTS; c++) {
 		log_count(count_names[c], counts[c] - logged_counts[c], presents);
 		logged_counts[c] = counts[c];

@@ -2021,6 +2021,7 @@ V4xEdramCounts v4x_edram_counts(void)
 VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit(
 	VkQueue queue, uint32_t submitCount, const VkSubmitInfo *pSubmits, VkFence fence)
 {
+	const uint32_t began = v4x_profile_call_start();
 	v4x_profile_submit();
 	// Drain the CPU's write-combining, so the GPU reads what the app wrote to mapped memory.
 	__asm__ volatile("sync" ::: "memory");
@@ -2052,6 +2053,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit(
 	queue->submit_fences[queue->serial % V4X_SUBMIT_FENCES] = submitted;
 	v4x_sync_submitted(v4x_object(fence), submitted);
 	v4x_profile_lap(V4X_PROFILE_SUBMIT);
+	v4x_profile_call_end(V4X_PROFILE_CALL_SUBMIT, began);
 	return VK_SUCCESS;
 }
 
@@ -2071,6 +2073,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkQueueWaitIdle(VkQueue queue)
 	const uint32_t began = v4x_profile_fence_wait_start();
 	const NTSTATUS status = xsdk_gpu_wait(xsdk_gpu_fence(), IDLE_TIMEOUT_MS);
 	v4x_profile_fence_wait_end(began);
+	v4x_profile_call_end(V4X_PROFILE_CALL_IDLE_WAIT, began);
 	if (!NT_SUCCESS(status)) {
 		xsdk_log_write("vulkan4xenon: the GPU didn't go idle: 0x%08X", (unsigned)status);
 		return VK_ERROR_DEVICE_LOST;
