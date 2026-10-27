@@ -525,6 +525,7 @@ void v4x_transfer_fill_depth(VkQueue queue, Image *image, float depth, uint8_t s
 	volatile uint32_t *const texels = image->texture.texels;
 	for (uint32_t i = 0; i < image->texture.size_bytes / 4; i++)
 		texels[i] = word;
+	image->depth_in_texture = true;
 	image_written(queue, image);
 }
 

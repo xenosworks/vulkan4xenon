@@ -683,7 +683,19 @@ static float depth_at(uint32_t target, uint32_t x)
 	return x < near_width(shapes[target].side) ? near_depth : far_depth;
 }
 
-// Each depth image's words as the CPU reads them, its base at the corner: depth above stencil 0.
+// A word's depth as a letter: the near quad's n, the far one's f, the clear's c, anything else ?.
+static char depth_letter(uint32_t word)
+{
+	const uint32_t depth = word >> 8;
+	if (difference(depth, depth_24(near_depth)) <= DEPTH_24_TOLERANCE)
+		return 'n';
+	if (difference(depth, depth_24(far_depth)) <= DEPTH_24_TOLERANCE)
+		return 'f';
+	return depth == DEPTH_24_MAX ? 'c' : '?';
+}
+
+// Each depth image's words as the CPU reads them, its base at the corner: depth above stencil 0. One with any wrong
+// has its rows logged as depth_letter has them.
 static uint32_t words_wrong(const Harness *harness, const Scene *scene)
 {
 	uint32_t wrong = 0;
@@ -693,6 +705,7 @@ static uint32_t words_wrong(const Harness *harness, const Scene *scene)
 				"vkMapMemory", vkMapMemory(harness->device, scene->depth_memories[i], 0, VK_WHOLE_SIZE, 0, &mapped)))
 			return 1;
 		volatile const uint32_t *const words = mapped;
+		const uint32_t before = wrong;
 		for (uint32_t y = 0; y < shapes[i].side; y++) {
 			for (uint32_t x = 0; x < shapes[i].side; x++) {
 				const uint32_t word = words[tiled_index(x, y, TILE_TEXELS)];
@@ -703,6 +716,12 @@ static uint32_t words_wrong(const Harness *harness, const Scene *scene)
 					xsdk_log_write("small depth: %s's word at (%u, %u) is %08X, not depth %06X above stencil 0",
 						shapes[i].name, (unsigned)x, (unsigned)y, (unsigned)word, (unsigned)depth);
 			}
+		}
+		for (uint32_t y = 0; y < shapes[i].side && wrong != before; y++) {
+			char row[TILE_TEXELS + 1] = { 0 };
+			for (uint32_t x = 0; x < shapes[i].side; x++)
+				row[x] = depth_letter(words[tiled_index(x, y, TILE_TEXELS)]);
+			xsdk_log_write("small depth: %s's row %u: %s", shapes[i].name, (unsigned)y, row);
 		}
 		vkUnmapMemory(harness->device, scene->depth_memories[i]);
 	}
@@ -750,12 +769,37 @@ static uint32_t shown_wrong(const Scene *scene)
 	return wrong;
 }
 
+// A colour read back as a letter: the near quad's n, the far one's f, the middle one's m, anything else ?.
+static char color_letter(const uint8_t *texel)
+{
+	const uint8_t *const colors[3] = { near_color, far_color, loaded_color };
+	static const char letters[3] = { 'n', 'f', 'm' };
+	for (uint32_t k = 0; k < 3; k++) {
+		const uint8_t want[4] = { colors[k][2], colors[k][1], colors[k][0], colors[k][3] };
+		if (near_texel(texel, want, 4))
+			return letters[k];
+	}
+	return '?';
+}
+
+// Logs a target's colours read back, a row at a time, as color_letter has them.
+static void log_colors(const Scene *scene, uint32_t i)
+{
+	for (uint32_t y = 0; y < shapes[i].side; y++) {
+		char row[TILE_TEXELS + 1] = { 0 };
+		for (uint32_t x = 0; x < shapes[i].side; x++)
+			row[x] = color_letter(scene->read + texels_at(i) + (y * shapes[i].side + x) * TEXEL_BYTES);
+		xsdk_log_write("small depth: %s loaded, row %u: %s", shapes[i].name, (unsigned)y, row);
+	}
+}
+
 // Each target's colour after the second pass: the near quad's on the left, the middle quad's where the far one was.
-// B8G8R8A8 reads back blue first.
+// B8G8R8A8 reads back blue first. One with any wrong has its rows logged as color_letter has them.
 static uint32_t loaded_wrong(const Scene *scene)
 {
 	uint32_t wrong = 0;
 	for (uint32_t i = 0; i < TARGETS; i++) {
+		const uint32_t before = wrong;
 		for (uint32_t y = 0; y < shapes[i].side; y++) {
 			for (uint32_t x = 0; x < shapes[i].side; x++) {
 				const uint8_t *const rgba = depth_at(i, x) == near_depth ? near_color : loaded_color;
@@ -769,6 +813,8 @@ static uint32_t loaded_wrong(const Scene *scene)
 						want[3]);
 			}
 		}
+		if (wrong != before)
+			log_colors(scene, i);
 	}
 	return wrong;
 }

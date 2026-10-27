@@ -278,6 +278,9 @@ typedef struct Image {
 	// unsampled, for a pass past eDRAM to store its depth in bands.
 	bool is_depth;
 	bool is_sampled_depth;
+	// A sampled depth image's texture holds the depth its last pass left: a pass that left it to be read, a barrier
+	// or a clear put it there, so a pass loading it after eDRAM lost it draws it back from there.
+	bool depth_in_texture;
 	XsdkTexture texture;
 	// The submission that last sampled it, resolved into it or drew it back into eDRAM, so a copy waits for that
 	// one alone; 0 for none.

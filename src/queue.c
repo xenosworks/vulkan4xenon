@@ -906,15 +906,42 @@ static bool keep_colors(VkQueue queue, const EdramPart *parts, uint32_t count, u
 	return resolved;
 }
 
-// Depth never leaves eDRAM, so loading it after eDRAM lost it finds undefined contents.
-static void check_depth_kept(VkQueue queue, const Replay *replay)
+// Depth eDRAM lost, which its image's texture doesn't hold either: its contents are undefined.
+static void depth_undefined(void)
 {
 	static bool logged;
-	const EdramPart *const depth = &queue->depths[replay->depth_part];
-	if (logged || (depth->contents == EDRAM_IMAGE && depth->image == replay->framebuffer->depth))
-		return;
-	xsdk_log_write("vulkan4xenon: a depth attachment was loaded after eDRAM lost it; its contents are undefined");
+	if (!logged)
+		xsdk_log_write("vulkan4xenon: a depth attachment was loaded after eDRAM lost it; its contents are undefined");
 	logged = true;
+}
+
+// Whether eDRAM holds the pass's depth image's depth where the pass's depth goes.
+static bool depth_kept(VkQueue queue, const Replay *replay)
+{
+	const EdramPart *const part = &queue->depths[replay->depth_part];
+	return part->contents == EDRAM_IMAGE && part->image == replay->framebuffer->depth;
+}
+
+// A pass loading depth eDRAM lost draws it back from its image's texture, where the texture holds it, without its
+// stencil, as Xenos exports none from a pixel shader; otherwise its contents are undefined.
+static void load_depth(VkQueue queue, Replay *replay)
+{
+	static bool stencil_logged;
+	const Framebuffer *const framebuffer = replay->framebuffer;
+	Image *const depth = framebuffer->depth;
+	if (depth_kept(queue, replay))
+		return;
+	if (!depth->is_sampled_depth || !depth->depth_in_texture) {
+		depth_undefined();
+		return;
+	}
+	if (!stencil_logged)
+		xsdk_log_write("vulkan4xenon: depth drawn back from its texture comes back without its stencil");
+	stencil_logged = true;
+	v4x_blit_draw_depth(
+		&queue->blit, &depth->texture, framebuffer->width, framebuffer->height, replay->render_pass->color_count);
+	depth->used_serial = replay->serial;
+	queue->depths[replay->depth_part] = holding(depth, replay->depth_tile, whole(framebuffer));
 }
 
 // vkCmdClearDepthStencilImage clears all of the image, past the pass's area, which a resolve would copy past too.
@@ -1010,7 +1037,7 @@ static void begin_render_pass(VkQueue queue, Replay *replay)
 	set_target(replay);
 	v4x_profile_pass_lap(V4X_PROFILE_PASS_TARGET);
 	if (render_pass->has_depth && render_pass->loads_depth && !replay->clears_depth && !replay->draws_image_clear)
-		check_depth_kept(queue, replay);
+		load_depth(queue, replay);
 	if (replay->draws_image_clear)
 		clear_image_depth(queue, replay, &queue->depths[replay->depth_part]);
 	draw_back(queue, replay, colors);
@@ -1090,6 +1117,7 @@ static void resolve_depth(Image *depth, uint32_t serial)
 	xsdk_gpu_set_resolve_clears(false, false);
 	xsdk_gpu_resolve_depth_texture(&depth->texture);
 	depth->used_serial = serial;
+	depth->depth_in_texture = true;
 }
 
 // A barrier leaving a sampled depth image to be read, which a pass left as an attachment: its depth goes into its
@@ -1227,6 +1255,8 @@ static void end_render_pass(VkQueue queue, VkCommandBuffer buffer, uint32_t inde
 		*depth_part = holding(framebuffer->depth, replay->depth_tile, whole(framebuffer));
 	if (render_pass->has_depth && render_pass->leaves_depth_to_read && framebuffer->depth->is_sampled_depth)
 		resolve_depth(framebuffer->depth, replay->serial);
+	else if (render_pass->has_depth)
+		framebuffer->depth->depth_in_texture = false;
 	if (resolved_depth)
 		resolve_depth(resolved_depth, replay->serial);
 	float depth = 0.0f;
@@ -1354,8 +1384,9 @@ static void load_tiles(VkQueue queue, const Replay *replay)
 		stencil_logged = true;
 		v4x_blit_draw_depth(&queue->blit, &framebuffer->depth->texture, framebuffer->width, framebuffer->height, count);
 		framebuffer->depth->used_serial = replay->serial;
-	} else if (render_pass->has_depth && render_pass->loads_depth && !replay->clears_depth) {
-		check_depth_kept(queue, replay);
+	} else if (render_pass->has_depth && render_pass->loads_depth && !replay->clears_depth &&
+		!depth_kept(queue, replay)) {
+		depth_undefined();
 	}
 	for (uint32_t i = 0; i < count; i++) {
 		if (render_pass->load_ops[i] != VK_ATTACHMENT_LOAD_OP_LOAD)
@@ -1486,6 +1517,8 @@ static void end_tiled_pass(VkQueue queue, Replay *replay, Image *resolved_depth)
 		};
 		depth->used_serial = replay->serial;
 	}
+	if (render_pass->has_depth)
+		depth->depth_in_texture = resolves_depth(render_pass, framebuffer);
 	// Left out of band 0's clear, which would copy junk into it and could clear depth on a depth resolve
 	// (xsdk:docs/HARDWARE.md, "A band's depth clear goes on a colour resolve, milestone 44 step 5").
 	if (resolved_depth) {
