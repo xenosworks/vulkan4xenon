@@ -471,9 +471,11 @@ typedef struct {
 	bool stores_depth;
 } RenderPass;
 
-// A VkRenderPass: its subpasses in order.
+// A VkRenderPass: its subpasses in order, and each as a pass over the grid around a render area off it begins it, every
+// attachment loaded (render_pass.c, loading_pass).
 typedef struct {
 	RenderPass subpasses[V4X_MAX_SUBPASSES];
+	RenderPass loading[V4X_MAX_SUBPASSES];
 	uint32_t subpass_count;
 	uint32_t attachment_count;
 } RenderPassSubpasses;
@@ -764,6 +766,10 @@ struct VkCommandBuffer_T {
 	uint32_t subpass;
 	VkClearValue clears[V4X_MAX_ATTACHMENTS];
 	uint32_t area_at;
+	// The render area is off the 8-pixel grid: each subpass begins as its loading pass over the grid around it, and
+	// inner_area, the area itself, is cleared where the subpass clears (command_buffer.c, clear_inner).
+	bool off_grid;
+	VkRect2D inner_area;
 	// The pipeline bound last while recording, to check draws against its topology.
 	const Pipeline *pipeline;
 	// Allocated as a secondary command buffer, which vkCmdExecuteCommands replays in place.

@@ -9,7 +9,8 @@
 
 // Milestone 27's step 1: render passes whose render area is smaller than the framebuffer clear, load and store their
 // area alone. The target is read back through vkCmdCopyImageToBuffer, into cached memory, and checked texel by texel:
-// each area as its pass left it, and every texel around it as it was.
+// each area as its pass left it, and every texel around it as it was. Milestone 67: areas off the 8-pixel grid too, as
+// PPSSPP's passes take the bounds of their draws (God of War: Chains of Olympus).
 
 enum {
 	FENCE_TIMEOUT_NS = 1000000000,
@@ -27,12 +28,12 @@ enum {
 	AREAS_AT = 0,
 	DEPTH_AT = AREAS_AT + IMAGE_BYTES,
 	IMAGE_CLEAR_AT = DEPTH_AT + IMAGE_BYTES,
-	READBACK_BYTES = IMAGE_CLEAR_AT + IMAGE_BYTES,
+	OFF_GRID_AT = IMAGE_CLEAR_AT + IMAGE_BYTES,
+	OFF_DEPTH_AT = OFF_GRID_AT + IMAGE_BYTES,
+	READBACK_BYTES = OFF_DEPTH_AT + IMAGE_BYTES,
 	// The memory type the CPU caches, which buffers only copied to and from may take.
 	CACHED_TYPE = 1,
 	MAX_MISSES_LOGGED = 4,
-	// Each fails its command buffer, recorded alone.
-	REFUSED_AREAS = 3,
 };
 
 typedef enum {
@@ -68,12 +69,14 @@ static const HarnessQuad depth_quad = { 0.0f, 0.0f, WIDTH, HEIGHT, 0.75f, { 0.0f
 static const VkClearDepthStencilValue image_clear = { 0.25f, 0 };
 static const HarnessQuad hidden_quad = { 0.0f, 0.0f, WIDTH, HEIGHT, 0.4f, { 1.0f, 0.5f, 0.0f, 1.0f }, false };
 
-// Areas off the grid: an offset, a width short of the edge, a height short of it.
-static const VkRect2D refused_areas[REFUSED_AREAS] = {
-	{ { 4, 0 }, { 32, 32 } },
-	{ { 0, 0 }, { 36, 32 } },
-	{ { 0, 8 }, { 32, 30 } },
-};
+// Areas off the grid every way: a cleared one with a quad past it, which the scissor keeps inside; a loaded one with a
+// quad over it; and one whose depth a pass clears to 1 after 0.5 over the whole, a quad at 0.75 then showing there
+// alone.
+static const VkRect2D off_clear_area = { { 5, 3 }, { 37, 29 } };
+static const VkRect2D off_load_area = { { 70, 61 }, { 19, 13 } };
+static const VkRect2D off_depth_area = { { 9, 45 }, { 23, 17 } };
+static const HarnessQuad off_clear_quad = { 14.0f, 9.0f, 30.0f, 30.0f, 0.0f, { 1.0f, 0.0f, 0.0f, 1.0f }, false };
+static const HarnessQuad off_load_quad = { 60.0f, 55.0f, 40.0f, 30.0f, 0.0f, { 1.0f, 1.0f, 0.0f, 1.0f }, false };
 
 typedef struct {
 	VkRenderPass passes[PASSES];
@@ -331,6 +334,34 @@ static void record_areas(const Scene *scene)
 	copy_out(scene, AREAS_AT);
 }
 
+// The target cleared blue again, then the areas off the grid: the cleared one's pass and the loaded one's; then the
+// depth sequence above in the depth area off the grid.
+static void record_off_grid(const Scene *scene)
+{
+	const VkClearColorValue blue_clear = { .float32 = { 0.0f, 0.0f, 1.0f, 1.0f } };
+	const VkImageSubresourceRange range = { COLOR, 0, 1, 0, 1 };
+	vkCmdClearColorImage(scene->commands, scene->target, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &blue_clear, 1, &range);
+	const VkClearValue green_clear[2] = { color_clear(green) };
+	begin_pass(scene, PASS_CLEAR, scene->target_framebuffer, WIDTH, &off_clear_area, green_clear);
+	harness_push_quad_in(scene->commands, scene->layout, &off_clear_quad, WIDTH, HEIGHT);
+	vkCmdEndRenderPass(scene->commands);
+	begin_pass(scene, PASS_LOAD, scene->target_framebuffer, WIDTH, &off_load_area, NULL);
+	harness_push_quad_in(scene->commands, scene->layout, &off_load_quad, WIDTH, HEIGHT);
+	vkCmdEndRenderPass(scene->commands);
+	copy_out(scene, OFF_GRID_AT);
+	const VkRect2D all = { { 0, 0 }, { WIDTH, HEIGHT } };
+	const VkClearValue first[2] = { color_clear(grey), { .depthStencil = { 0.5f, 0 } } };
+	const VkClearValue far[2] = { color_clear(grey), { .depthStencil = { 1.0f, 0 } } };
+	begin_pass(scene, PASS_DEPTH_CLEAR, scene->depth_framebuffer, WIDTH, &all, first);
+	vkCmdEndRenderPass(scene->commands);
+	begin_pass(scene, PASS_DEPTH_RECLEAR, scene->depth_framebuffer, WIDTH, &off_depth_area, far);
+	vkCmdEndRenderPass(scene->commands);
+	begin_pass(scene, PASS_DEPTH_LOAD, scene->depth_framebuffer, WIDTH, &all, NULL);
+	harness_push_quad_in(scene->commands, scene->layout, &depth_quad, WIDTH, HEIGHT);
+	vkCmdEndRenderPass(scene->commands);
+	copy_out(scene, OFF_DEPTH_AT);
+}
+
 // Grey colour and depth 0.5 over the whole; depth 1 in the depth area; a quad at 0.75 over the whole, testing less.
 // Then the depth image cleared to 0.25, a pass of the depth area loading it, and a quad at 0.4 over the whole.
 static void record_depth(const Scene *scene)
@@ -383,6 +414,20 @@ static const uint8_t *depth_texel(uint32_t x, uint32_t y)
 	return inside(&depth_area, x, y) ? cyan : grey;
 }
 
+static const uint8_t *off_grid_texel(uint32_t x, uint32_t y)
+{
+	if (inside(&off_load_area, x, y))
+		return yellow;
+	if (inside(&off_clear_area, x, y))
+		return in_quad(&off_clear_quad, x, y) ? red : green;
+	return blue;
+}
+
+static const uint8_t *off_depth_texel(uint32_t x, uint32_t y)
+{
+	return inside(&off_depth_area, x, y) ? cyan : grey;
+}
+
 typedef const uint8_t *(*Expected)(uint32_t x, uint32_t y);
 
 // The texels inside the rectangle, or outside it, that don't hold what they should; the first few logged.
@@ -424,6 +469,19 @@ static void check_passes(const Scene *scene)
 		loaded == 0);
 	check("render areas: a pass clearing an area's depth leaves the depth around it", depth == 0);
 	check("render areas: a depth image's clear covers all of it, before a pass of a smaller area", image == 0);
+	const uint32_t off_cleared = count_wrong(scene, OFF_GRID_AT, off_grid_texel, &off_load_area, false, "off the grid");
+	const uint32_t off_loaded = count_wrong(scene, OFF_GRID_AT, off_grid_texel, &off_load_area, true, "loaded off it");
+	const uint32_t off_depth = count_wrong(scene, OFF_DEPTH_AT, off_depth_texel, NULL, false, "depth off the grid");
+	xsdk_log_write("render areas: off the grid, %u, %u and %u texels wrong", (unsigned)off_cleared,
+		(unsigned)off_loaded, (unsigned)off_depth);
+	check(
+		"render areas: a pass clearing an area off the 8-pixel grid every way clears and draws there alone, the "
+		"texels around it as they were",
+		off_cleared == 0);
+	check("render areas: a pass loading an area off the 8-pixel grid every way loads and stores it alone",
+		off_loaded == 0);
+	check("render areas: a pass clearing depth in an area off the 8-pixel grid leaves the depth around it",
+		off_depth == 0);
 }
 
 // A pass of the area into the framebuffer fails its command buffer.
@@ -435,16 +493,12 @@ static bool refused_pass(const Scene *scene, PassKind kind, VkFramebuffer frameb
 	return begun && vkEndCommandBuffer(scene->commands) == VK_ERROR_FEATURE_NOT_PRESENT;
 }
 
-// Each area off the grid fails its command buffer, as does one on it into a half float target.
+// An area on the grid into a half float target fails its command buffer.
 static void check_refusals(const Harness *harness, const Scene *scene)
 {
 	VkExtent2D granularity = { 0, 0 };
 	vkGetRenderAreaGranularity(harness->device, scene->passes[PASS_CLEAR], &granularity);
 	check("render areas: the granularity is 8 by 8", granularity.width == 8 && granularity.height == 8);
-	bool refused = true;
-	for (uint32_t i = 0; i < REFUSED_AREAS && refused; i++)
-		refused = refused_pass(scene, PASS_LOAD, scene->target_framebuffer, &refused_areas[i]);
-	check("render areas: areas off the 8-pixel grid inside the framebuffer are refused", refused);
 	check("render areas: an area smaller than the framebuffer of a half float colour attachment is refused",
 		refused_pass(scene, PASS_FLOAT, scene->half_framebuffer, &clear_area));
 }
@@ -486,6 +540,7 @@ void test_render_areas(const Harness *harness)
 	if (ok && begin(scene.commands)) {
 		record_areas(&scene);
 		record_depth(&scene);
+		record_off_grid(&scene);
 		if (submit(harness, scene.commands))
 			check_passes(&scene);
 	}

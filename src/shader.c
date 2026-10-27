@@ -345,6 +345,22 @@ static void keep_on_disk(const V4xShader *shader)
 		(void)unlink(written);
 }
 
+// SPIR-V xost failed on, kept in the cache's folder, where there's one, to compile on the PC.
+static void keep_refused(const uint32_t *code, uint32_t size_bytes, uint64_t hash)
+{
+	char path[CACHE_PATH_BYTES];
+	const int length = snprintf(path, sizeof path, "%s/refused-%08X%08X-%u.spv", cache_directory,
+		(unsigned)(hash >> 32), (unsigned)hash, (unsigned)size_bytes);
+	if (!cache_directory[0] || length <= 0 || length >= (int)sizeof path || !make_folder(cache_directory))
+		return;
+	FILE *const file = fopen(path, "wb");
+	bool kept = file && fwrite(code, 1, size_bytes, file) == size_bytes;
+	if (file && fclose(file) != 0)
+		kept = false;
+	if (kept)
+		xsdk_log_write("vulkan4xenon: its SPIR-V is in %s", path);
+}
+
 // Through xost's compiler at xsdk's register split with the optimiser on, as Dusklight's pack is built.
 static V4xShader *compile(VkDevice device, const uint32_t *code, uint32_t size_bytes, uint64_t hash, bool instanced)
 {
@@ -359,8 +375,13 @@ static V4xShader *compile(VkDevice device, const uint32_t *code, uint32_t size_b
 	const unsigned high = (unsigned)(hash >> 32);
 	const unsigned low = (unsigned)hash;
 	if (status != XSDK_XSC_OK) {
-		xsdk_log_write("vulkan4xenon: xost refused SPIR-V %08X%08X, %u bytes: %s", high, low, (unsigned)size_bytes,
+		// xsdk:include/xsdk/xsc.h, XsdkXscStatus.
+		static const char *const statuses[] = { "ok", "refused", "registers", "bad value", "malformed",
+			"out of memory" };
+		xsdk_log_write("vulkan4xenon: xost failed on SPIR-V %08X%08X, %u bytes, %s: %s", high, low,
+			(unsigned)size_bytes, (unsigned)status < sizeof statuses / sizeof *statuses ? statuses[status] : "?",
 			compiled.message);
+		keep_refused(code, size_bytes, hash);
 		return NULL;
 	}
 	V4xShader *shader = NULL;

@@ -180,6 +180,22 @@ static RenderPass subpass_pass(const VkRenderPassCreateInfo *info, uint32_t inde
 	return pass;
 }
 
+// The subpass as a pass over the grid around a render area off it begins it: every attachment loaded, as the texels
+// past the area keep what they hold; those that clear are then cleared over the area alone (command_buffer.c,
+// clear_inner).
+static RenderPass loading_pass(RenderPass pass)
+{
+	for (uint32_t i = 0; i < pass.color_count; i++)
+		pass.load_ops[i] = VK_ATTACHMENT_LOAD_OP_LOAD;
+	if (pass.has_depth) {
+		pass.loads_depth = true;
+		pass.clears_depth = false;
+		pass.clears_depth_alone = false;
+		pass.clears_stencil_alone = false;
+	}
+	return pass;
+}
+
 // Replay is in order, so the dependencies between subpasses need nothing.
 VKAPI_ATTR VkResult VKAPI_CALL vkCreateRenderPass(VkDevice device, const VkRenderPassCreateInfo *pCreateInfo,
 	const VkAllocationCallbacks *pAllocator, VkRenderPass *pRenderPass)
@@ -198,8 +214,10 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateRenderPass(VkDevice device, const VkRende
 		return VK_ERROR_OUT_OF_HOST_MEMORY;
 	Uses uses[V4X_MAX_ATTACHMENTS];
 	find_uses(pCreateInfo, uses);
-	for (uint32_t s = 0; s < pCreateInfo->subpassCount; s++)
+	for (uint32_t s = 0; s < pCreateInfo->subpassCount; s++) {
 		render_pass->subpasses[s] = subpass_pass(pCreateInfo, s, uses);
+		render_pass->loading[s] = loading_pass(render_pass->subpasses[s]);
+	}
 	render_pass->subpass_count = pCreateInfo->subpassCount;
 	render_pass->attachment_count = pCreateInfo->attachmentCount;
 	*pRenderPass = v4x_handle(render_pass);

@@ -226,7 +226,9 @@ static bool record_data(VkCommandBuffer buffer, const void *bytes, uint32_t size
 // Each subpass begins as a render pass of its own, its clears from the values the render pass began with.
 static void record_subpass(VkCommandBuffer commandBuffer)
 {
-	const RenderPass *const render_pass = &commandBuffer->render_pass->subpasses[commandBuffer->subpass];
+	const RenderPassSubpasses *const subpasses = commandBuffer->render_pass;
+	const RenderPass *const render_pass = commandBuffer->off_grid ? &subpasses->loading[commandBuffer->subpass]
+																  : &subpasses->subpasses[commandBuffer->subpass];
 	PassClears clears = { .depth = 1.0f };
 	for (uint32_t i = 0; i < render_pass->color_count; i++) {
 		if (render_pass->load_ops[i] == VK_ATTACHMENT_LOAD_OP_CLEAR)
@@ -296,18 +298,63 @@ static bool area_resolvable(
 	return true;
 }
 
+// An area's sides out to the 8-pixel grid, or the framebuffer's edges.
+static VkRect2D grid_around(const VkRect2D *area, const FramebufferSubpasses *framebuffer)
+{
+	const uint32_t align = XSDK_RESOLVE_ALIGNMENT;
+	const uint32_t left = area->offset.x > 0 ? (uint32_t)area->offset.x & ~(align - 1) : 0;
+	const uint32_t top = area->offset.y > 0 ? (uint32_t)area->offset.y & ~(align - 1) : 0;
+	uint32_t right = ((uint32_t)area->offset.x + area->extent.width + align - 1) & ~(align - 1);
+	uint32_t bottom = ((uint32_t)area->offset.y + area->extent.height + align - 1) & ~(align - 1);
+	right = right < framebuffer->width ? right : framebuffer->width;
+	bottom = bottom < framebuffer->height ? bottom : framebuffer->height;
+	return (VkRect2D){ { (int32_t)left, (int32_t)top }, { right - left, bottom - top } };
+}
+
+// A subpass begun over the grid around an area off it clears what it clears over the area itself, after its loading
+// pass, as vkCmdClearAttachments does; depth and stencil both where a clear of either leaves the other undefined.
+static void clear_inner(VkCommandBuffer commandBuffer)
+{
+	if (!commandBuffer->off_grid)
+		return;
+	const RenderPass *const pass = &commandBuffer->render_pass->subpasses[commandBuffer->subpass];
+	VkClearAttachment clears[V4X_MAX_COLOR_ATTACHMENTS + 1];
+	uint32_t count = 0;
+	for (uint32_t i = 0; i < pass->color_count; i++) {
+		if (pass->load_ops[i] == VK_ATTACHMENT_LOAD_OP_CLEAR)
+			clears[count++] =
+				(VkClearAttachment){ VK_IMAGE_ASPECT_COLOR_BIT, i, commandBuffer->clears[pass->color_indices[i]] };
+	}
+	const VkImageAspectFlags aspects = pass->clears_depth ? VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT
+		: pass->clears_depth_alone                        ? VK_IMAGE_ASPECT_DEPTH_BIT
+		: pass->clears_stencil_alone                      ? VK_IMAGE_ASPECT_STENCIL_BIT
+														  : 0;
+	if (pass->has_depth && aspects)
+		clears[count++] = (VkClearAttachment){ aspects, 0, commandBuffer->clears[pass->depth_index] };
+	const VkClearRect rect = { commandBuffer->inner_area, 0, 1 };
+	if (count)
+		vkCmdClearAttachments(commandBuffer, count, clears, 1, &rect);
+}
+
 // The subpass's draws are recorded here or in secondary command buffers, which vkCmdExecuteCommands replays in place.
+// An area off the 8-pixel grid, where resolves copy, begins over the grid around it, or the whole framebuffer where
+// that won't resolve, loading it all, and clear_inner clears the area itself.
 VKAPI_ATTR void VKAPI_CALL vkCmdBeginRenderPass(
 	VkCommandBuffer commandBuffer, const VkRenderPassBeginInfo *pRenderPassBegin, VkSubpassContents contents)
 {
 	(void)contents;
 	const RenderPassSubpasses *const render_pass = v4x_object(pRenderPassBegin->renderPass);
 	const FramebufferSubpasses *const framebuffer = v4x_object(pRenderPassBegin->framebuffer);
-	const VkRect2D *const area = &pRenderPassBegin->renderArea;
-	if (!on_grid(area->offset.x, area->extent.width, framebuffer->width) ||
-		!on_grid(area->offset.y, area->extent.height, framebuffer->height)) {
-		commandBuffer->result = v4x_host_unsupported("render areas off the 8-pixel grid inside the framebuffer");
-		return;
+	VkRect2D grid = pRenderPassBegin->renderArea;
+	const VkRect2D *const area = &grid;
+	commandBuffer->inner_area = grid;
+	commandBuffer->off_grid = !on_grid(area->offset.x, area->extent.width, framebuffer->width) ||
+		!on_grid(area->offset.y, area->extent.height, framebuffer->height);
+	if (commandBuffer->off_grid) {
+		grid = grid_around(&commandBuffer->inner_area, framebuffer);
+		if (!whole_framebuffer(framebuffer, area) &&
+			(tiles(render_pass, framebuffer) || !area_resolvable(render_pass, framebuffer, area)))
+			grid = (VkRect2D){ { 0, 0 }, { framebuffer->width, framebuffer->height } };
 	}
 	if (!whole_framebuffer(framebuffer, area) && tiles(render_pass, framebuffer)) {
 		commandBuffer->result = v4x_host_unsupported("render areas smaller than the framebuffer past eDRAM");
@@ -328,6 +375,7 @@ VKAPI_ATTR void VKAPI_CALL vkCmdBeginRenderPass(
 	commandBuffer->framebuffer = framebuffer;
 	commandBuffer->subpass = 0;
 	record_subpass(commandBuffer);
+	clear_inner(commandBuffer);
 }
 
 static void record_end(VkCommandBuffer commandBuffer)
@@ -343,6 +391,7 @@ VKAPI_ATTR void VKAPI_CALL vkCmdNextSubpass(VkCommandBuffer commandBuffer, VkSub
 	record_end(commandBuffer);
 	commandBuffer->subpass++;
 	record_subpass(commandBuffer);
+	clear_inner(commandBuffer);
 }
 
 VKAPI_ATTR void VKAPI_CALL vkCmdEndRenderPass(VkCommandBuffer commandBuffer)
@@ -502,8 +551,8 @@ static bool in_texture_level(
 	const bool whole = !offset.x && !offset.y && extent.width == width && extent.height == height;
 	return offset.x >= 0 && offset.y >= 0 && extent.width && extent.height &&
 		extent.width <= width - (uint32_t)offset.x && extent.height <= height - (uint32_t)offset.y &&
-		(whole || !compressed(image->format)) && one_layer && slices->count &&
-		slices->first < image->texture.depth && slices->count <= image->texture.depth - slices->first;
+		(whole || !compressed(image->format)) && one_layer && slices->count && slices->first < image->texture.depth &&
+		slices->count <= image->texture.depth - slices->first;
 }
 
 // The same in a colour image's level; a sampled depth image's texture holds its depth for image copies alone.

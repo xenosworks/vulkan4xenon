@@ -414,8 +414,10 @@ Some are there to refuse, as the features they need aren't reported. Each logs w
   that part of the target (`xsdk_gpu_resolve_texture_rect`). A resolve copies and clears 8 by 8 pixels at a time
   (xsdk:include/xsdk/gpu.h), so `vkGetRenderAreaGranularity` gives 8x8, and an area's offset is a multiple of 8, and so
   are its width and height unless it reaches the framebuffer's right or bottom edge: what Vulkan calls an optimal area.
-  **Deviation:** an area off that grid inside the framebuffer fails the command buffer, though Vulkan takes any area,
-  the granularity being only for speed.
+  An area off that grid (milestone 67), as PPSSPP's passes take the bounds of their draws, begins over the grid around
+  it, or over the whole framebuffer where a rectangle there wouldn't resolve, every attachment loaded, so the texels
+  past the area keep what they hold; the attachments that clear are then cleared over the area itself, as
+  `vkCmdClearAttachments` clears, after the load.
   **Deviation:** xsdk resolves a rectangle of the first colour target alone, in 8_8_8_8, and none of the float or
   10-bit targets (xsdk:include/xsdk/gpu.h), so an area smaller than the framebuffer takes a render pass whose subpasses
   each have one colour attachment, `R8G8B8A8_UNORM` or `B8G8R8A8_UNORM` (a swapchain image's), and a depth attachment
