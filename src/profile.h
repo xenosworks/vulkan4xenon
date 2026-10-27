@@ -1,6 +1,7 @@
 #ifndef V4X_PROFILE_H
 #define V4X_PROFILE_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include <vulkan/vulkan.h>
@@ -56,6 +57,19 @@ typedef enum {
 	V4X_PROFILE_PASS_EVENTS,
 } V4xProfilePassEvent;
 
+// The parts of an untiled pass's begin and end the 10 s log times: placing its targets and forgetting what they reach,
+// setting them, drawing back and clearing, keeping its parts; then deciding each store, resolving, and the rest.
+typedef enum {
+	V4X_PROFILE_PASS_PLACE,
+	V4X_PROFILE_PASS_TARGET,
+	V4X_PROFILE_PASS_FILL,
+	V4X_PROFILE_PASS_KEEP,
+	V4X_PROFILE_PASS_DECIDE,
+	V4X_PROFILE_PASS_RESOLVE,
+	V4X_PROFILE_PASS_REST,
+	V4X_PROFILE_PASS_STAGES,
+} V4xProfilePassStage;
+
 #ifdef V4X_PROFILE
 // Counts a submit and starts its laps; the first also learns what a lap costs.
 void v4x_profile_submit(void);
@@ -90,6 +104,9 @@ void v4x_profile_pass_begun(uint32_t color_tile);
 void v4x_profile_pass_end(void);
 void v4x_profile_pass_ended(void);
 void v4x_profile_pass_event(V4xProfilePassEvent event);
+// Starts timing an untiled pass's begin or end, then charges the time since to a stage at each lap.
+void v4x_profile_pass_mark(bool begin);
+void v4x_profile_pass_lap(V4xProfilePassStage stage);
 void v4x_profile_pass_texture(uint32_t address);
 #else
 static inline void v4x_profile_submit(void)
@@ -193,6 +210,16 @@ static inline void v4x_profile_pass_ended(void)
 static inline void v4x_profile_pass_event(V4xProfilePassEvent event)
 {
 	(void)event;
+}
+
+static inline void v4x_profile_pass_mark(bool begin)
+{
+	(void)begin;
+}
+
+static inline void v4x_profile_pass_lap(V4xProfilePassStage stage)
+{
+	(void)stage;
 }
 
 static inline void v4x_profile_pass_texture(uint32_t address)

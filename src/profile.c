@@ -151,6 +151,13 @@ static uint32_t logs;
 static PassTrace *pass;
 static uint32_t pass_draws;
 static uint32_t pass_started;
+// Untiled passes' begins and ends by part (V4xProfilePassStage), the begins counted, both at the last log too, and
+// when the last lap was.
+static uint64_t pass_stage_ticks[V4X_PROFILE_PASS_STAGES];
+static uint64_t logged_pass_stage_ticks[V4X_PROFILE_PASS_STAGES];
+static uint32_t pass_begins;
+static uint32_t logged_pass_begins;
+static uint32_t pass_lap_last;
 
 static void log_commands(void);
 static void log_waits(void);
@@ -352,6 +359,19 @@ void v4x_profile_pass_ended(void)
 		return;
 	pass->end_ticks = time_base() - pass_started;
 	pass = NULL;
+}
+
+void v4x_profile_pass_mark(bool begin)
+{
+	pass_begins += begin;
+	pass_lap_last = time_base();
+}
+
+void v4x_profile_pass_lap(V4xProfilePassStage stage)
+{
+	const uint32_t now = time_base();
+	pass_stage_ticks[stage] += now - pass_lap_last;
+	pass_lap_last = now;
 }
 
 void v4x_profile_pass_event(V4xProfilePassEvent event)
@@ -629,11 +649,34 @@ static void log_edram(uint32_t presents)
 	logged_gpu_stats = stats;
 }
 
+// Since the last log, untiled passes' begins and ends by part: microseconds a present and nanoseconds a pass.
+static void log_pass_stages(uint32_t presents)
+{
+	static const char *const names[V4X_PROFILE_PASS_STAGES] = {
+		"begins placing targets and forgetting what they reach",
+		"begins setting targets",
+		"begins drawing back and clearing",
+		"begins keeping parts",
+		"ends deciding stores",
+		"ends resolving",
+		"ends' rest",
+	};
+	const uint32_t begins = pass_begins - logged_pass_begins;
+	for (uint32_t s = 0; s < V4X_PROFILE_PASS_STAGES; s++) {
+		const uint64_t ns = nanoseconds(pass_stage_ticks[s] - logged_pass_stage_ticks[s]);
+		xsdk_log_write("vulkan4xenon: profile, the last 10 s: passes' %s, %u us a present, %u ns a pass", names[s],
+			(unsigned)each(ns / 1000, presents), (unsigned)each(ns, begins));
+		logged_pass_stage_ticks[s] = pass_stage_ticks[s];
+	}
+	logged_pass_begins = pass_begins;
+}
+
 // Since the last log, each count a present.
 static void log_counts(void)
 {
 	const uint32_t presents = totals.presents - logged.presents;
 	log_edram(presents);
+	log_pass_stages(presents);
 	for (uint32_t c = 0; c < V4X_PROFILE_COUNTS; c++) {
 		log_count(count_names[c], counts[c] - logged_counts[c], presents);
 		logged_counts[c] = counts[c];

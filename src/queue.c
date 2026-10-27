@@ -996,6 +996,7 @@ static void clear_targets(VkQueue queue, const Replay *replay, EdramPart *colors
 static void begin_render_pass(VkQueue queue, Replay *replay)
 {
 	const RenderPass *const render_pass = replay->render_pass;
+	v4x_profile_pass_mark(true);
 	place_colors(queue, replay);
 	place_depth(queue, replay);
 	EdramPart colors[V4X_MAX_COLOR_ATTACHMENTS];
@@ -1005,13 +1006,16 @@ static void begin_render_pass(VkQueue queue, Replay *replay)
 			colors[i] = (EdramPart){ .contents = EDRAM_UNKNOWN };
 	}
 	forget_colors(queue, replay);
+	v4x_profile_pass_lap(V4X_PROFILE_PASS_PLACE);
 	set_target(replay);
+	v4x_profile_pass_lap(V4X_PROFILE_PASS_TARGET);
 	if (render_pass->has_depth && render_pass->loads_depth && !replay->clears_depth && !replay->draws_image_clear)
 		check_depth_kept(queue, replay);
 	if (replay->draws_image_clear)
 		clear_image_depth(queue, replay, &queue->depths[replay->depth_part]);
 	draw_back(queue, replay, colors);
 	clear_targets(queue, replay, colors);
+	v4x_profile_pass_lap(V4X_PROFILE_PASS_FILL);
 	if (keep_colors(queue, colors, render_pass->color_count, replay->serial))
 		set_target(replay);
 	replay->pipeline_dirty = true;
@@ -1019,6 +1023,7 @@ static void begin_render_pass(VkQueue queue, Replay *replay)
 	// Drawing an image back and resolves point streams and slots of their own.
 	memset(replay->pointed_streams, 0, sizeof replay->pointed_streams);
 	memset(replay->pointed_textures, 0, sizeof replay->pointed_textures);
+	v4x_profile_pass_lap(V4X_PROFILE_PASS_KEEP);
 }
 
 // The resolve clears target i over the area as the next pass in the command buffer clears the target at its tile, in
@@ -1184,6 +1189,7 @@ static void end_render_pass(VkQueue queue, VkCommandBuffer buffer, uint32_t inde
 	const RenderPass *const render_pass = replay->render_pass;
 	const Framebuffer *const framebuffer = replay->framebuffer;
 	EdramPart *const depth_part = &queue->depths[replay->depth_part];
+	v4x_profile_pass_mark(false);
 	if (render_pass->has_depth)
 		*depth_part = holding(framebuffer->depth, replay->depth_tile, whole(framebuffer));
 	if (render_pass->has_depth && render_pass->leaves_depth_to_read && framebuffer->depth->is_sampled_depth)
@@ -1206,16 +1212,19 @@ static void end_render_pass(VkQueue queue, VkCommandBuffer buffer, uint32_t inde
 		}
 		if (whole_put_off)
 			set_target(replay);
+		v4x_profile_pass_lap(V4X_PROFILE_PASS_REST);
 		const float *rgba;
 		const bool clear_color = end_color_clear(replay, i, next, next_clears, next_area, &rgba);
 		if (clear_depth)
 			set_depth_clear(queue, depth, stencil);
 		const VkRect2D stored = stored_area(&queue->colors[i], framebuffer->attachments[i], &replay->area);
 		const bool waits = stores && !clear_color && !clear_depth && put_off(buffer, index, replay, i);
+		v4x_profile_pass_lap(V4X_PROFILE_PASS_DECIDE);
 		if (resolved)
 			resolve(resolved, i, replay, clear_color && !stores, clear_depth && !stores, rgba);
 		if (stores && !waits)
 			resolve(framebuffer->attachments[i], i, replay, clear_color, clear_depth, rgba);
+		v4x_profile_pass_lap(V4X_PROFILE_PASS_RESOLVE);
 		if (resolved || !waits)
 			v4x_profile_pass_event(V4X_PROFILE_END_RESOLVE);
 		edram_counts.resolves_put_off += waits;
@@ -1225,6 +1234,7 @@ static void end_render_pass(VkQueue queue, VkCommandBuffer buffer, uint32_t inde
 		if (clear_depth)
 			*depth_part = cleared_depth(framebuffer, replay->depth_tile, depth, stencil, replay->area);
 		clear_depth = false;
+		v4x_profile_pass_lap(V4X_PROFILE_PASS_REST);
 	}
 }
 
