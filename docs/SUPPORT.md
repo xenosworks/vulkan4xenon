@@ -175,7 +175,14 @@ Some are there to refuse, as the features they need aren't reported. Each logs w
   shader that doesn't read `gl_InstanceIndex`, the bundle's entry marked `instanced`, and the layer compiles one on
   the console where the bundle lacks it (above). A bundle written before the variants holds plain shaders alone, which
   the layer takes as before. The variant's prologue costs a vertex four ALU instructions, which pipelines without
-  instancing don't pay. xost refuses `gl_VertexIndex`.
+  instancing don't pay.
+- **`gl_VertexIndex`** (milestone 67; xost:docs/xsc.md, "Interface conventions"), `firstVertex` or `vertexOffset`
+  included: the GPU's vertex index, or an instanced shader's, plus the vertex base, a float constant past the
+  shader's blocks and instance group, which the bundle records as a `V4X_RESOURCE_VERTEX_BASE` resource. The layer
+  moves the streams by the draw's first vertex or vertex offset in place of the GPU's index offset (Commands), so it
+  writes that to the base before each draw, and each piece of one. A float holds the index exactly up to 2^24. xost
+  lowers shifts by constants and an and with a constant run of bits on it exactly, as PPSSPP's stencil upload takes
+  its quad's corners (`(gl_VertexIndex & 1) << 1`, `gl_VertexIndex & 2`); other bit operations stay refused.
 - **Point sprites** (milestone 26): `gl_PointSize` goes to the point size Xenos's vertex shaders export, `oPts.x`, the
   point's width in pixels (xenia:src/xenia/gpu/ucode.h:1813-1834), and `gl_PointCoord` reads the pixel parameters'
   |zw|, a point sprite's coordinates from its top left (xenia:src/xenia/gpu/registers.h:184-212); xost:docs/xsc.md

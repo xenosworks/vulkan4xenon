@@ -210,9 +210,17 @@ static VkResult gather_resources(const PipelineLayout *layout, const V4xShader *
 	}
 	for (uint32_t i = 0; i < shader->resource_count; i++) {
 		const V4xShaderResource *const resource = &shader->resources[i];
-		// No binding of the layout's: xsdk writes the group, from the shader's own record of it (queue.c).
+		// No binding of the layout's: xsdk writes the group, from the shader's own record of it, and each draw the
+		// vertex base (queue.c).
 		if (resource->kind == V4X_RESOURCE_INSTANCE)
 			continue;
+		if (resource->kind == V4X_RESOURCE_VERTEX_BASE) {
+			if (!vertex || resource->first >= constants)
+				return v4x_host_unsupported("a vertex base past a vertex shader's 256 constants");
+			pipeline->reads_vertex_index = true;
+			pipeline->vertex_base = resource->first;
+			continue;
+		}
 		const bool fixed = resource->kind == V4X_RESOURCE_FIXED_LOOP;
 		if (!fixed && !layout_has(layout, resource, stage)) {
 			xsdk_log_write("vulkan4xenon: the pipeline layout lacks set %u binding %u, kind %u, for the %s shader",

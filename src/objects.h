@@ -436,6 +436,10 @@ typedef struct {
 	ClipPlane clip_planes[XSDK_CLIP_PLANES];
 	uint32_t clip_plane_count;
 	uint32_t clip_plane_mask;
+	// Its vertex shader reads gl_VertexIndex: the float constant each draw writes its vertex base to (queue.c,
+	// point_streams).
+	bool reads_vertex_index;
+	uint32_t vertex_base;
 } Pipeline;
 
 // One subpass as the replay draws it, a render pass of its own: its colour attachments and its depth if it has one,

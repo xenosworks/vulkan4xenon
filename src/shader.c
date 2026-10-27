@@ -114,6 +114,8 @@ static uint8_t resource_kind(XsdkXscResourceKind kind)
 		return V4X_RESOURCE_COMPARISON;
 	case XSDK_XSC_INSTANCE:
 		return V4X_RESOURCE_INSTANCE;
+	case XSDK_XSC_VERTEX_BASE:
+		return V4X_RESOURCE_VERTEX_BASE;
 	default:
 		return V4X_RESOURCE_SAMPLER;
 	}

@@ -34,6 +34,10 @@ enum {
 	// Loops whose count is data, the third loop kind, last so the kinds before keep their numbers: loop constant count,
 	// which runs first passes, 255 (xsdk:include/xsdk/xsc.h, XSDK_XSC_FIXED_LOOP).
 	V4X_RESOURCE_FIXED_LOOP,
+	// A vertex shader's vertex base, read with gl_VertexIndex: the float constant first, whose x the layer writes
+	// before each draw, the first vertex or vertex offset it moves the streams by (xsdk:include/xsdk/xsc.h,
+	// XSDK_XSC_VERTEX_BASE). Last, as the fixed loops are.
+	V4X_RESOURCE_VERTEX_BASE,
 };
 
 // Where xost put a block, sampler, comparison or instance group the shader reads (xost:docs/xsc.md, "Interface

@@ -1633,10 +1633,15 @@ static void prepare_draw(Replay *replay)
 
 // xsdk draws from vertex 0, so each stream at the vertex's rate starts at the draw's first vertex, which may come
 // before the binding's; one at the instance's rate stays at the binding's start, the shader fetching each instance's
-// element (pipeline.c).
+// element (pipeline.c). A vertex shader reading gl_VertexIndex adds the first vertex back to the GPU's index as its
+// vertex base (xost:docs/xsc.md, "Interface conventions"); a float holds it exactly up to 2^24.
 static void point_streams(Replay *replay, int32_t first_vertex)
 {
 	const Pipeline *const pipeline = replay->pipeline;
+	if (pipeline->reads_vertex_index) {
+		const float base[4] = { (float)first_vertex, 0.0f, 0.0f, 0.0f };
+		xsdk_gpu_set_vertex_constants(pipeline->vertex_base, base, 1);
+	}
 	for (uint32_t s = 0; s < pipeline->stream_count; s++) {
 		const VertexStream *const source = &pipeline->streams[s];
 		const VertexBinding *const binding = &replay->bindings[source->binding];

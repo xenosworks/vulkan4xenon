@@ -36,7 +36,8 @@ from pathlib import Path
 RESOURCE_KINDS = {"push": "V4X_RESOURCE_PUSH_CONSTANTS", "uniform": "V4X_RESOURCE_UNIFORM_BUFFER",
                   "sampler": "V4X_RESOURCE_SAMPLER", "push_loop": "V4X_RESOURCE_PUSH_LOOP",
                   "uniform_loop": "V4X_RESOURCE_UNIFORM_LOOP", "comparison": "V4X_RESOURCE_COMPARISON",
-                  "instance": "V4X_RESOURCE_INSTANCE", "fixed_loop": "V4X_RESOURCE_FIXED_LOOP"}
+                  "instance": "V4X_RESOURCE_INSTANCE", "fixed_loop": "V4X_RESOURCE_FIXED_LOOP",
+                  "vertex_base": "V4X_RESOURCE_VERTEX_BASE"}
 DEFAULT_BUNDLE = "v4x_shader_bundle"
 FNV_OFFSET_BASIS = 0xCBF29CE484222325
 FNV_PRIME = 0x100000001B3

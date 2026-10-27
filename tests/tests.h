@@ -74,6 +74,9 @@ void test_indexed(const Harness *harness);
 // Instanced draws, indexed and not, direct and indirect, lists, strips and 1,000 in one draw, each instance placed and
 // coloured on its own (milestones 24 and 47).
 void test_instancing(const Harness *harness);
+// Quads from gl_VertexIndex alone, from first vertices and vertex offsets, in plain, console-compiled and instanced
+// shaders, each in the cell its index picks (PPSSPP's stencil upload).
+void test_vertex_index(const Harness *harness);
 // Strips past 65535 vertices, drawn in pieces sharing the vertices where they meet; long fans refused (milestone 24).
 void test_strips(const Harness *harness);
 // A depth and stencil attachment: depth tests, a stencil mask and a depth bias (milestone 3).
