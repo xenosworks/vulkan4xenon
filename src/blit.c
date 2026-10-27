@@ -223,7 +223,7 @@ void v4x_blit_draw_depth(const Blit *blit, const XsdkTexture *texture, uint32_t 
 
 // The viewport over the destination's rectangle, as the replay sets one (src/queue.c, apply_viewport), and the scissor
 // at it, as Xenos draws past a viewport (docs/SUPPORT.md, Pipelines).
-void v4x_blit_region(const Blit *blit, const DrawnBlit *region)
+void v4x_blit_region(const Blit *blit, const DrawnBlit *region, const XsdkTexture *texture)
 {
 	const VkRect2D *const rect = &region->rect;
 	const float x = (float)rect->offset.x;
@@ -238,7 +238,7 @@ void v4x_blit_region(const Blit *blit, const DrawnBlit *region)
 	xsdk_gpu_set_vertex_constants(blit->region_constant, region->uv, 1);
 	xsdk_gpu_set_vertices(0, blit->vertices_address, RECTANGLE_BYTES);
 	const XsdkSamplerState *const sampler = region->linear ? &blit->linear_sampler : &blit->sampler;
-	xsdk_gpu_set_texture(blit->texture_slot, &region->source->texture, sampler);
+	xsdk_gpu_set_texture(blit->texture_slot, texture, sampler);
 	xsdk_gpu_draw(XSDK_PRIMITIVE_TRIANGLE_LIST, RECTANGLE_VERTICES);
 }
 

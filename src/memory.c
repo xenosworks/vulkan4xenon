@@ -11,13 +11,16 @@ enum {
 	// A vertex fetch constant needs a dword address (xsdk:src/gpu_draw.c), and the GPU loads uniform blocks from
 	// 64-byte aligned memory (xsdk:include/xsdk/gpu.h).
 	BUFFER_ALIGNMENT = 64,
-	// Type 0 is the GPU's write-combined memory; type 1 the CPU's cached memory, for transfer sources alone
+	// A buffer only copied to and from, at a texture fetch's 4 KB, so a copy into an image can draw its rows
+	// (command_buffer.c, drawn_upload).
+	TRANSFER_ALIGNMENT = 4096,
+	// Type 0 is the GPU's write-combined memory; type 1 the CPU's cached memory, for buffers only copied to and from
 	// (physical_device.c, vkGetPhysicalDeviceMemoryProperties).
 	MEMORY_TYPE_GPU = 0,
 	MEMORY_TYPE_CACHED = 1,
 	// Cache lines, so a copy's reads don't share a line with anything else.
 	CACHED_ALIGNMENT = 128,
-	// Copies run on the CPU, so a buffer only copied to and from never meets the GPU.
+	// Copies from and to cached memory run on the CPU, so a buffer only copied to and from may take it.
 	TRANSFER_USAGE = VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 };
 
@@ -130,10 +133,11 @@ VKAPI_ATTR void VKAPI_CALL vkGetBufferMemoryRequirements(
 {
 	(void)device;
 	const Buffer *const object = v4x_object(buffer);
+	const bool transfer = !(object->usage & ~TRANSFER_USAGE);
 	*pMemoryRequirements = (VkMemoryRequirements){
 		.size = (object->size + BUFFER_ALIGNMENT - 1) & ~(VkDeviceSize)(BUFFER_ALIGNMENT - 1),
-		.alignment = BUFFER_ALIGNMENT,
-		.memoryTypeBits = 1u << MEMORY_TYPE_GPU | (object->usage & ~TRANSFER_USAGE ? 0 : 1u << MEMORY_TYPE_CACHED),
+		.alignment = transfer ? TRANSFER_ALIGNMENT : BUFFER_ALIGNMENT,
+		.memoryTypeBits = 1u << MEMORY_TYPE_GPU | (transfer ? 1u << MEMORY_TYPE_CACHED : 0),
 	};
 }
 

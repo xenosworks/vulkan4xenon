@@ -21,9 +21,9 @@ void v4x_blit_draw(const Blit *blit, const XsdkTexture *texture, uint32_t width,
 // Draws a D24S8 texture's depth over the whole target, texel for texel, its count colour targets kept and stencil left
 // as it was; leaves the same changed.
 void v4x_blit_draw_depth(const Blit *blit, const XsdkTexture *texture, uint32_t width, uint32_t height, uint32_t count);
-// Draws the region's source over its rectangle, nearest or linear; leaves shaders, state, vertex stream 0, fetch
-// constant 0 and the region's float constant changed.
-void v4x_blit_region(const Blit *blit, const DrawnBlit *region);
+// Draws the texture, the region's source, over its rectangle, nearest or linear; leaves shaders, state, vertex stream
+// 0, fetch constant 0 and the region's float constant changed.
+void v4x_blit_region(const Blit *blit, const DrawnBlit *region, const XsdkTexture *texture);
 // Clears the rectangle's colours, depth or stencil, as a draw over the pass's color_count targets that the scissor cuts
 // to it; leaves shaders, state, vertex stream 0 and the clear's float constants changed.
 void v4x_blit_clear(const Blit *blit, const ClearRect *clear, uint32_t color_count, uint32_t width, uint32_t height);

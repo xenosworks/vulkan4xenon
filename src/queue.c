@@ -1484,10 +1484,10 @@ static const Command *next_render_pass(VkCommandBuffer buffer, uint32_t after)
 	return NULL;
 }
 
-// The blit is drawn into eDRAM at its destination's size, a target in its format from tile 0, outside any render pass,
-// so the next one finds that target holding the destination over the rectangle, and the colour targets and depths it
-// reached lost. The replay doesn't wait for it.
-static void draw_blit(VkQueue queue, Replay *replay, const DrawnBlit *blit)
+// The blit is drawn from the texture into eDRAM at its destination's size, a target in its format from tile 0, outside
+// any render pass, so the next one finds that target holding the destination over the rectangle, and the colour targets
+// and depths it reached lost. The replay doesn't wait for it.
+static void draw_blit(VkQueue queue, Replay *replay, const DrawnBlit *blit, const XsdkTexture *texture)
 {
 	Image *const destination = blit->destination;
 	const VkRect2D *const rect = &blit->rect;
@@ -1507,11 +1507,10 @@ static void draw_blit(VkQueue queue, Replay *replay, const DrawnBlit *blit)
 	xsdk_gpu_set_targets(destination->width, destination->height, &target, 1, depth_tile);
 	// The target set turned the clip planes off.
 	replay->clip_planes_on = false;
-	v4x_blit_region(&queue->blit, blit);
+	v4x_blit_region(&queue->blit, blit, texture);
 	xsdk_gpu_set_resolve_clears(false, false);
 	xsdk_gpu_resolve_texture_rect(&destination->texture, (uint32_t)rect->offset.x, (uint32_t)rect->offset.y,
 		rect->extent.width, rect->extent.height, 0);
-	blit->source->used_serial = replay->serial;
 	destination->used_serial = replay->serial;
 	EdramPart part = holding(destination, 0, stored);
 	part.format = XSDK_TARGET_8_8_8_8;
@@ -1931,9 +1930,22 @@ static void replay_command(VkQueue queue, VkCommandBuffer buffer, Replay *replay
 	case COMMAND_BLIT_IMAGE:
 		v4x_transfer_blit(queue, command);
 		break;
-	case COMMAND_DRAW_BLIT:
-		draw_blit(queue, replay, (const DrawnBlit *)(buffer->data + command->state_at));
+	case COMMAND_DRAW_BLIT: {
+		const DrawnBlit *const blit = (const DrawnBlit *)(buffer->data + command->state_at);
+		draw_blit(queue, replay, blit, &blit->source->texture);
+		blit->source->used_serial = replay->serial;
 		break;
+	}
+	case COMMAND_DRAW_UPLOAD: {
+		const DrawnUpload *const upload = (const DrawnUpload *)(buffer->data + command->state_at);
+		draw_blit(queue, replay, &upload->blit, &upload->texture);
+		// Of 4-byte texels, as an 8_8_8_8 target's formats are.
+		v4x_profile_count(
+			V4X_PROFILE_UPLOAD_DRAWN_BYTES, upload->blit.rect.extent.width * upload->blit.rect.extent.height * 4);
+		// The GPU reads the buffer, so a copy into it waits (transfer.c, wait_for_draws).
+		queue->drawn = true;
+		break;
+	}
 	case COMMAND_CLEAR_COLOR_IMAGE:
 		v4x_transfer_clear(queue, command);
 		break;

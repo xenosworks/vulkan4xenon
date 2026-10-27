@@ -11,6 +11,11 @@
 
 // Commands go into a list that grows as a command buffer records; vkQueueSubmit replays them (queue.c).
 
+enum {
+	// A texture fetch constant holds its address in 4 KB units (xsdk:src/texture.c, FETCH_ADDRESS_ALIGNMENT).
+	FETCH_ALIGNMENT = 4096,
+};
+
 VKAPI_ATTR VkResult VKAPI_CALL vkCreateCommandPool(VkDevice device, const VkCommandPoolCreateInfo *pCreateInfo,
 	const VkAllocationCallbacks *pAllocator, VkCommandPool *pCommandPool)
 {
@@ -542,14 +547,6 @@ static void record_level_copies(VkCommandBuffer commandBuffer, CommandType type,
 	}
 }
 
-VKAPI_ATTR void VKAPI_CALL vkCmdCopyBufferToImage(VkCommandBuffer commandBuffer, VkBuffer srcBuffer, VkImage dstImage,
-	VkImageLayout dstImageLayout, uint32_t regionCount, const VkBufferImageCopy *pRegions)
-{
-	(void)dstImageLayout;
-	record_level_copies(commandBuffer, COMMAND_COPY_BUFFER_TO_IMAGE, v4x_object(srcBuffer), v4x_object(dstImage),
-		regionCount, pRegions);
-}
-
 VKAPI_ATTR void VKAPI_CALL vkCmdCopyImageToBuffer(VkCommandBuffer commandBuffer, VkImage srcImage,
 	VkImageLayout srcImageLayout, VkBuffer dstBuffer, uint32_t regionCount, const VkBufferImageCopy *pRegions)
 {
@@ -617,12 +614,13 @@ static bool whole_blit_level(
 	return whole_level(image, layers, offsets[0], extent, slices);
 }
 
-static void record_drawn_blit(VkCommandBuffer commandBuffer, const DrawnBlit *blit)
+// A command whose state is in the command buffer's data.
+static void record_with_state(VkCommandBuffer commandBuffer, CommandType type, const void *state, uint32_t size_bytes)
 {
 	uint32_t at = 0;
-	if (!record_data(commandBuffer, blit, sizeof *blit, &at))
+	if (!record_data(commandBuffer, state, size_bytes, &at))
 		return;
-	Command *const command = record(commandBuffer, COMMAND_DRAW_BLIT);
+	Command *const command = record(commandBuffer, type);
 	if (command)
 		command->state_at = at;
 }
@@ -673,6 +671,49 @@ static bool drawn_blit(Image *source, Image *destination, const VkImageBlit *reg
 	return true;
 }
 
+// The GPU draws a copy into an image from its write-combined memory, which the CPU reads back at about 40 MB/s
+// (Flycast's movie frames on the console, 2026-10-27): the buffer's rows as a linear texture of the image's format,
+// drawn texel for texel as a nearest blit, where a fetch can take them, 4 KB aligned and each row as long as xsdk lays
+// a linear texture's out (xsdk:src/texture.c, base_pitch_blocks), into a rectangle of an image a drawn blit takes.
+// Cached memory, which the GPU never reads, stays on the CPU, which reads it at the cache's speed.
+static bool drawn_upload(const Buffer *buffer, Image *image, const VkBufferImageCopy *region, DrawnUpload *upload)
+{
+	const VkRect2D rect = { { region->imageOffset.x, region->imageOffset.y },
+		{ region->imageExtent.width, region->imageExtent.height } };
+	const uint32_t address = buffer_address(buffer, region->bufferOffset);
+	if (!address || address % FETCH_ALIGNMENT || region->imageOffset.z || region->imageExtent.depth != 1 ||
+		!drawn_level(image, &region->imageSubresource) || v4x_target_format(image->format) != XSDK_TARGET_8_8_8_8 ||
+		!on_grid(rect.offset.x, rect.extent.width, image->width) ||
+		!on_grid(rect.offset.y, rect.extent.height, image->height))
+		return false;
+	const uint32_t row_texels = region->bufferRowLength ? region->bufferRowLength : rect.extent.width;
+	XsdkTexture *const texture = &upload->texture;
+	if (!NT_SUCCESS(xsdk_texture_init(texture, image->texture.format, row_texels, rect.extent.height, 1, false)) ||
+		texture->pitch != row_texels)
+		return false;
+	xsdk_texture_attach(texture, (volatile uint32_t *)buffer_bytes(buffer, region->bufferOffset));
+	upload->blit = (DrawnBlit){
+		.destination = image, .rect = rect, .uv = { 0.0f, 0.0f, (float)rect.extent.width / (float)row_texels, 1.0f }
+	};
+	return true;
+}
+
+// Each region on the GPU where it can draw it (drawn_upload), else on the CPU at replay.
+VKAPI_ATTR void VKAPI_CALL vkCmdCopyBufferToImage(VkCommandBuffer commandBuffer, VkBuffer srcBuffer, VkImage dstImage,
+	VkImageLayout dstImageLayout, uint32_t regionCount, const VkBufferImageCopy *pRegions)
+{
+	(void)dstImageLayout;
+	const Buffer *const buffer = v4x_object(srcBuffer);
+	Image *const image = v4x_object(dstImage);
+	for (uint32_t i = 0; i < regionCount; i++) {
+		DrawnUpload upload;
+		if (drawn_upload(buffer, image, &pRegions[i], &upload))
+			record_with_state(commandBuffer, COMMAND_DRAW_UPLOAD, &upload, sizeof upload);
+		else
+			record_level_copies(commandBuffer, COMMAND_COPY_BUFFER_TO_IMAGE, buffer, image, 1, &pRegions[i]);
+	}
+}
+
 // On the GPU where it can draw them (drawn_blit), else on the CPU at replay: whole levels to whole levels of an image
 // of the same format, one the CPU unpacks (v4x_blit_format).
 VKAPI_ATTR void VKAPI_CALL vkCmdBlitImage(VkCommandBuffer commandBuffer, VkImage srcImage, VkImageLayout srcImageLayout,
@@ -686,7 +727,7 @@ VKAPI_ATTR void VKAPI_CALL vkCmdBlitImage(VkCommandBuffer commandBuffer, VkImage
 		const VkImageBlit *const region = &pRegions[i];
 		DrawnBlit blit;
 		if (filter <= VK_FILTER_LINEAR && drawn_blit(source, destination, region, filter == VK_FILTER_LINEAR, &blit)) {
-			record_drawn_blit(commandBuffer, &blit);
+			record_with_state(commandBuffer, COMMAND_DRAW_BLIT, &blit, sizeof blit);
 			continue;
 		}
 		Slices from;

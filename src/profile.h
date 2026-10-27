@@ -50,6 +50,9 @@ typedef enum {
 	V4X_PROFILE_UPLOAD_BYTES,
 	// Of those, the bytes read from the GPU's write-combined memory, where the CPU's reads aren't cached.
 	V4X_PROFILE_UPLOAD_UNCACHED_BYTES,
+	// Bytes the GPU drew into images from buffers in its memory, which the CPU didn't copy (command_buffer.c,
+	// drawn_upload).
+	V4X_PROFILE_UPLOAD_DRAWN_BYTES,
 	V4X_PROFILE_PARTIAL_ROWS,
 	V4X_PROFILE_DOWNLOAD_BYTES,
 	V4X_PROFILE_IMAGE_COPY_BYTES,

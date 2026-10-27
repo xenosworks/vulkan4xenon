@@ -9,6 +9,8 @@ enum {
 	BUFFER_BYTES = 100,
 	BUFFER_ALIGNMENT = 64,
 	ROUNDED_BYTES = 128,
+	// A buffer only copied to and from, so a copy can draw its rows as a texture.
+	TRANSFER_ALIGNMENT = 4096,
 };
 
 static const uint32_t unknown_spirv[] = { 0x07230203, 0x00010000, 0, 1, 0 };
@@ -32,12 +34,11 @@ static void check_memory(const Harness *harness)
 	vkGetPhysicalDeviceMemoryProperties(harness->physical_device, &memory);
 	const VkMemoryPropertyFlags gpu = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
 		VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-	const VkMemoryPropertyFlags cached =
-		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
-	check("objects: two memory types in one heap, the GPU's device-local, then the CPU's cached",
+	const VkMemoryPropertyFlags cached = gpu | VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
+	check("objects: two memory types in one device-local heap, both device-local, the GPU's, then the CPU's cached",
 		memory.memoryTypeCount == 2 && memory.memoryTypes[0].propertyFlags == gpu &&
 			memory.memoryTypes[1].propertyFlags == cached && memory.memoryTypes[1].heapIndex == 0 &&
-			memory.memoryHeapCount == 1);
+			memory.memoryHeapCount == 1 && memory.memoryHeaps[0].flags == VK_MEMORY_HEAP_DEVICE_LOCAL_BIT);
 	const VkBufferUsageFlags usages[] = { VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 		VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT };
 	VkMemoryRequirements requirements[3] = { { 0 } };
@@ -61,6 +62,8 @@ static void check_memory(const Harness *harness)
 	check("objects: the cached memory type is offered to buffers only copied to and from",
 		made && requirements[0].memoryTypeBits == 1 && requirements[1].memoryTypeBits == 3 &&
 			requirements[2].memoryTypeBits == 3);
+	check("objects: buffers only copied to and from are 4 KB aligned",
+		made && requirements[1].alignment == TRANSFER_ALIGNMENT && requirements[2].alignment == TRANSFER_ALIGNMENT);
 }
 
 static void check_refusals(const Harness *harness)

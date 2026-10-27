@@ -66,11 +66,17 @@ Some are there to refuse, as the features they need aren't reported. Each logs w
 - Two memory types, both in that heap:
   - 0: device-local, host-visible and coherent. Each allocation is `xsdk_gpu_alloc`'s write-combined physical memory,
     in 64 KB pages, so `minMemoryMapAlignment` is 64 KB.
-  - 1: host-visible, coherent and cached: the CPU's own memory, from newlib's heap, 128-byte aligned. The GPU never
-    reads it, so only buffers whose usages are `VK_BUFFER_USAGE_TRANSFER_SRC_BIT` and `VK_BUFFER_USAGE_TRANSFER_DST_BIT`
-    alone list it in their `memoryTypeBits`: copies run on the CPU, which reads and writes it at the cache's speed
-    (milestones 12 and 19), so a buffer an image is read back into is quick to map and read. Another buffer, or an
-    image, bound to it makes the bind return `VK_ERROR_OUT_OF_DEVICE_MEMORY`.
+  - 1: device-local, host-visible, coherent and cached: the CPU's own memory, from newlib's heap, 128-byte aligned.
+    It's device-local because its heap is, as Vulkan has a type in a device-local heap be, and listed after type 0,
+    whose flags are a subset of its own. The GPU never reads it, so only buffers whose usages are
+    `VK_BUFFER_USAGE_TRANSFER_SRC_BIT` and `VK_BUFFER_USAGE_TRANSFER_DST_BIT` alone list it in their `memoryTypeBits`:
+    copies from and to it run on the CPU, which reads and writes it at the cache's speed (milestones 12 and 19), so a
+    buffer an image is read back into is quick to map and read. Another buffer, or an image, bound to it makes the bind
+    return `VK_ERROR_OUT_OF_DEVICE_MEMORY`.
+
+  Vulkan has a buffer whose usages are a subset of another's list every type the other's lists, so a buffer only
+  copied from lists type 0 too, and allocators that pick by host-visible and coherent alone take type 0, the first;
+  copies from it into images are drawn on the GPU where they can be (Commands), as the CPU reads it back slowly.
 - Memory of type 0 is write-combined:
   - `memcpy` into it is safe, since the toolchain's `memcpy` stores bytes or aligned words;
   - a plain 8-byte store needs an 8-byte-aligned address, or it raises an alignment exception (xsdk:CLAUDE.md);
@@ -78,8 +84,9 @@ Some are there to refuse, as the features they need aren't reported. Each logs w
 - Coherence: `vkQueueSubmit` drains the CPU's write-combining (`sync`) before replaying, so flushing ranges does
   nothing and isn't needed.
 - No memory type is lazily allocated, so `vkGetDeviceMemoryCommitment` gives an allocation's whole size.
-- Buffers: 64-byte alignment, sizes rounded up to it, so the GPU can load uniform blocks straight from them. Sparse
-  buffers return `VK_ERROR_FEATURE_NOT_PRESENT`.
+- Buffers: 64-byte alignment, sizes rounded up to it, so the GPU can load uniform blocks straight from them; a buffer
+  only copied to and from is 4 KB aligned, a texture fetch's alignment, so a copy into an image can draw its rows
+  (Commands). Sparse buffers return `VK_ERROR_FEATURE_NOT_PRESENT`.
 
 ## Shaders
 
@@ -581,7 +588,7 @@ Some are there to refuse, as the features they need aren't reported. Each logs w
 - Secondary command buffers record the same commands; `vkCmdExecuteCommands` replays each in place, at the submit, with
   the state the replay has bound, which is more than Vulkan promises a secondary command buffer, as it begins with
   none (milestone 19).
-- **Copies, clears and the blits the GPU doesn't draw run on the CPU at replay** (src/transfer.c), in order with the
+- **Copies and blits the GPU doesn't draw, and clears, run on the CPU at replay** (src/transfer.c), in order with the
   draws around them, each waiting first for the GPU to be done with what it reads or writes:
   - an image: the submission that last sampled it, resolved into it or drew it back into eDRAM, for the fence that
     submission ended with; earlier in its own, for the GPU to finish what came before. An image no submission used
@@ -601,6 +608,13 @@ Some are there to refuse, as the features they need aren't reported. Each logs w
   swapped (Images); part of one returns `VK_ERROR_FEATURE_NOT_PRESENT`. A copy out reads the GPU's write-combined
   memory, so it's slow. A region may cover any of a cube's layers or a 3D image's slices, each one's rows
   `bufferImageHeight` rows, or the region's height, after the last's (milestone 23).
+- **`vkCmdCopyBufferToImage` from the GPU's memory drawn on the GPU** (milestone 67), as the CPU reads write-combined
+  memory back at about 40 MB/s: a 512x512 copy took 21 to 26 ms of Flycast's submits on the console. A region from
+  memory of type 0 at a 4 KB-aligned address, whose rows' bytes are what xsdk spaces a linear texture's rows of that
+  many texels by, the texels rounded up to 32 and then the bytes to 256 (xsdk:src/texture.c), so rows of 512 texels
+  but not of 100, into any rectangle a drawn blit's destination takes (below), is that blit from the buffer's rows as
+  a linear texture of the image's format, sampled texel for texel, nearest. The replay doesn't wait for it; a copy
+  into a buffer after it waits for the GPU, as after a draw. Any other region runs on the CPU.
 - `vkCmdCopyImage` copies whole levels of one size between formats of one texel size, the bits as they are, a row at a
   time, as many of a cube's layers or a 3D image's slices as the other gives. A copy between a compressed and an
   uncompressed format, which Vulkan allows, fails the command buffer, as their 16-bit words lie in different orders.

@@ -161,15 +161,15 @@ VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceMemoryProperties(
 	VkPhysicalDevice physicalDevice, VkPhysicalDeviceMemoryProperties *pMemoryProperties)
 {
 	(void)physicalDevice;
-	// The GPU's write-combined memory, then the CPU's cached memory, which only transfer-source buffers take; both from
-	// the one heap of the title's memory.
+	// The GPU's write-combined memory, then the CPU's cached memory, which only buffers copied to and from take; both
+	// from the one heap of the title's memory, so both device-local, as Vulkan has a type in a device-local heap be.
 	*pMemoryProperties = (VkPhysicalDeviceMemoryProperties){
 		.memoryTypeCount = 2,
 		.memoryTypes = { { VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
 								 VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
 							 0 },
-			{ VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
-					VK_MEMORY_PROPERTY_HOST_CACHED_BIT,
+			{ VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+					VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT,
 				0 } },
 		.memoryHeapCount = 1,
 		.memoryHeaps = { { HEAP_BYTES, VK_MEMORY_HEAP_DEVICE_LOCAL_BIT } },

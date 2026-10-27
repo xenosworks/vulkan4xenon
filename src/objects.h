@@ -158,6 +158,13 @@ typedef struct {
 	bool linear;
 } DrawnBlit;
 
+// A copy from a buffer the GPU draws as a blit, its source the buffer's rows as a linear texture of the image's format
+// (command_buffer.c, drawn_upload); the blit's source is NULL.
+typedef struct {
+	DrawnBlit blit;
+	XsdkTexture texture;
+} DrawnUpload;
+
 enum {
 	// The fences of this many submissions are kept, for copies into images they used.
 	V4X_SUBMIT_FENCES = 64,
@@ -542,6 +549,7 @@ typedef enum {
 	COMMAND_COPY_QUERY_RESULTS,
 	COMMAND_BEGIN_QUERY,
 	COMMAND_END_QUERY,
+	COMMAND_DRAW_UPLOAD,
 } CommandType;
 
 // The values a subpass's attachments clear to: each colour attachment's, by its place in the subpass, then depth and
@@ -678,7 +686,8 @@ typedef struct {
 			uint32_t query;
 			bool after_work;
 		} timestamp;
-		// A VkViewport, VkRect2D, ClearRect, QueryCopy, LevelCopy or DrawnBlit in the command buffer's data.
+		// A VkViewport, VkRect2D, ClearRect, QueryCopy, LevelCopy, DrawnBlit or DrawnUpload in the command buffer's
+		// data.
 		uint32_t state_at;
 		// The index buffer's bytes at its offset, and their GPU address.
 		struct {
