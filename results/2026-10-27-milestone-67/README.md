@@ -59,3 +59,36 @@ and `draw` at `f780ff4`'s addresses. It gives `f780ff4`'s numbers, so placement 
 its set the address's bits 7 to 13, three lines that each of its draws runs share set 3 in the builds that moved:
 vkbench's uniform loop (`vulkan_draw_meshes` at `82054180`), `record`'s first line (`8205c180`) and
 `vkCmdDrawIndexed`'s entry (`82060180`). In `9125a52`, `vkCmdDrawIndexed` sits in sets 125 to 127.
+
+## RetroArch's start: mip chains blitted on the CPU
+
+Under every core, RetroArch's start spent one present in 930 `vkCmdBlitImage` the GPU didn't draw: its menu's
+256x256 R8G8B8A8 icons, 9 levels each, each level blitted linearly from the one above in the same image. Profile builds
+with the blits' time split (DIAG patches never committed), Flycast on round 8's core:
+
+| | Floats (`c6e7d94`) | Byte means (`0f0ad56`) | Levels kept (`5a4ceda`) |
+|---|---|---|---|
+| Log | `retroarch_start_floats.log` | `retroarch_start_byte_means.log` | `retroarch_start_kept.log` |
+| The 930 blits | 10.62 s | 2.39 s | 0.17 s |
+| Reading source rows | 2.20 s | 2.20 s | 0.016 s |
+| Filtering | 8.32 s | 0.08 s | 0.084 s |
+| Writing rows | 0.03 s | 0.03 s | 0.030 s |
+
+The byte means took the filtering; reading a tiled level back from write-combined memory, at 18.5 MB/s, was the rest.
+Every level read was the CPU's own write a command before, so `5a4ceda` keeps it for the blit after. Every one of the
+930 read a kept level.
+
+vulkan4xenon_test at `0f0ad56` (`r11_vulkan4xenon_test.log`): 548 passed. At `5a4ceda` (`r12_vulkan4xenon_test.log`):
+550 passed. There, the 256x256 chain took 15,274 us linearly from a base copied in before, 83,550 us nearest, and
+1,692 us linearly right after its base's copy. Each break fails its own checks (`r11_break_*.log`, `r12_break_*.log`):
+
+| Break | What it undoes | What fails at `5a4ceda` |
+|---|---|---|
+| `boxoff` | the byte means | the linear chain against nearest, and the kept chain's time |
+| `boxtaps` | the second texel across taken from the next pair | 5 checks of blitted texels |
+| `boxrows` | the one row read where the height stays | the 8x1 level |
+| `keptoff` | the kept level | the kept chain's time |
+| `keptrow` | the kept rows read one row on | the copies chain, the 8x1 level and the 64x64 level |
+
+vkbench (`r11_vkbench.log`, `r12_vkbench.log`): `uniforms_1000` 734 then 712 us, `states_1000` 1260 then 1231, within
+the band placement alone moves them.

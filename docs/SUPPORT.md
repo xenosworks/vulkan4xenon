@@ -655,9 +655,10 @@ Some are there to refuse, as the features they need aren't reported. Each logs w
   67): RetroArch's start blits its menu's mips, 930 blits that took 10.6 s through floats and 2.4 s this way. A copy
   in or a blit that writes a whole level of one layer or slice, 1 MB or less, keeps its rows in cached memory too when
   the next command blits from that level, and that blit reads them from there, not from the image: reading a tiled
-  level back from write-combined memory ran at 18.5 MB/s, nearly all of those 2.4 s. Each layer or 3D slice goes into
-  one of its own; a blit that scales a 3D image's depth fails the command buffer, as does a blit neither path takes,
-  such as one of part of a level the GPU doesn't draw.
+  level back from write-combined memory ran at 18.5 MB/s, nearly all of those 2.4 s, and the 930 now take 0.17 s
+  (results/2026-10-27-milestone-67/). Each layer or 3D slice goes into one of its own; a blit that scales a 3D image's
+  depth fails the command buffer, as does a blit neither path takes, such as one of part of a level the GPU doesn't
+  draw.
 - `vkCmdClearColorImage` fills whole levels with the colour, packed as the format holds it, an sRGB format's colours
   through sRGB's curve, each channel rounded to the nearest; the range's layers of a cube, or every slice of a 3D
   image. A compressed image's clear, which Vulkan doesn't allow, fails the command buffer.
