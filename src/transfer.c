@@ -174,6 +174,7 @@ void v4x_transfer_buffer_to_image(VkQueue queue, const LevelCopy *copy)
 	Image *const image = copy->image;
 	wait_for_image(queue, image);
 	v4x_profile_count(V4X_PROFILE_UPLOAD_BYTES, region_bytes(image, copy));
+	v4x_profile_count(V4X_PROFILE_UPLOAD_UNCACHED_BYTES, copy->address ? region_bytes(image, copy) : 0);
 	for (uint32_t i = 0; i < copy->slice_count; i++) {
 		if (is_compressed(image))
 			upload_blocks(image, copy, i);

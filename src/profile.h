@@ -48,6 +48,8 @@ typedef enum {
 	// Bytes copied on the CPU: into images, rows of them read back to copy part of a row, out of images, between
 	// images, and into buffers.
 	V4X_PROFILE_UPLOAD_BYTES,
+	// Of those, the bytes read from the GPU's write-combined memory, where the CPU's reads aren't cached.
+	V4X_PROFILE_UPLOAD_UNCACHED_BYTES,
 	V4X_PROFILE_PARTIAL_ROWS,
 	V4X_PROFILE_DOWNLOAD_BYTES,
 	V4X_PROFILE_IMAGE_COPY_BYTES,

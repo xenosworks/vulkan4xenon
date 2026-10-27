@@ -146,6 +146,7 @@ static const char *const count_names[V4X_PROFILE_COUNTS] = {
 	"textures pointed",
 	"streams pointed",
 	"bytes copied into images",
+	"of them from write-combined memory",
 	"rows read back to copy part of a row",
 	"bytes copied out of images",
 	"bytes copied between images",
