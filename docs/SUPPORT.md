@@ -634,6 +634,14 @@ Some are there to refuse, as the features they need aren't reported. Each logs w
 - `vkCmdCopyImage` copies whole levels of one size between formats of one texel size, the bits as they are, a row at a
   time, as many of a cube's layers or a 3D image's slices as the other gives. A copy between a compressed and an
   uncompressed format, which Vulkan allows, fails the command buffer, as their 16-bit words lie in different orders.
+  Part of a level (milestone 67), as PPSSPP copies framebuffers' rectangles: drawn on the GPU as a nearest blit to its
+  own size where a drawn blit would go (8-bit RGBA or BGRA, level 0, the destination's rectangle on the 8-pixel
+  grid), else on the CPU at replay, a row at a time, the destination's texels around it kept. A sampled depth image's
+  depth and stencil, or either alone, copy the same way on the CPU from its texture: a barrier moving it from an
+  attachment to `VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL`, or a pass leaving it there, resolves it first, and the
+  destination's next pass draws its depth back, without its stencil. Part of a compressed level, and depth images
+  that aren't sampled, which hold their depth in eDRAM alone, fail the command buffer. The first copy of part of a
+  level is logged, its region, formats and images, and whether it was drawn.
 - `vkCmdResolveImage` copies a multisampled image's memory, its samples' average as the pass that stored it left it
   (Render passes), into an image of its format at one sample, the whole image alone, as `vkCmdCopyImage` copies
   (milestone 17's second part).

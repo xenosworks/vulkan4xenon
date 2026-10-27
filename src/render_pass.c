@@ -136,7 +136,7 @@ static void find_uses(const VkRenderPassCreateInfo *info, Uses *uses)
 bool v4x_read_layout(VkImageLayout layout)
 {
 	return layout == VK_IMAGE_LAYOUT_GENERAL || layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL ||
-		layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+		layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL || layout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
 }
 
 // An attachment takes its own load op in the first subpass that uses it and its store op in the last; the subpasses

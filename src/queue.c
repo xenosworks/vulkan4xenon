@@ -2023,6 +2023,9 @@ static void replay_command(VkQueue queue, VkCommandBuffer buffer, Replay *replay
 	case COMMAND_COPY_IMAGE:
 		v4x_transfer_copy_image(queue, command);
 		break;
+	case COMMAND_COPY_IMAGE_PART:
+		v4x_transfer_copy_part(queue, (const PartCopy *)(buffer->data + command->state_at));
+		break;
 	case COMMAND_BLIT_IMAGE:
 		v4x_transfer_blit(queue, command, next_command(buffer, index));
 		break;

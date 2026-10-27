@@ -795,20 +795,16 @@ static void check_images(const Harness *harness, const Scene *scene, const VkSub
 static void check_refusals(const Scene *scene)
 {
 	bool refused = true;
-	for (uint32_t i = 0; i < 3 && refused; i++) {
+	for (uint32_t i = 0; i < 2 && refused; i++) {
 		refused = begin(scene->commands);
 		if (i == 0)
 			vkCmdDrawIndirect(scene->commands, scene->indirect, 0, 2, 16);
-		else if (i == 1)
+		else
 			blit(scene->commands, scene->images[IMAGE_CHAIN], 0, CHAIN_SIDE, scene->images[IMAGE_BIG], 0, BIG_SIDE,
 				VK_FILTER_NEAREST);
-		else
-			copy_image(scene->commands, scene->images[IMAGE_CHAIN], scene->images[IMAGE_COPIED], 1, 1);
 		refused = refused && vkEndCommandBuffer(scene->commands) == VK_ERROR_FEATURE_NOT_PRESENT;
 	}
-	check(
-		"copies: two draws an indirect command, blits between formats and image copies of part of a level are refused",
-		refused);
+	check("copies: two draws an indirect command and blits between formats are refused", refused);
 }
 
 static void check_properties(const Harness *harness)

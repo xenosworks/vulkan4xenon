@@ -523,6 +523,26 @@ typedef struct {
 	uint32_t slice_bytes;
 } LevelCopy;
 
+// Part of a level copied into part of another of the same texel size, kept in the command buffer's data: the rectangle
+// from each corner, in as many layers or 3D slices from each one's first, the bits of each 32-bit word in mask taken,
+// a depth image's depth or stencil alone, every bit for colour.
+typedef struct {
+	Image *source;
+	Image *destination;
+	uint32_t source_level;
+	uint32_t destination_level;
+	uint32_t source_slice;
+	uint32_t destination_slice;
+	uint32_t slice_count;
+	uint32_t source_x;
+	uint32_t source_y;
+	uint32_t destination_x;
+	uint32_t destination_y;
+	uint32_t width;
+	uint32_t height;
+	uint32_t mask;
+} PartCopy;
+
 typedef enum {
 	COMMAND_BEGIN_RENDER_PASS,
 	COMMAND_END_RENDER_PASS,
@@ -561,6 +581,7 @@ typedef enum {
 	COMMAND_END_QUERY,
 	COMMAND_DRAW_UPLOAD,
 	COMMAND_RESOLVE_DEPTH,
+	COMMAND_COPY_IMAGE_PART,
 } CommandType;
 
 // The values a subpass's attachments clear to: each colour attachment's, by its place in the subpass, then depth and

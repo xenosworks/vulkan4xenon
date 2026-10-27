@@ -99,6 +99,8 @@ void test_cpu_mips(const Harness *harness);
 void test_small_depth(const Harness *harness);
 // D24S8 attachments that clear depth and load stencil, and the reverse, each part read back from memory (milestone 67).
 void test_depth_parts(const Harness *harness);
+// vkCmdCopyImage of part of a level, colour on the CPU and drawn, and sampled depth's depth and stencil (milestone 67).
+void test_part_copies(const Harness *harness);
 // Uniform arrays read at run-time indices: matrices picked per vertex, colours by pixel column (milestone 11).
 void test_run_time_index(const Harness *harness);
 // Copies from cached memory, R8 and R8G8 through swizzled views, R8 filtered, and copies around a draw (milestone 12).

@@ -125,7 +125,7 @@ static void buffer_written(uint32_t address, uint32_t size_bytes)
 		xsdk_gpu_invalidate(address, size_bytes);
 }
 
-// The same for an image, which eDRAM no longer holds as it was.
+// The same for an image, which eDRAM no longer holds as it was, so a pass loading it draws it back.
 static void image_written(VkQueue queue, const Image *image)
 {
 	xsdk_gpu_invalidate(image->texture.address, image->texture.size_bytes);
@@ -135,6 +135,10 @@ static void image_written(VkQueue queue, const Image *image)
 		// A copy ends a put-off resolve's wait before it (queue.c, resolve_can_wait).
 		assert(!queue->colors[i].unresolved);
 		queue->colors[i] = (EdramPart){ .contents = EDRAM_UNKNOWN };
+	}
+	for (uint32_t i = 0; i < V4X_EDRAM_DEPTHS; i++) {
+		if (queue->depths[i].image == image)
+			queue->depths[i] = (EdramPart){ .contents = EDRAM_UNKNOWN };
 	}
 }
 
@@ -302,6 +306,51 @@ void v4x_transfer_copy_image(VkQueue queue, const Command *command)
 			xsdk_texture_download_slice_rows(&source->texture, from_level, from, y, 1, rows[ROW_OUT], 0);
 			xsdk_texture_upload_slice_rows(&destination->texture, to_level, to, y, 1, rows[ROW_OUT], 0);
 		}
+	}
+	image_written(queue, destination);
+}
+
+// A row at a time, each of the destination's read, the rectangle's words taken into it by the mask, and written back;
+// the source's row read first, so a copy within one image between rectangles apart works too. A depth image's texture
+// then holds its depth, which a pass loading it draws back without its stencil (queue.c, load_depth).
+void v4x_transfer_copy_part(VkQueue queue, const PartCopy *copy)
+{
+	Image *const source = copy->source;
+	Image *const destination = copy->destination;
+	wait_for_image(queue, source);
+	wait_for_image(queue, destination);
+	const uint32_t texel_bytes = v4x_texel_bytes(source->format);
+	v4x_profile_count(V4X_PROFILE_IMAGE_COPY_BYTES, copy->width * copy->height * texel_bytes * copy->slice_count);
+	for (uint32_t i = 0; i < copy->slice_count; i++) {
+		const uint32_t from = copy->source_slice + i;
+		const uint32_t to = copy->destination_slice + i;
+		for (uint32_t y = 0; y < copy->height; y++) {
+			xsdk_texture_download_slice_rows(
+				&source->texture, copy->source_level, from, copy->source_y + y, 1, rows[ROW_ABOVE], 0);
+			xsdk_texture_download_slice_rows(
+				&destination->texture, copy->destination_level, to, copy->destination_y + y, 1, rows[ROW_OUT], 0);
+			uint8_t *const into = rows[ROW_OUT] + copy->destination_x * texel_bytes;
+			const uint8_t *const taken = rows[ROW_ABOVE] + copy->source_x * texel_bytes;
+			if (copy->mask == UINT32_MAX) {
+				memcpy(into, taken, copy->width * texel_bytes);
+			} else {
+				for (uint32_t x = 0; x < copy->width; x++) {
+					uint32_t word;
+					uint32_t kept;
+					memcpy(&word, taken + x * 4, 4);
+					memcpy(&kept, into + x * 4, 4);
+					kept = (kept & ~copy->mask) | (word & copy->mask);
+					memcpy(into + x * 4, &kept, 4);
+				}
+			}
+			xsdk_texture_upload_slice_rows(
+				&destination->texture, copy->destination_level, to, copy->destination_y + y, 1, rows[ROW_OUT], 0);
+		}
+	}
+	// The texture holds the image clear a pass would take, around the copy.
+	if (destination->is_sampled_depth) {
+		destination->depth_in_texture = true;
+		destination->clear_pending = false;
 	}
 	image_written(queue, destination);
 }

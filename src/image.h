@@ -46,8 +46,8 @@ uint32_t v4x_texel_bytes(VkFormat format);
 uint32_t v4x_texel_blocks(VkFormat format, uint32_t texels);
 // Whether images of this format can be blitted: the CPU unpacks their texels to filter them (src/format.c).
 bool v4x_blit_format(VkFormat format);
-// Whether a shader may sample an image in this layout: a render pass that leaves a sampled depth image in one resolves
-// it into its texture.
+// Whether a shader may sample an image in this layout, or a copy read it: a render pass or barrier that leaves a
+// sampled depth image in one resolves it into its texture.
 bool v4x_read_layout(VkImageLayout layout);
 
 #endif

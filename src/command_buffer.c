@@ -8,6 +8,7 @@
 #include "image.h"
 #include "objects.h"
 #include "xsdk/gpu.h"
+#include "xsdk/log.h"
 
 // Commands go into a list that grows as a command buffer records; vkQueueSubmit replays them (queue.c).
 
@@ -478,12 +479,19 @@ typedef struct {
 } Slices;
 
 // Whether a region lies in a level of a colour image, all of it across and down in a compressed format, in some of its
+// Whether a format's texels are compressed blocks; D24S8, which the format table doesn't hold, isn't.
+static bool compressed(VkFormat format)
+{
+	const V4xFormat *const info = v4x_format(format);
+	return info && info->compressed;
+}
+
 // layers or 3D slices, and which: a cube's faces are its layers, a 3D image's slices its depth.
-static bool in_level(
+static bool in_texture_level(
 	const Image *image, const VkImageSubresourceLayers *layers, VkOffset3D offset, VkExtent3D extent, Slices *slices)
 {
 	const uint32_t level = layers->mipLevel;
-	if (!image->is_texture || level >= image->texture.levels)
+	if ((!image->is_texture && !image->is_sampled_depth) || level >= image->texture.levels)
 		return false;
 	const uint32_t width = level_size(image->width, level);
 	const uint32_t height = level_size(image->height, level);
@@ -494,8 +502,15 @@ static bool in_level(
 	const bool whole = !offset.x && !offset.y && extent.width == width && extent.height == height;
 	return offset.x >= 0 && offset.y >= 0 && extent.width && extent.height &&
 		extent.width <= width - (uint32_t)offset.x && extent.height <= height - (uint32_t)offset.y &&
-		(whole || !v4x_format(image->format)->compressed) && one_layer && slices->count &&
+		(whole || !compressed(image->format)) && one_layer && slices->count &&
 		slices->first < image->texture.depth && slices->count <= image->texture.depth - slices->first;
+}
+
+// The same in a colour image's level; a sampled depth image's texture holds its depth for image copies alone.
+static bool in_level(
+	const Image *image, const VkImageSubresourceLayers *layers, VkOffset3D offset, VkExtent3D extent, Slices *slices)
+{
+	return image->is_texture && in_texture_level(image, layers, offset, extent, slices);
 }
 
 // Whether a region is the whole of such a level across and down, from its corner.
@@ -575,34 +590,7 @@ static void record_image_copy(VkCommandBuffer commandBuffer, CommandType type, I
 // (src/transfer.c).
 static bool compressed_apart(const Image *source, const Image *destination)
 {
-	const V4xFormat *const from = v4x_format(source->format);
-	const V4xFormat *const to = v4x_format(destination->format);
-	return (from && from->compressed) != (to && to->compressed);
-}
-
-// Whole levels of the same size, their bits as they are between formats of one texel size, compressed or not.
-VKAPI_ATTR void VKAPI_CALL vkCmdCopyImage(VkCommandBuffer commandBuffer, VkImage srcImage, VkImageLayout srcImageLayout,
-	VkImage dstImage, VkImageLayout dstImageLayout, uint32_t regionCount, const VkImageCopy *pRegions)
-{
-	(void)srcImageLayout;
-	(void)dstImageLayout;
-	Image *const source = v4x_object(srcImage);
-	Image *const destination = v4x_object(dstImage);
-	for (uint32_t i = 0; i < regionCount; i++) {
-		const VkImageCopy *const region = &pRegions[i];
-		Slices from;
-		Slices to;
-		if (!whole_level(source, &region->srcSubresource, region->srcOffset, region->extent, &from) ||
-			!whole_level(destination, &region->dstSubresource, region->dstOffset, region->extent, &to) ||
-			from.count != to.count || v4x_texel_bytes(source->format) != v4x_texel_bytes(destination->format) ||
-			compressed_apart(source, destination)) {
-			commandBuffer->result = v4x_host_unsupported(
-				"image copies of less than a whole level, or between compressed and uncompressed formats");
-			return;
-		}
-		record_image_copy(commandBuffer, COMMAND_COPY_IMAGE, source, region->srcSubresource.mipLevel, from, destination,
-			region->dstSubresource.mipLevel, to, false);
-	}
+	return compressed(source->format) != compressed(destination->format);
 }
 
 // Whether a blit's corners are a whole level's, unflipped, and its layers or 3D slices.
@@ -669,6 +657,113 @@ static bool drawn_blit(Image *source, Image *destination, const VkImageBlit *reg
 		.uv = { left, top, right - left, bottom - top },
 		.linear = linear };
 	return true;
+}
+
+// An image as the layer keeps it, for the log.
+static const char *kept_as(const Image *image)
+{
+	return image->is_sampled_depth ? "sampled depth" : image->is_attachment ? "colour attachment" : "texture";
+}
+
+// The first copy of part of a level, as the app asks for it and the way it goes.
+static void log_part_copy(const Image *source, const Image *destination, const VkImageCopy *region, const char *way)
+{
+	static bool logged;
+	if (logged)
+		return;
+	logged = true;
+	xsdk_log_write(
+		"vulkan4xenon: a copy of part of a level: %ux%u from (%d, %d) of a %ux%u %s, format %u, to (%d, %d) "
+		"of a %ux%u %s, format %u, aspects 0x%X, %s",
+		(unsigned)region->extent.width, (unsigned)region->extent.height, (int)region->srcOffset.x,
+		(int)region->srcOffset.y, (unsigned)source->width, (unsigned)source->height, kept_as(source),
+		(unsigned)source->format, (int)region->dstOffset.x, (int)region->dstOffset.y, (unsigned)destination->width,
+		(unsigned)destination->height, kept_as(destination), (unsigned)destination->format,
+		(unsigned)region->srcSubresource.aspectMask, way);
+}
+
+// A region of colour levels of one 8-bit format on the GPU, as a nearest blit to its own size (drawn_blit).
+static bool drawn_copy(Image *source, Image *destination, const VkImageCopy *region, DrawnBlit *blit)
+{
+	const VkOffset3D *const from = &region->srcOffset;
+	const VkOffset3D *const to = &region->dstOffset;
+	const int32_t width = (int32_t)region->extent.width;
+	const int32_t height = (int32_t)region->extent.height;
+	const VkImageBlit as_blit = { .srcSubresource = region->srcSubresource,
+		.srcOffsets = { *from, { from->x + width, from->y + height, 1 } },
+		.dstSubresource = region->dstSubresource,
+		.dstOffsets = { *to, { to->x + width, to->y + height, 1 } } };
+	return !from->z && !to->z && region->extent.depth == 1 && drawn_blit(source, destination, &as_blit, false, blit);
+}
+
+// The bits of a sampled depth image's words an aspect copies, depth above stencil as its 24_8 texture holds them
+// (tests/test_small_depth.c reads them so); every bit of a colour image's.
+static uint32_t aspect_mask(const Image *image, VkImageAspectFlags aspects)
+{
+	if (!image->is_sampled_depth)
+		return UINT32_MAX;
+	return (aspects & VK_IMAGE_ASPECT_DEPTH_BIT ? 0xFFFFFF00u : 0) |
+		(aspects & VK_IMAGE_ASPECT_STENCIL_BIT ? 0xFFu : 0);
+}
+
+// Whole colour levels of the same size, their bits as they are between formats of one texel size, compressed or not.
+// Part of a level, or a sampled depth image's, between images of one texel size, uncompressed: on the GPU where it can
+// draw it (drawn_copy), else on the CPU at replay, a row at a time. A depth image's depth reaches its texture at a
+// barrier moving it to be copied from (record_image_barriers).
+VKAPI_ATTR void VKAPI_CALL vkCmdCopyImage(VkCommandBuffer commandBuffer, VkImage srcImage, VkImageLayout srcImageLayout,
+	VkImage dstImage, VkImageLayout dstImageLayout, uint32_t regionCount, const VkImageCopy *pRegions)
+{
+	(void)srcImageLayout;
+	(void)dstImageLayout;
+	Image *const source = v4x_object(srcImage);
+	Image *const destination = v4x_object(dstImage);
+	for (uint32_t i = 0; i < regionCount; i++) {
+		const VkImageCopy *const region = &pRegions[i];
+		Slices from;
+		Slices to;
+		const bool apart = v4x_texel_bytes(source->format) != v4x_texel_bytes(destination->format) ||
+			compressed_apart(source, destination);
+		if (!apart && whole_level(source, &region->srcSubresource, region->srcOffset, region->extent, &from) &&
+			whole_level(destination, &region->dstSubresource, region->dstOffset, region->extent, &to) &&
+			from.count == to.count) {
+			record_image_copy(commandBuffer, COMMAND_COPY_IMAGE, source, region->srcSubresource.mipLevel, from,
+				destination, region->dstSubresource.mipLevel, to, false);
+			continue;
+		}
+		DrawnBlit blit;
+		if (!apart && drawn_copy(source, destination, region, &blit)) {
+			log_part_copy(source, destination, region, "drawn");
+			record_with_state(commandBuffer, COMMAND_DRAW_BLIT, &blit, sizeof blit);
+			continue;
+		}
+		const uint32_t mask = aspect_mask(source, region->srcSubresource.aspectMask);
+		if (apart || source->is_sampled_depth != destination->is_sampled_depth || !mask ||
+			region->srcSubresource.aspectMask != region->dstSubresource.aspectMask ||
+			!in_texture_level(source, &region->srcSubresource, region->srcOffset, region->extent, &from) ||
+			!in_texture_level(destination, &region->dstSubresource, region->dstOffset, region->extent, &to) ||
+			from.count != to.count || compressed(source->format)) {
+			commandBuffer->result = v4x_host_unsupported(
+				"image copies between compressed and uncompressed formats, of part of a compressed level, or of depth "
+				"images not sampled");
+			return;
+		}
+		log_part_copy(source, destination, region, "on the CPU");
+		const PartCopy copy = { .source = source,
+			.destination = destination,
+			.source_level = region->srcSubresource.mipLevel,
+			.destination_level = region->dstSubresource.mipLevel,
+			.source_slice = from.first,
+			.destination_slice = to.first,
+			.slice_count = from.count,
+			.source_x = (uint32_t)region->srcOffset.x,
+			.source_y = (uint32_t)region->srcOffset.y,
+			.destination_x = (uint32_t)region->dstOffset.x,
+			.destination_y = (uint32_t)region->dstOffset.y,
+			.width = region->extent.width,
+			.height = region->extent.height,
+			.mask = mask };
+		record_with_state(commandBuffer, COMMAND_COPY_IMAGE_PART, &copy, sizeof copy);
+	}
 }
 
 // The GPU draws a copy into an image from its write-combined memory, which the CPU reads back at about 40 MB/s
@@ -886,9 +981,9 @@ VKAPI_ATTR void VKAPI_CALL vkCmdFillBuffer(
 // Replay is in order and copies wait for the GPU, so barriers need nothing. But a sampled depth image's depth reaches
 // its texture only from a render pass that leaves it to be read (render_pass.c), so a barrier that moves it from an
 // attachment to be read is refused rather than sampling what it held before; a multisampled one is never sampled.
-// A barrier moving a sampled depth image from an attachment to be read, outside a pass, resolves its depth then, as a
-// pass that leaves it to be read does at its end (queue.c, resolve_depth_to_read); the way back needs nothing, as
-// eDRAM still holds it. Inside a pass, where Vulkan has no layout change, it's refused.
+// A barrier moving a sampled depth image from an attachment to be read or copied from, outside a pass, resolves its
+// depth then, as a pass that leaves it to be read does at its end (queue.c, resolve_depth_to_read); the way back needs
+// nothing, as eDRAM still holds it. Inside a pass, where Vulkan has no layout change, it's refused.
 static void record_image_barriers(
 	VkCommandBuffer commandBuffer, uint32_t imageMemoryBarrierCount, const VkImageMemoryBarrier *pImageMemoryBarriers)
 {
