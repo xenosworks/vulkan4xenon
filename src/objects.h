@@ -550,6 +550,7 @@ typedef enum {
 	COMMAND_BEGIN_QUERY,
 	COMMAND_END_QUERY,
 	COMMAND_DRAW_UPLOAD,
+	COMMAND_RESOLVE_DEPTH,
 } CommandType;
 
 // The values a subpass's attachments clear to: each colour attachment's, by its place in the subpass, then depth and
@@ -590,6 +591,8 @@ typedef struct {
 		// A pass's end: the depth image a vkCmdResolveImage right after takes its multisampled depth's sample 0 into,
 		// or NULL.
 		Image *resolved_depth;
+		// A barrier's: the sampled depth image it moves from an attachment to be read.
+		Image *depth_to_read;
 		const Pipeline *pipeline;
 		struct {
 			uint32_t binding;

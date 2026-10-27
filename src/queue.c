@@ -1050,12 +1050,24 @@ static bool end_color_clear(const Replay *replay, uint32_t target, const Command
 	return false;
 }
 
-// The same for depth, over the same area alone, as eDRAM holds a depth image's depth around a pass's area; a pass
-// without depth never clears it, as a later pass may load an earlier one's.
-static bool end_depth_clear(const Replay *replay, const Command *next, const PassClears *next_clears,
-	const VkRect2D *next_area, float *depth, uint32_t *stencil)
+// Whether a barrier after index, before the next pass, leaves the depth image to be read (resolve_depth_to_read), which
+// takes it from eDRAM.
+static bool barrier_reads_depth(VkCommandBuffer buffer, uint32_t index, const Image *depth)
 {
-	if (!replay->render_pass->has_depth)
+	for (uint32_t c = index + 1; c < buffer->count && buffer->commands[c].type != COMMAND_BEGIN_RENDER_PASS; c++) {
+		if (buffer->commands[c].type == COMMAND_RESOLVE_DEPTH && buffer->commands[c].depth_to_read == depth)
+			return true;
+	}
+	return false;
+}
+
+// The same for depth, over the same area alone, as eDRAM holds a depth image's depth around a pass's area; a pass
+// without depth never clears it, as a later pass may load an earlier one's, and nor does one whose depth a barrier
+// after it leaves to be read.
+static bool end_depth_clear(VkCommandBuffer buffer, uint32_t index, const Replay *replay, const Command *next,
+	const PassClears *next_clears, const VkRect2D *next_area, float *depth, uint32_t *stencil)
+{
+	if (!replay->render_pass->has_depth || barrier_reads_depth(buffer, index, replay->framebuffer->depth))
 		return false;
 	if (!next) {
 		*depth = replay->clear_depth;
@@ -1078,6 +1090,25 @@ static void resolve_depth(Image *depth, uint32_t serial)
 	xsdk_gpu_set_resolve_clears(false, false);
 	xsdk_gpu_resolve_depth_texture(&depth->texture);
 	depth->used_serial = serial;
+}
+
+// A barrier leaving a sampled depth image to be read, which a pass left as an attachment: its depth goes into its
+// texture from where eDRAM holds it, as at a pass's end, the targets set over it there. Depth eDRAM no longer holds is
+// undefined (docs/SUPPORT.md, Render passes), so the texture keeps what it held.
+static void resolve_depth_to_read(VkQueue queue, Replay *replay, Image *image)
+{
+	for (uint32_t i = 0; i < V4X_EDRAM_DEPTHS; i++) {
+		const EdramPart *const part = &queue->depths[i];
+		if (part->contents != EDRAM_IMAGE || part->image != image)
+			continue;
+		// A colour target as a resolve needs one set; it copies depth alone and clears nothing.
+		const XsdkColorTarget target = { .format = XSDK_TARGET_8_8_8_8, .tile = 0 };
+		xsdk_gpu_set_targets_samples(part->width, part->height, part->samples, &target, 1, part->tile);
+		// The target set turned the clip planes off.
+		replay->clip_planes_on = false;
+		resolve_depth(image, replay->serial);
+		return;
+	}
 }
 
 // Where eDRAM holds an image once a rectangle of it is resolved: where it held it, if over the rectangle, else there.
@@ -1159,6 +1190,8 @@ static bool resolve_can_wait(VkCommandBuffer buffer, uint32_t end, const Replay 
 		case COMMAND_BEGIN_QUERY:
 		case COMMAND_END_QUERY:
 		case COMMAND_WRITE_TIMESTAMP:
+		// A depth image's resolve reads only depth.
+		case COMMAND_RESOLVE_DEPTH:
 			break;
 		// Copies, blits, image clears, events and secondary command buffers may read it.
 		default:
@@ -1198,7 +1231,7 @@ static void end_render_pass(VkQueue queue, VkCommandBuffer buffer, uint32_t inde
 		resolve_depth(resolved_depth, replay->serial);
 	float depth = 0.0f;
 	uint32_t stencil = 0;
-	bool clear_depth = end_depth_clear(replay, next, next_clears, next_area, &depth, &stencil);
+	bool clear_depth = end_depth_clear(buffer, index, replay, next, next_clears, next_area, &depth, &stencil);
 	for (uint32_t i = 0; i < render_pass->color_count; i++) {
 		Image *const resolved = framebuffer->resolves[i];
 		const bool stores = render_pass->store_ops[i] == VK_ATTACHMENT_STORE_OP_STORE;
@@ -1953,6 +1986,9 @@ static void replay_command(VkQueue queue, VkCommandBuffer buffer, Replay *replay
 		queue->drawn = true;
 		break;
 	}
+	case COMMAND_RESOLVE_DEPTH:
+		resolve_depth_to_read(queue, replay, command->depth_to_read);
+		break;
 	case COMMAND_CLEAR_COLOR_IMAGE:
 		v4x_transfer_clear(queue, command);
 		break;

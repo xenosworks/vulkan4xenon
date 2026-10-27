@@ -11,14 +11,16 @@
 // Sampled D24S8 attachments 16 texels or less on a side (milestone 67), as PPSSPP's 1x1 framebuffers have (God of War:
 // Chains of Olympus): their textures' bases at the corner, where a resolve writes, as small colour attachments' are
 // (milestone 31). Each of a 1x1, a 4x4 and a 16x16 is drawn with depth 0.25 on its left half and 0.75 on its right,
-// left to be sampled, its depth read from its memory; then sampled 2 by 2 pixels a texel into a larger attachment read
-// back; then, after a 1280x720 pass with depth of its own has taken the eDRAM they were in, loaded into a pass that
-// draws a quad at 0.5, which lands only where the depth was 0.75.
+// left to be sampled by its pass; two 8x8 ones the same, kept an attachment by their passes and left to be sampled by a
+// barrier after each, as PPSSPP does, the first's pass followed by the second's, which clears depth at its size. Each
+// one's depth is read from its memory; then each is sampled 2 by 2 pixels a texel into a larger attachment read back;
+// then, after a 1280x720 pass with depth of its own has taken the eDRAM they were in, each is loaded into a pass, the
+// 8x8 ones past a barrier back to an attachment, that draws a quad at 0.5, which lands only where the depth was 0.75.
 
 enum {
 	FENCE_TIMEOUT_NS = 1000000000,
-	TARGETS = 3,
-	SHOWN_WIDTH = 64,
+	TARGETS = 5,
+	SHOWN_WIDTH = 100,
 	SHOWN_HEIGHT = 40,
 	SHOWN_SCALE = 2,
 	SHOWN_TOP = 4,
@@ -47,12 +49,16 @@ typedef struct {
 	uint32_t side;
 	// Its left edge in the shown attachment.
 	uint32_t shown_x;
+	// Its pass keeps depth an attachment, and a barrier leaves it to be read.
+	bool barrier;
 } Shape;
 
 static const Shape shapes[TARGETS] = {
-	{ "1x1", 1, 4 },
-	{ "4x4", 4, 12 },
-	{ "16x16", 16, 24 },
+	{ "1x1", 1, 4, false },
+	{ "4x4", 4, 12, false },
+	{ "16x16", 16, 24, false },
+	{ "the first 8x8", 8, 60, true },
+	{ "the second 8x8", 8, 80, true },
 };
 
 static const float near_depth = 0.25f;
@@ -81,9 +87,12 @@ typedef struct {
 	VkImage shown;
 	VkDeviceMemory shown_memory;
 	VkImageView shown_view;
-	// Cleared, drawn and left to be sampled; loaded and drawn again.
+	// Cleared, drawn and left to be sampled; loaded and drawn again. Each again with depth an attachment after and
+	// before.
 	VkRenderPass draw_pass;
 	VkRenderPass load_pass;
+	VkRenderPass draw_kept_pass;
+	VkRenderPass load_kept_pass;
 	VkFramebuffer framebuffers[TARGETS];
 	VkRenderPass shown_pass;
 	VkFramebuffer shown_framebuffer;
@@ -150,17 +159,19 @@ static VkAttachmentDescription attachment(
 		.finalLayout = final };
 }
 
-// Colour and depth; the depth left to be sampled by the first, and loaded from there by the second.
-static VkResult create_pass(const Harness *harness, bool loads, VkRenderPass *render_pass)
+// Colour and depth; the depth left to be sampled by the first, and loaded from there by the second, or left an
+// attachment and loaded from one when kept.
+static VkResult create_pass(const Harness *harness, bool loads, bool kept, VkRenderPass *render_pass)
 {
 	const VkAttachmentLoadOp load = loads ? VK_ATTACHMENT_LOAD_OP_LOAD : VK_ATTACHMENT_LOAD_OP_CLEAR;
+	const VkImageLayout read =
+		kept ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 	const VkAttachmentDescription attachments[2] = {
 		attachment(VK_FORMAT_B8G8R8A8_UNORM, load,
 			loads ? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_UNDEFINED,
 			loads ? VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL),
-		attachment(VK_FORMAT_D24_UNORM_S8_UINT, load,
-			loads ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_UNDEFINED,
-			loads ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL),
+		attachment(VK_FORMAT_D24_UNORM_S8_UINT, load, loads ? read : VK_IMAGE_LAYOUT_UNDEFINED,
+			loads ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : read),
 	};
 	const VkAttachmentReference color = { 0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL };
 	const VkAttachmentReference depth = { 1, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL };
@@ -266,9 +277,13 @@ static bool build_images(const Harness *harness, Scene *scene)
 			VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, &scene->shown, &scene->shown_memory,
 			&scene->shown_view);
 	if (result == VK_SUCCESS)
-		result = create_pass(harness, false, &scene->draw_pass);
+		result = create_pass(harness, false, false, &scene->draw_pass);
 	if (result == VK_SUCCESS)
-		result = create_pass(harness, true, &scene->load_pass);
+		result = create_pass(harness, true, false, &scene->load_pass);
+	if (result == VK_SUCCESS)
+		result = create_pass(harness, false, true, &scene->draw_kept_pass);
+	if (result == VK_SUCCESS)
+		result = create_pass(harness, true, true, &scene->load_kept_pass);
 	if (result == VK_SUCCESS)
 		result = create_shown_pass(harness, &scene->shown_pass);
 	for (uint32_t i = 0; i < TARGETS && result == VK_SUCCESS; i++) {
@@ -403,7 +418,9 @@ static VkResult build_textured(const Harness *harness, Scene *scene)
 	};
 	if (result == VK_SUCCESS)
 		result = vkCreateDescriptorPool(harness->device, &pool_info, NULL, &scene->pool);
-	const VkDescriptorSetLayout layouts[TARGETS] = { scene->set_layout, scene->set_layout, scene->set_layout };
+	VkDescriptorSetLayout layouts[TARGETS];
+	for (uint32_t i = 0; i < TARGETS; i++)
+		layouts[i] = scene->set_layout;
 	const VkDescriptorSetAllocateInfo allocate_info = {
 		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
 		.descriptorPool = scene->pool,
@@ -544,19 +561,46 @@ static void copy_out(const Scene *scene, VkImage image, uint32_t width, uint32_t
 	vkCmdCopyImageToBuffer(scene->commands, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, scene->readback, 1, &region);
 }
 
-// Each target drawn, near on the left and far over all, left to be sampled; the depths sampled into the shown
-// attachment; each target loaded and a quad at the middle depth drawn over all; the colours read back.
+// A depth image's barrier between an attachment and being sampled, either way.
+static void depth_barrier(VkCommandBuffer commands, VkImage image, VkImageLayout from, VkImageLayout to)
+{
+	const bool to_read = to == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	const VkAccessFlags attachment_access =
+		VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+	const VkImageMemoryBarrier barrier = {
+		.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+		.srcAccessMask = to_read ? attachment_access : VK_ACCESS_SHADER_READ_BIT,
+		.dstAccessMask = to_read ? VK_ACCESS_SHADER_READ_BIT : attachment_access,
+		.oldLayout = from,
+		.newLayout = to,
+		.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+		.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+		.image = image,
+		.subresourceRange = { VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT, 0, 1, 0, 1 },
+	};
+	const VkPipelineStageFlags tests =
+		VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+	vkCmdPipelineBarrier(commands, to_read ? tests : VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+		to_read ? VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT : tests, 0, 0, NULL, 0, NULL, 1, &barrier);
+}
+
+// Each target drawn, near on the left and far over all, left to be sampled by its pass or by a barrier after; the
+// depths sampled into the shown attachment; each target loaded, past a barrier back for those, and a quad at the middle
+// depth drawn over all; the colours read back.
 static void record(const Scene *scene)
 {
 	const VkCommandBuffer commands = scene->commands;
 	for (uint32_t i = 0; i < TARGETS; i++) {
 		const float side = (float)shapes[i].side;
-		begin_pass(scene, scene->draw_pass, i);
+		begin_pass(scene, shapes[i].barrier ? scene->draw_kept_pass : scene->draw_pass, i);
 		const HarnessQuad near = quad_of(0.0f, (float)near_width(shapes[i].side), side, near_depth, near_color);
 		const HarnessQuad far = quad_of(0.0f, side, side, far_depth, far_color);
 		harness_push_quad_in(commands, scene->push_layout, &near, shapes[i].side, shapes[i].side);
 		harness_push_quad_in(commands, scene->push_layout, &far, shapes[i].side, shapes[i].side);
 		vkCmdEndRenderPass(commands);
+		if (shapes[i].barrier)
+			depth_barrier(commands, scene->depths[i], VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+				VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 	}
 	const VkClearValue clear = { .color = {
 									 .float32 = { grey[0] / 255.0f, grey[1] / 255.0f, grey[2] / 255.0f, 1.0f } } };
@@ -598,7 +642,10 @@ static void record(const Scene *scene)
 	vkCmdEndRenderPass(commands);
 	for (uint32_t i = 0; i < TARGETS; i++) {
 		const float side = (float)shapes[i].side;
-		begin_pass(scene, scene->load_pass, i);
+		if (shapes[i].barrier)
+			depth_barrier(commands, scene->depths[i], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+				VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+		begin_pass(scene, shapes[i].barrier ? scene->load_kept_pass : scene->load_pass, i);
 		const HarnessQuad loaded = quad_of(0.0f, side, side, loaded_depth, loaded_color);
 		harness_push_quad_in(commands, scene->push_layout, &loaded, shapes[i].side, shapes[i].side);
 		vkCmdEndRenderPass(commands);
@@ -757,6 +804,8 @@ static void destroy(const Harness *harness, const Scene *scene)
 		vkDestroyFramebuffer(device, scene->framebuffers[i], NULL);
 	vkDestroyRenderPass(device, scene->shown_pass, NULL);
 	vkDestroyRenderPass(device, scene->load_pass, NULL);
+	vkDestroyRenderPass(device, scene->load_kept_pass, NULL);
+	vkDestroyRenderPass(device, scene->draw_kept_pass, NULL);
 	vkDestroyRenderPass(device, scene->draw_pass, NULL);
 	vkDestroyImageView(device, scene->shown_view, NULL);
 	vkDestroyImage(device, scene->shown, NULL);
@@ -777,11 +826,13 @@ void test_small_depth(const Harness *harness)
 	static Scene scene;
 	memset(&scene, 0, sizeof scene);
 	const bool ok = build_images(harness, &scene) && build_drawing(harness, &scene);
-	check("small depth: 1x1, 4x4 and 16x16 sampled D24S8 attachments, their passes and pipelines made", ok);
+	check("small depth: 1x1, 4x4, 16x16 and two 8x8 sampled D24S8 attachments, their passes and pipelines made", ok);
 	const bool ran = ok && run(harness, &scene);
-	check("small depth: each one's depth resolved into its texture from the corner, every texel's",
+	check(
+		"small depth: each one's depth resolved into its texture from the corner, every texel's: at its pass's end, or "
+		"at a barrier after a pass that kept it an attachment",
 		ran && words_wrong(harness, &scene) == 0);
-	check("small depth: each one sampled 2 by 2 pixels a texel into a 64x40 attachment, every pixel its depth",
+	check("small depth: each one sampled 2 by 2 pixels a texel into a 100x40 attachment, every pixel its depth",
 		ran && shown_wrong(&scene) == 0);
 	check(
 		"small depth: each one loaded into a pass after a 1280x720 one, a quad at 0.5 lands only where its depth was "

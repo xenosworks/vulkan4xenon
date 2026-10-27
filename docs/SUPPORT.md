@@ -393,9 +393,13 @@ Some are there to refuse, as the features they need aren't reported. Each logs w
   `VK_IMAGE_LAYOUT_GENERAL`. A pass that leaves it `VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL` keeps it in eDRAM
   alone, so the passes a later one loads cost no resolve (milestone 14). The resolve comes before the colour's and
   clears nothing, so the colour's clears as it would.
-- A barrier moving a sampled depth image from `VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL` to one of those
-  layouts fails the command buffer: `vkEndCommandBuffer` returns `VK_ERROR_FEATURE_NOT_PRESENT`, as only a pass's end
-  resolves depth. Depth images can't be copied.
+- **A barrier leaves it to be read too** (milestone 67, as PPSSPP leaves its depth to be sampled): a pipeline
+  barrier, or an event wait's, moving a sampled depth image from `VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL` to
+  one of those layouts, outside a pass, resolves its depth then from where eDRAM holds it, as the pass's end would
+  have, its targets set over it there and nothing cleared; the pass before it doesn't resolve-clear that depth for the
+  next. Depth eDRAM no longer holds is undefined, as above, and the texture keeps what it held. The barrier back to an
+  attachment needs nothing, as eDRAM still holds it, or the texture for a pass that loads it. Inside a pass, where
+  Vulkan changes no layout, such a barrier fails the command buffer. Depth images can't be copied.
 - Framebuffers: the render pass's attachments, their full size, up to 4096x4096, one layer. Colour attachments are
   swapchain images or images made with `VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT`.
 - **Render areas** (milestone 27): a pass clears, loads and stores its render area alone, as Vulkan says, by resolving

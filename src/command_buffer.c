@@ -886,19 +886,28 @@ VKAPI_ATTR void VKAPI_CALL vkCmdFillBuffer(
 // Replay is in order and copies wait for the GPU, so barriers need nothing. But a sampled depth image's depth reaches
 // its texture only from a render pass that leaves it to be read (render_pass.c), so a barrier that moves it from an
 // attachment to be read is refused rather than sampling what it held before; a multisampled one is never sampled.
-static void check_image_barriers(
+// A barrier moving a sampled depth image from an attachment to be read, outside a pass, resolves its depth then, as a
+// pass that leaves it to be read does at its end (queue.c, resolve_depth_to_read); the way back needs nothing, as
+// eDRAM still holds it. Inside a pass, where Vulkan has no layout change, it's refused.
+static void record_image_barriers(
 	VkCommandBuffer commandBuffer, uint32_t imageMemoryBarrierCount, const VkImageMemoryBarrier *pImageMemoryBarriers)
 {
 	for (uint32_t i = 0; i < imageMemoryBarrierCount; i++) {
 		const VkImageMemoryBarrier *const barrier = &pImageMemoryBarriers[i];
-		const Image *const image = v4x_object(barrier->image);
-		if (image->is_sampled_depth && image->samples == 1 &&
-			barrier->oldLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL &&
-			v4x_read_layout(barrier->newLayout)) {
-			commandBuffer->result = v4x_host_unsupported(
-				"barriers moving a sampled depth image from an attachment to be read; a render pass must leave it so");
+		Image *const image = v4x_object(barrier->image);
+		if (!image->is_sampled_depth || image->samples != 1 ||
+			barrier->oldLayout != VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL ||
+			!v4x_read_layout(barrier->newLayout))
+			continue;
+		if (commandBuffer->render_pass) {
+			commandBuffer->result =
+				v4x_host_unsupported("barriers inside a render pass moving a sampled depth image to be read");
 			return;
 		}
+		Command *const command = record(commandBuffer, COMMAND_RESOLVE_DEPTH);
+		if (!command)
+			return;
+		command->depth_to_read = image;
 	}
 }
 
@@ -915,7 +924,7 @@ VKAPI_ATTR void VKAPI_CALL vkCmdPipelineBarrier(VkCommandBuffer commandBuffer, V
 	(void)pMemoryBarriers;
 	(void)bufferMemoryBarrierCount;
 	(void)pBufferMemoryBarriers;
-	check_image_barriers(commandBuffer, imageMemoryBarrierCount, pImageMemoryBarriers);
+	record_image_barriers(commandBuffer, imageMemoryBarrierCount, pImageMemoryBarriers);
 }
 
 // The GPU writes the event's word once the work before it is done, whatever the stages.
@@ -953,7 +962,6 @@ VKAPI_ATTR void VKAPI_CALL vkCmdWaitEvents(VkCommandBuffer commandBuffer, uint32
 	(void)pMemoryBarriers;
 	(void)bufferMemoryBarrierCount;
 	(void)pBufferMemoryBarriers;
-	check_image_barriers(commandBuffer, imageMemoryBarrierCount, pImageMemoryBarriers);
 	uint32_t at = 0;
 	if (!record_data(commandBuffer, pEvents, eventCount * sizeof *pEvents, &at))
 		return;
@@ -962,6 +970,8 @@ VKAPI_ATTR void VKAPI_CALL vkCmdWaitEvents(VkCommandBuffer commandBuffer, uint32
 		return;
 	command->wait_events.events_at = at;
 	command->wait_events.count = eventCount;
+	// After the wait, as Vulkan orders a barrier's work.
+	record_image_barriers(commandBuffer, imageMemoryBarrierCount, pImageMemoryBarriers);
 }
 
 static void record_queries(
