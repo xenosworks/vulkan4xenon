@@ -59,7 +59,8 @@ typedef struct {
 	VkFilter filter;
 } Region;
 
-// Each into a rectangle of its own on the grid, but the last, which reaches the destination's edges. Scaling by 2 up
+// Each into a rectangle of its own on the grid, but the last two: one inside the destination off the grid, drawn over
+// the grid around it (milestone 67), and one reaching the destination's edges. Scaling by 2 up
 // and 3 down puts no destination texel's centre on a source texel's edge, which nearest sampling could take either way;
 // the odd offset of the linear one down has its pairs of texels straddle the cells.
 static const Region regions[] = {
@@ -73,6 +74,8 @@ static const Region regions[] = {
 		VK_FILTER_LINEAR },
 	{ "blits: a region at an odd offset scaled down 2 times, linear", { { 3, 3, 0 }, { 51, 51, 1 } },
 		{ { 64, 48, 0 }, { 88, 72, 1 } }, VK_FILTER_LINEAR },
+	{ "blits: a region off the 8-pixel grid inside the destination, scaled up 2 times, nearest",
+		{ { 0, 0, 0 }, { 16, 16, 1 } }, { { 13, 85, 0 }, { 45, 117, 1 } }, VK_FILTER_NEAREST },
 	{ "blits: a region reaching the destination's edges, off the 8-pixel grid", { { 8, 8, 0 }, { 36, 36, 1 } },
 		{ { 96, 96, 0 }, { DESTINATION_SIDE, DESTINATION_SIDE, 1 } }, VK_FILTER_NEAREST },
 };
@@ -82,9 +85,6 @@ enum { REGIONS = sizeof regions / sizeof regions[0] };
 // Timed: the source over the destination's top left, on the GPU, and onto level 1, which only the CPU blits.
 static const Region timed = { NULL, { { 0, 0, 0 }, { SOURCE_SIDE, SOURCE_SIDE, 1 } },
 	{ { 0, 0, 0 }, { SOURCE_SIDE, SOURCE_SIDE, 1 } }, VK_FILTER_NEAREST };
-// Off the grid inside the destination, which neither path takes.
-static const Region off_grid = { NULL, { { 0, 0, 0 }, { 16, 16, 1 } }, { { 4, 4, 0 }, { 36, 36, 1 } },
-	VK_FILTER_NEAREST };
 
 typedef struct {
 	VkRenderPass render_pass;
@@ -538,14 +538,6 @@ static void check_wait(const Harness *harness, const Scene *scene)
 		ran && !memcmp(scene->read + LEVEL_AT, scene->read + SOURCE_AT, SOURCE_SIDE * SOURCE_SIDE * TEXEL_BYTES));
 }
 
-static void check_refusal(const Scene *scene)
-{
-	bool refused = begin(scene->commands);
-	blit(scene, scene->destination, 0, &off_grid);
-	refused = refused && vkEndCommandBuffer(scene->commands) == VK_ERROR_FEATURE_NOT_PRESENT;
-	check("blits: a region off the 8-pixel grid inside the destination is refused", refused);
-}
-
 static void destroy(const Harness *harness, const Scene *scene)
 {
 	const VkDevice device = harness->device;
@@ -583,9 +575,7 @@ void test_gpu_blits(const Harness *harness)
 		if (submit(harness, scene.commands, &timing))
 			check_regions(&scene);
 	}
-	if (ok) {
+	if (ok)
 		check_wait(harness, &scene);
-		check_refusal(&scene);
-	}
 	destroy(harness, &scene);
 }

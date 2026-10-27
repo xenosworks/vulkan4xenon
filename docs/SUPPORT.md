@@ -637,13 +637,17 @@ Some are there to refuse, as the features they need aren't reported. Each logs w
   time, as many of a cube's layers or a 3D image's slices as the other gives. A copy between a compressed and an
   uncompressed format, which Vulkan allows, fails the command buffer, as their 16-bit words lie in different orders.
   Part of a level (milestone 67), as PPSSPP copies framebuffers' rectangles: drawn on the GPU as a nearest blit to its
-  own size where a drawn blit would go (8-bit RGBA or BGRA, level 0, the destination's rectangle on the 8-pixel
-  grid), else on the CPU at replay, a row at a time, the destination's texels around it kept. A sampled depth image's
-  depth and stencil, or either alone, copy the same way on the CPU from its texture: a barrier moving it from an
-  attachment to `VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL`, or a pass leaving it there, resolves it first, and the
-  destination's next pass draws its depth back, without its stencil. Part of a compressed level, and depth images
-  that aren't sampled, which hold their depth in eDRAM alone, fail the command buffer. The first copy of part of a
-  level is logged, its region, formats and images, and whether it was drawn.
+  own size where a drawn blit would go (8-bit RGBA or BGRA, level 0, a rectangle off the 8-pixel grid drawn as a blit
+  is), else on the CPU at replay, a row at a time, waiting for the GPU first, the destination's texels around it
+  kept. A sampled depth image's depth copies from its texture: a barrier moving it from an attachment to
+  `VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL`, or a pass leaving it there, resolves it first. Depth alone, as PPSSPP copies
+  it, is drawn on the GPU, with no wait: into eDRAM's bottom tiles over the destination drawn back there, unless the
+  copy covers it, then resolved into the destination's texture. **Deviation:** Xenos exports no stencil, so the
+  destination's stencil comes back undefined, as a pass drawing its depth back leaves it anyway. Depth and stencil
+  together, or stencil alone, copy on the CPU, bit for bit. The destination's next pass draws its depth back, without
+  its stencil. Part of a compressed level, and depth images that aren't sampled, which hold their depth in eDRAM alone,
+  fail the command buffer. The first copy of part of a level is logged, its region, formats and images, and how it
+  went.
 - `vkCmdResolveImage` copies a multisampled image's memory, its samples' average as the pass that stored it left it
   (Render passes), into an image of its format at one sample, the whole image alone, as `vkCmdCopyImage` copies
   (milestone 17's second part).
@@ -656,9 +660,10 @@ Some are there to refuse, as the features they need aren't reported. Each logs w
   depth resolve. Any other resolve of depth fails the command buffer.
 - **`vkCmdBlitImage` drawn on the GPU** (milestone 27), so the replay doesn't wait for it: between two 2D images of
   `VK_FORMAT_R8G8B8A8_UNORM` or `B8G8R8A8_UNORM`, one format both, from level 0 of an optimal source to level 0 of
-  another optimal image, over 16 texels a side and within eDRAM's 2048 tiles, its destination region any on the
-  resolve's 8-pixel grid, as a render area is (Render passes), nearest or linear. xsdk resolves a rectangle of an 8-bit
-  target alone (xsdk:include/xsdk/gpu.h), so the other formats' blits stay on the CPU.
+  another optimal image, over 16 texels a side and within eDRAM's 2048 tiles, nearest or linear. xsdk resolves a
+  rectangle of an 8-bit target alone (xsdk:include/xsdk/gpu.h), so the other formats' blits stay on the CPU. A
+  destination region off the resolve's 8-pixel grid (milestone 67) is drawn inside the grid around it, the destination
+  drawn back over that first unless eDRAM holds it there, and the grid's rectangle resolved.
 
   The layer draws the source region over the destination's rectangle with its own shaders, into eDRAM at the
   destination's size, sampling level 0 alone, edges clamped, mirrored as either region's corners are; then it

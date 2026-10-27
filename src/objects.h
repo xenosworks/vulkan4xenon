@@ -584,6 +584,7 @@ typedef enum {
 	COMMAND_DRAW_UPLOAD,
 	COMMAND_RESOLVE_DEPTH,
 	COMMAND_COPY_IMAGE_PART,
+	COMMAND_DRAW_DEPTH_COPY,
 } CommandType;
 
 // The values a subpass's attachments clear to: each colour attachment's, by its place in the subpass, then depth and

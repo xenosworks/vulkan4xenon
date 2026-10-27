@@ -9,17 +9,20 @@
 #include "xsdk/log.h"
 
 // vkCmdCopyImage of part of a level (milestone 67), as PPSSPP copies framebuffers' rectangles (God of War: Chains of
-// Olympus). Colour: two rectangles at odd offsets and sizes on the CPU, and one on the 8-pixel grid the GPU draws, each
-// into a destination filled with a pattern of its own, read back, every texel the source's inside the rectangles and
-// the destination's own outside. Depth: a sampled D24S8 image drawn, a quad at 0.25 writing stencil 0x11 over a clear
-// to 0.5 and 0x44, moved to be copied from by a barrier, then a rectangle of depth and stencil and one of depth alone
-// copied into an image cleared to 0.75 and 0x22, its memory read, every word as it should be.
+// Olympus). Colour: two rectangles at odd offsets and sizes the GPU draws over the grid around them, one on the 8-pixel
+// grid, and the odd two again in a packed format the CPU copies, each into a destination filled with a pattern of its
+// own, read back, every texel the source's inside the rectangles and the destination's own outside. Depth: a sampled
+// D24S8 image drawn, a quad at 0.25 writing stencil 0x11 over a clear to 0.5 and 0x44, moved to be copied from by a
+// barrier; then a rectangle of depth and stencil on the CPU, and depth alone on the GPU, a rectangle and the whole,
+// each into an image cleared to 0.75 and 0x22, its memory read, every word's depth, and the CPU's stencil.
 
 enum {
 	WIDTH = 64,
 	HEIGHT = 48,
 	TEXEL_BYTES = 4,
 	DEPTH_SIDE = 32,
+	// The source, then destinations of depth and stencil on the CPU, and of depth alone drawn, a rectangle and whole.
+	DEPTHS = 4,
 	DRAWN_WIDTH = 10,
 	DRAWN_STENCIL = 0x11,
 	SOURCE_STENCIL = 0x44,
@@ -36,17 +39,19 @@ enum {
 
 typedef enum {
 	COLOR_SOURCE,
-	COLOR_CPU,
+	COLOR_ODD,
 	COLOR_DRAWN,
+	PACKED_SOURCE,
+	PACKED_CPU,
 	COLORS,
 } ColorImage;
 
 // Where each colour image's texels sit in the staging and read-back buffers: a table, as GCC makes i * IMAGE_BYTES an
 // rldic, which Xenia skips (CLAUDE.md), hanging the test there.
-static const uint32_t image_at[COLORS] = { 0, IMAGE_BYTES, 2 * IMAGE_BYTES };
+static const uint32_t image_at[COLORS] = { 0, IMAGE_BYTES, 2 * IMAGE_BYTES, 3 * IMAGE_BYTES, 4 * IMAGE_BYTES };
 
-// Two rectangles on the CPU, at odd offsets and sizes; one the GPU draws, into the grid a resolve writes.
-static const VkImageCopy cpu_regions[2] = {
+// Two rectangles at odd offsets and sizes; one into the grid a resolve writes.
+static const VkImageCopy odd_regions[2] = {
 	{ .srcSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 },
 		.srcOffset = { 5, 3, 0 },
 		.dstSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 },
@@ -64,19 +69,25 @@ static const VkImageCopy drawn_region = { .srcSubresource = { VK_IMAGE_ASPECT_CO
 	.dstOffset = { 8, 16, 0 },
 	.extent = { 16, 8, 1 } };
 
-// Depth and stencil, and depth alone.
-static const VkImageCopy depth_regions[2] = {
+// Into each depth destination: depth and stencil, on the CPU; depth alone, drawn, a rectangle and the whole.
+static const VkImageCopy depth_regions[DEPTHS] = {
+	{ .extent = { 0, 0, 0 } },
 	{ .srcSubresource = { VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT, 0, 0, 1 },
 		.srcOffset = { 3, 5, 0 },
 		.dstSubresource = { VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT, 0, 0, 1 },
 		.dstOffset = { 10, 7, 0 },
 		.extent = { 13, 9, 1 } },
 	{ .srcSubresource = { VK_IMAGE_ASPECT_DEPTH_BIT, 0, 0, 1 },
-		.srcOffset = { 6, 20, 0 },
+		.srcOffset = { 3, 20, 0 },
 		.dstSubresource = { VK_IMAGE_ASPECT_DEPTH_BIT, 0, 0, 1 },
-		.dstOffset = { 2, 22, 0 },
-		.extent = { 9, 6, 1 } },
+		.dstOffset = { 2, 9, 0 },
+		.extent = { 13, 6, 1 } },
+	{ .srcSubresource = { VK_IMAGE_ASPECT_DEPTH_BIT, 0, 0, 1 },
+		.dstSubresource = { VK_IMAGE_ASPECT_DEPTH_BIT, 0, 0, 1 },
+		.extent = { DEPTH_SIDE, DEPTH_SIDE, 1 } },
 };
+static const char *const depth_names[DEPTHS] = { "", "depth and stencil on the CPU", "depth drawn in a rectangle",
+	"depth drawn whole" };
 
 static const float drawn_depth = 0.25f;
 static const float source_depth = 0.5f;
@@ -90,9 +101,9 @@ typedef struct {
 	VkImage pass_color;
 	VkDeviceMemory pass_color_memory;
 	VkImageView pass_color_view;
-	VkImage depths[2];
-	VkDeviceMemory depth_memories[2];
-	VkImageView depth_views[2];
+	VkImage depths[DEPTHS];
+	VkDeviceMemory depth_memories[DEPTHS];
+	VkImageView depth_views[DEPTHS];
 	VkRenderPass render_pass;
 	VkFramebuffer framebuffer;
 	VkPipelineLayout layout;
@@ -115,7 +126,7 @@ static void source_texel(uint32_t x, uint32_t y, uint8_t texel[4])
 
 static void fill_texel(ColorImage image, uint32_t x, uint32_t y, uint8_t texel[4])
 {
-	texel[0] = (uint8_t)(255 - x), texel[1] = (uint8_t)(255 - y), texel[2] = image == COLOR_CPU ? 140 : 180,
+	texel[0] = (uint8_t)(255 - x), texel[1] = (uint8_t)(255 - y), texel[2] = (uint8_t)(100 + 20 * image),
 	texel[3] = 255;
 }
 
@@ -169,11 +180,17 @@ static VkResult build_images(const Harness *harness, Scene *scene)
 		VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 	const VkImageUsageFlags depth_usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
 		VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+	// A packed format a drawn copy doesn't take, so its copies stay on the CPU.
+	const VkImageUsageFlags packed_usage =
+		VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 	VkResult result = VK_SUCCESS;
-	for (uint32_t i = 0; i < COLORS && result == VK_SUCCESS; i++)
-		result = harness_image(harness, VK_FORMAT_R8G8B8A8_UNORM, WIDTH, HEIGHT, color_usage, &scene->colors[i],
-			&scene->color_memories[i], &scene->color_views[i]);
-	for (uint32_t i = 0; i < 2 && result == VK_SUCCESS; i++)
+	for (uint32_t i = 0; i < COLORS && result == VK_SUCCESS; i++) {
+		const bool packed = i >= PACKED_SOURCE;
+		result = harness_image(harness, packed ? VK_FORMAT_A2B10G10R10_UNORM_PACK32 : VK_FORMAT_R8G8B8A8_UNORM, WIDTH,
+			HEIGHT, packed ? packed_usage : color_usage, &scene->colors[i], &scene->color_memories[i],
+			&scene->color_views[i]);
+	}
+	for (uint32_t i = 0; i < DEPTHS && result == VK_SUCCESS; i++)
 		result = harness_image(harness, VK_FORMAT_D24_UNORM_S8_UINT, DEPTH_SIDE, DEPTH_SIDE, depth_usage,
 			&scene->depths[i], &scene->depth_memories[i], &scene->depth_views[i]);
 	if (result == VK_SUCCESS)
@@ -270,9 +287,11 @@ static VkResult build_buffers(const Harness *harness, Scene *scene)
 	for (uint32_t y = 0; y < HEIGHT && result == VK_SUCCESS; y++) {
 		for (uint32_t x = 0; x < WIDTH; x++) {
 			uint8_t *const texels = (uint8_t *)staged + (y * WIDTH + x) * TEXEL_BYTES;
-			source_texel(x, y, texels);
-			fill_texel(COLOR_CPU, x, y, texels + COLOR_CPU * image_bytes);
-			fill_texel(COLOR_DRAWN, x, y, texels + COLOR_DRAWN * image_bytes);
+			source_texel(x, y, texels + image_at[COLOR_SOURCE]);
+			source_texel(x, y, texels + image_at[PACKED_SOURCE]);
+			fill_texel(COLOR_ODD, x, y, texels + image_at[COLOR_ODD]);
+			fill_texel(COLOR_DRAWN, x, y, texels + image_at[COLOR_DRAWN]);
+			fill_texel(PACKED_CPU, x, y, texels + image_at[PACKED_CPU]);
 		}
 	}
 	void *read = NULL;
@@ -345,11 +364,13 @@ static void record_depth(const Scene *scene)
 	const VkImageAspectFlags both = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
 	barrier(commands, scene->depths[0], both, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
 		VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
-	barrier(commands, scene->depths[1], both, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 	static const VkImageSubresourceRange range = { VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT, 0, 1, 0,
 		1 };
-	vkCmdClearDepthStencilImage(
-		commands, scene->depths[1], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &destination_clear, 1, &range);
+	for (uint32_t i = 1; i < DEPTHS; i++) {
+		barrier(commands, scene->depths[i], both, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+		vkCmdClearDepthStencilImage(
+			commands, scene->depths[i], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &destination_clear, 1, &range);
+	}
 }
 
 // The colour images filled, the depth drawn, every copy, and the colour destinations read back; one submission.
@@ -370,12 +391,17 @@ static bool run(const Harness *harness, const Scene *scene)
 	}
 	record_depth(scene);
 	vkCmdCopyImage(commands, scene->colors[COLOR_SOURCE], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-		scene->colors[COLOR_CPU], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 2, cpu_regions);
+		scene->colors[COLOR_ODD], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 2, odd_regions);
 	vkCmdCopyImage(commands, scene->colors[COLOR_SOURCE], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
 		scene->colors[COLOR_DRAWN], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &drawn_region);
-	vkCmdCopyImage(commands, scene->depths[0], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, scene->depths[1],
-		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 2, depth_regions);
-	for (uint32_t i = COLOR_CPU; i < COLORS; i++) {
+	vkCmdCopyImage(commands, scene->colors[PACKED_SOURCE], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+		scene->colors[PACKED_CPU], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 2, odd_regions);
+	for (uint32_t i = 1; i < DEPTHS; i++)
+		vkCmdCopyImage(commands, scene->depths[0], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, scene->depths[i],
+			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &depth_regions[i]);
+	for (uint32_t i = COLOR_ODD; i < COLORS; i++) {
+		if (i == PACKED_SOURCE)
+			continue;
 		const VkBufferImageCopy region = { .bufferOffset = image_at[i],
 			.imageSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 },
 			.imageExtent = { WIDTH, HEIGHT, 1 } };
@@ -410,7 +436,7 @@ static const VkImageCopy *region_at(const VkImageCopy *regions, uint32_t count, 
 // A colour destination read back: the source's texel inside a region, its own fill outside.
 static uint32_t colors_wrong(const Scene *scene, ColorImage image, const VkImageCopy *regions, uint32_t count)
 {
-	static const char *const names[COLORS] = { "", "on the CPU", "drawn" };
+	static const char *const names[COLORS] = { "", "drawn off the grid", "drawn", "", "packed, on the CPU" };
 	uint32_t wrong = 0;
 	for (uint32_t y = 0; y < HEIGHT; y++) {
 		for (uint32_t x = 0; x < WIDTH; x++) {
@@ -445,32 +471,35 @@ static uint32_t difference(uint32_t a, uint32_t b)
 	return a > b ? a - b : b - a;
 }
 
-// The depth destination's words: the source's depth inside both regions, its stencil inside the first, and the
-// destination's clear for the rest.
-static uint32_t words_wrong(const Harness *harness, const Scene *scene)
+// A depth destination's words: the source's depth inside its region, the destination's clear outside; the stencil
+// too, where the CPU copied both, the source's inside and the clear's outside. Xenos exports no stencil, so a drawn
+// copy leaves the destination's undefined.
+static uint32_t words_wrong(const Harness *harness, const Scene *scene, uint32_t i)
 {
 	void *mapped = NULL;
 	if (!harness_ok(
-			"vkMapMemory", vkMapMemory(harness->device, scene->depth_memories[1], 0, VK_WHOLE_SIZE, 0, &mapped)))
+			"vkMapMemory", vkMapMemory(harness->device, scene->depth_memories[i], 0, VK_WHOLE_SIZE, 0, &mapped)))
 		return 1;
 	volatile const uint32_t *const words = mapped;
+	const bool stencil_kept = depth_regions[i].dstSubresource.aspectMask & VK_IMAGE_ASPECT_STENCIL_BIT;
 	uint32_t wrong = 0;
 	for (uint32_t y = 0; y < DEPTH_SIDE; y++) {
 		for (uint32_t x = 0; x < DEPTH_SIDE; x++) {
-			const VkImageCopy *const r = region_at(depth_regions, 2, x, y);
+			const VkImageCopy *const r = region_at(&depth_regions[i], 1, x, y);
 			const uint32_t taken = r ? source_word(x - (uint32_t)r->dstOffset.x + (uint32_t)r->srcOffset.x) : 0;
 			const uint32_t depth = r ? taken >> 8 : depth_24(destination_clear.depth);
-			const uint32_t stencil = r == &depth_regions[0] ? (taken & 0xFF) : DESTINATION_STENCIL;
+			const uint32_t stencil = r ? (taken & 0xFF) : DESTINATION_STENCIL;
 			const uint32_t word = words[tiled_index(x, y, DEPTH_SIDE)];
-			if (difference(word >> 8, depth) <= DEPTH_24_TOLERANCE && (word & 0xFF) == stencil)
+			if (difference(word >> 8, depth) <= DEPTH_24_TOLERANCE && (!stencil_kept || (word & 0xFF) == stencil))
 				continue;
 			if (wrong++ < MAX_MISSES_LOGGED)
-				xsdk_log_write("part copies: depth, (%u, %u) is %08X, not depth %06X above stencil %02X", (unsigned)x,
-					(unsigned)y, (unsigned)word, (unsigned)depth, (unsigned)stencil);
+				xsdk_log_write("part copies: %s, (%u, %u) is %08X, not depth %06X above stencil %02X", depth_names[i],
+					(unsigned)x, (unsigned)y, (unsigned)word, (unsigned)depth, (unsigned)stencil);
 		}
 	}
-	vkUnmapMemory(harness->device, scene->depth_memories[1]);
-	xsdk_log_write("part copies: depth, %u of %u words wrong", (unsigned)wrong, (unsigned)(DEPTH_SIDE * DEPTH_SIDE));
+	vkUnmapMemory(harness->device, scene->depth_memories[i]);
+	xsdk_log_write(
+		"part copies: %s, %u of %u words wrong", depth_names[i], (unsigned)wrong, (unsigned)(DEPTH_SIDE * DEPTH_SIDE));
 	return wrong;
 }
 
@@ -492,7 +521,7 @@ static void destroy(const Harness *harness, const Scene *scene)
 	vkDestroyImageView(device, scene->pass_color_view, NULL);
 	vkDestroyImage(device, scene->pass_color, NULL);
 	vkFreeMemory(device, scene->pass_color_memory, NULL);
-	for (uint32_t i = 0; i < 2; i++) {
+	for (uint32_t i = 0; i < DEPTHS; i++) {
 		vkDestroyImageView(device, scene->depth_views[i], NULL);
 		vkDestroyImage(device, scene->depths[i], NULL);
 		vkFreeMemory(device, scene->depth_memories[i], NULL);
@@ -511,13 +540,20 @@ void test_part_copies(const Harness *harness)
 	const bool built = build(harness, &scene);
 	check("part copies: colour and sampled depth images, a pass and buffers made", built);
 	const bool ran = built && run(harness, &scene);
-	check("part copies: two rectangles at odd offsets and sizes on the CPU, read back, the texels around as they were",
-		ran && colors_wrong(&scene, COLOR_CPU, cpu_regions, 2) == 0);
+	check(
+		"part copies: two rectangles at odd offsets and sizes drawn over the grid around them, read back, the texels "
+		"around as they were",
+		ran && colors_wrong(&scene, COLOR_ODD, odd_regions, 2) == 0);
 	check("part copies: a rectangle on the 8-pixel grid drawn, read back, the texels around as they were",
 		ran && colors_wrong(&scene, COLOR_DRAWN, &drawn_region, 1) == 0);
 	check(
-		"part copies: depth and stencil, and depth alone, from a depth image a barrier moved to be copied from, every "
-		"word of the destination",
-		ran && words_wrong(harness, &scene) == 0);
+		"part copies: the two odd rectangles in a packed format on the CPU, read back, the texels around as they were",
+		ran && colors_wrong(&scene, PACKED_CPU, odd_regions, 2) == 0);
+	check("part copies: depth and stencil on the CPU, from a depth image a barrier moved to be copied from, every word",
+		ran && words_wrong(harness, &scene, 1) == 0);
+	check("part copies: depth alone drawn on the GPU, a rectangle at an odd offset and size, every word's depth",
+		ran && words_wrong(harness, &scene, 2) == 0);
+	check("part copies: depth alone drawn on the GPU, the whole image, every word's depth",
+		ran && words_wrong(harness, &scene, 3) == 0);
 	destroy(harness, &scene);
 }

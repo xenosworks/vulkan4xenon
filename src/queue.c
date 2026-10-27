@@ -1571,10 +1571,26 @@ static const Command *next_render_pass(VkCommandBuffer buffer, uint32_t after)
 // The blit is drawn from the texture into eDRAM at its destination's size, a target in its format from tile 0, outside
 // any render pass, so the next one finds that target holding the destination over the rectangle, and the colour targets
 // and depths it reached lost. The replay doesn't wait for it.
+// A rectangle's sides out to the 8-pixel grid a resolve copies on, or the image's edges.
+static VkRect2D grid_around(const VkRect2D *rect, const Image *image)
+{
+	const uint32_t align = XSDK_RESOLVE_ALIGNMENT;
+	const uint32_t left = (uint32_t)rect->offset.x & ~(align - 1);
+	const uint32_t top = (uint32_t)rect->offset.y & ~(align - 1);
+	uint32_t right = ((uint32_t)rect->offset.x + rect->extent.width + align - 1) & ~(align - 1);
+	uint32_t bottom = ((uint32_t)rect->offset.y + rect->extent.height + align - 1) & ~(align - 1);
+	right = right < image->width ? right : image->width;
+	bottom = bottom < image->height ? bottom : image->height;
+	return (VkRect2D){ { (int32_t)left, (int32_t)top }, { right - left, bottom - top } };
+}
+
+// A rectangle off the grid is drawn inside the grid around it, which is resolved: the destination drawn back there
+// first, unless eDRAM holds it there.
 static void draw_blit(VkQueue queue, Replay *replay, const DrawnBlit *blit, const XsdkTexture *texture)
 {
 	Image *const destination = blit->destination;
-	const VkRect2D *const rect = &blit->rect;
+	const VkRect2D grid = grid_around(&blit->rect, destination);
+	const VkRect2D *const rect = &grid;
 	const XsdkColorTarget target = { .format = XSDK_TARGET_8_8_8_8, .tile = 0 };
 	const uint32_t tiles = xsdk_gpu_target_tiles(destination->width, destination->height);
 	for (uint32_t i = 0; i < V4X_EDRAM_DEPTHS; i++) {
@@ -1583,6 +1599,7 @@ static void draw_blit(VkQueue queue, Replay *replay, const DrawnBlit *blit, cons
 	}
 	const EdramPart held = held_part(queue, &target);
 	const VkRect2D stored = stored_area(&held, destination, rect);
+	const bool held_grid = held.contents == EDRAM_IMAGE && held.image == destination && contains(&held.area, &grid);
 	for (uint32_t i = 0; i < V4X_EDRAM_COLORS; i++) {
 		if (color_overlaps(&queue->colors[i], 0, tiles) || queue->colors[i].image == destination)
 			lose_part(&queue->colors[i], replay->serial);
@@ -1591,6 +1608,8 @@ static void draw_blit(VkQueue queue, Replay *replay, const DrawnBlit *blit, cons
 	xsdk_gpu_set_targets(destination->width, destination->height, &target, 1, depth_tile);
 	// The target set turned the clip planes off.
 	replay->clip_planes_on = false;
+	if (!contains(&blit->rect, &grid) && !held_grid)
+		v4x_blit_draw(&queue->blit, &destination->texture, destination->width, destination->height, &grid, 0, 1);
 	v4x_blit_region(&queue->blit, blit, texture);
 	xsdk_gpu_set_resolve_clears(false, false);
 	xsdk_gpu_resolve_texture_rect(&destination->texture, (uint32_t)rect->offset.x, (uint32_t)rect->offset.y,
@@ -1600,6 +1619,43 @@ static void draw_blit(VkQueue queue, Replay *replay, const DrawnBlit *blit, cons
 	part.format = XSDK_TARGET_8_8_8_8;
 	(void)keep_colors(queue, &part, 1, replay->serial);
 	// The draw and the resolve point streams, slots and shaders of their own, as a pass's begin does.
+	replay->pipeline_dirty = true;
+	memset(replay->pointed_streams, 0, sizeof replay->pointed_streams);
+	memset(replay->pointed_textures, 0, sizeof replay->pointed_textures);
+}
+
+// A sampled depth image's depth copied on the GPU, with no wait: drawn from the source's texture into eDRAM's bottom
+// tiles over the destination's own, drawn back there first unless the copy covers it, then resolved into the
+// destination's texture, which a pass loading it draws back (load_depth). Xenos exports no stencil, so the
+// destination's stencil comes back undefined, as a draw-back leaves it anyway; the colour target set is written
+// nowhere.
+static void draw_depth_copy(VkQueue queue, Replay *replay, const DrawnBlit *blit)
+{
+	Image *const destination = blit->destination;
+	const uint32_t width = destination->width;
+	const uint32_t height = destination->height;
+	const uint32_t tiles = xsdk_gpu_target_tiles(width, height);
+	for (uint32_t i = 0; i < V4X_EDRAM_DEPTHS; i++) {
+		if (part_overlaps(&queue->depths[i], 0, tiles) || queue->depths[i].image == destination)
+			queue->depths[i] = (EdramPart){ .contents = EDRAM_UNKNOWN };
+	}
+	for (uint32_t i = 0; i < V4X_EDRAM_COLORS; i++) {
+		if (color_overlaps(&queue->colors[i], 0, tiles))
+			lose_part(&queue->colors[i], replay->serial);
+	}
+	const XsdkColorTarget target = { .format = XSDK_TARGET_8_8_8_8, .tile = tiles };
+	xsdk_gpu_set_targets(width, height, &target, 1, 0);
+	replay->clip_planes_on = false;
+	const VkRect2D all = { { 0, 0 }, { width, height } };
+	if (!contains(&blit->rect, &all))
+		v4x_blit_draw_depth(&queue->blit, &destination->texture, width, height, 1);
+	v4x_blit_region_depth(&queue->blit, blit, &blit->source->texture);
+	xsdk_gpu_set_resolve_clears(false, false);
+	xsdk_gpu_resolve_depth_texture(&destination->texture);
+	destination->used_serial = replay->serial;
+	blit->source->used_serial = replay->serial;
+	destination->depth_in_texture = true;
+	destination->clear_pending = false;
 	replay->pipeline_dirty = true;
 	memset(replay->pointed_streams, 0, sizeof replay->pointed_streams);
 	memset(replay->pointed_textures, 0, sizeof replay->pointed_textures);
@@ -2025,6 +2081,9 @@ static void replay_command(VkQueue queue, VkCommandBuffer buffer, Replay *replay
 		break;
 	case COMMAND_COPY_IMAGE_PART:
 		v4x_transfer_copy_part(queue, (const PartCopy *)(buffer->data + command->state_at));
+		break;
+	case COMMAND_DRAW_DEPTH_COPY:
+		draw_depth_copy(queue, replay, (const DrawnBlit *)(buffer->data + command->state_at));
 		break;
 	case COMMAND_BLIT_IMAGE:
 		v4x_transfer_blit(queue, command, next_command(buffer, index));

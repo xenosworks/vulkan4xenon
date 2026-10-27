@@ -223,23 +223,36 @@ void v4x_blit_draw_depth(const Blit *blit, const XsdkTexture *texture, uint32_t 
 
 // The viewport over the destination's rectangle, as the replay sets one (src/queue.c, apply_viewport), and the scissor
 // at it, as Xenos draws past a viewport (docs/SUPPORT.md, Pipelines).
-void v4x_blit_region(const Blit *blit, const DrawnBlit *region, const XsdkTexture *texture)
+static void draw_region(const Blit *blit, const DrawnBlit *region, const XsdkTexture *texture, bool depth)
 {
 	const VkRect2D *const rect = &region->rect;
 	const float x = (float)rect->offset.x;
 	const float y = (float)rect->offset.y;
-	xsdk_gpu_set_shaders(&blit->region, &blit->pixel);
+	XsdkBlendState kept = blit->blend;
+	kept.color_mask = 0;
+	xsdk_gpu_set_shaders(&blit->region, depth ? &blit->depth : &blit->pixel);
 	xsdk_gpu_set_viewport(x - 0.5f, y + (float)rect->extent.height - 0.5f, (float)rect->extent.width,
 		-(float)rect->extent.height, 0.0f, 1.0f);
 	xsdk_gpu_set_scissor((uint32_t)rect->offset.x, (uint32_t)rect->offset.y, rect->extent.width, rect->extent.height);
-	xsdk_gpu_set_blend(&blit->blend);
+	xsdk_gpu_set_blend(depth ? &kept : &blit->blend);
 	xsdk_gpu_set_raster(&blit->raster);
-	xsdk_gpu_set_depth_stencil(&blit->depth_stencil);
+	xsdk_gpu_set_depth_stencil(depth ? &blit->depth_write : &blit->depth_stencil);
 	xsdk_gpu_set_vertex_constants(blit->region_constant, region->uv, 1);
 	xsdk_gpu_set_vertices(0, blit->vertices_address, RECTANGLE_BYTES);
 	const XsdkSamplerState *const sampler = region->linear ? &blit->linear_sampler : &blit->sampler;
 	xsdk_gpu_set_texture(blit->texture_slot, texture, sampler);
 	xsdk_gpu_draw(XSDK_PRIMITIVE_TRIANGLE_LIST, RECTANGLE_VERTICES);
+}
+
+void v4x_blit_region(const Blit *blit, const DrawnBlit *region, const XsdkTexture *texture)
+{
+	draw_region(blit, region, texture, false);
+}
+
+// Xenos exports no stencil, so depth alone is drawn (xost:docs/xsc.md, gl_FragDepth).
+void v4x_blit_region_depth(const Blit *blit, const DrawnBlit *region, const XsdkTexture *texture)
+{
+	draw_region(blit, region, texture, true);
 }
 
 // Each colour target written only if it's cleared.

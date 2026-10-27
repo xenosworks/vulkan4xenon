@@ -690,9 +690,10 @@ static bool drawn_blit(Image *source, Image *destination, const VkImageBlit *reg
 	if (source == destination || source->format != destination->format || !v4x_blit_format(source->format) ||
 		!drawn_level(source, &region->srcSubresource) || !drawn_level(destination, &region->dstSubresource))
 		return false;
-	if (v4x_target_format(destination->format) != XSDK_TARGET_8_8_8_8 ||
-		!on_grid(rect.offset.x, rect.extent.width, destination->width) ||
-		!on_grid(rect.offset.y, rect.extent.height, destination->height))
+	// A rectangle off the 8-pixel grid is drawn inside the grid around it (queue.c, draw_blit).
+	if (v4x_target_format(destination->format) != XSDK_TARGET_8_8_8_8 || rect.offset.x < 0 || rect.offset.y < 0 ||
+		!rect.extent.width || !rect.extent.height || rect.offset.x + rect.extent.width > destination->width ||
+		rect.offset.y + rect.extent.height > destination->height)
 		return false;
 	const bool across = to[0].x <= to[1].x;
 	const bool down = to[0].y <= to[1].y;
@@ -745,6 +746,34 @@ static bool drawn_copy(Image *source, Image *destination, const VkImageCopy *reg
 	return !from->z && !to->z && region->extent.depth == 1 && drawn_blit(source, destination, &as_blit, false, blit);
 }
 
+// A region of one sampled depth image's depth into another's on the GPU (queue.c, draw_depth_copy): depth alone, as
+// PPSSPP copies it, Xenos exporting no stencil; level 0 of one layer each, the region inside both, and eDRAM room for
+// the destination's depth and a colour target its size.
+static bool drawn_depth_copy(Image *source, Image *destination, const VkImageCopy *region, DrawnBlit *blit)
+{
+	const VkImageSubresourceLayers *const from = &region->srcSubresource;
+	const VkImageSubresourceLayers *const to = &region->dstSubresource;
+	const VkOffset3D *const at = &region->srcOffset;
+	const VkOffset3D *const into = &region->dstOffset;
+	const VkExtent3D *const extent = &region->extent;
+	if (!source->is_sampled_depth || !destination->is_sampled_depth || source == destination ||
+		source->samples != VK_SAMPLE_COUNT_1_BIT || destination->samples != VK_SAMPLE_COUNT_1_BIT ||
+		from->aspectMask != VK_IMAGE_ASPECT_DEPTH_BIT || to->aspectMask != VK_IMAGE_ASPECT_DEPTH_BIT ||
+		from->mipLevel || to->mipLevel || from->baseArrayLayer || to->baseArrayLayer || from->layerCount != 1 ||
+		to->layerCount != 1 || at->z || into->z || extent->depth != 1 || at->x < 0 || at->y < 0 || into->x < 0 ||
+		into->y < 0 || !extent->width || !extent->height || at->x + extent->width > source->width ||
+		at->y + extent->height > source->height || into->x + extent->width > destination->width ||
+		into->y + extent->height > destination->height ||
+		2 * xsdk_gpu_target_tiles(destination->width, destination->height) > XSDK_EDRAM_TILES)
+		return false;
+	*blit = (DrawnBlit){ .source = source,
+		.destination = destination,
+		.rect = { { into->x, into->y }, { extent->width, extent->height } },
+		.uv = { (float)at->x / (float)source->width, (float)at->y / (float)source->height,
+			(float)extent->width / (float)source->width, (float)extent->height / (float)source->height } };
+	return true;
+}
+
 // The bits of a sampled depth image's words an aspect copies, depth above stencil as its 24_8 texture holds them
 // (tests/test_small_depth.c reads them so); every bit of a colour image's.
 static uint32_t aspect_mask(const Image *image, VkImageAspectFlags aspects)
@@ -783,6 +812,11 @@ VKAPI_ATTR void VKAPI_CALL vkCmdCopyImage(VkCommandBuffer commandBuffer, VkImage
 		if (!apart && drawn_copy(source, destination, region, &blit)) {
 			log_part_copy(source, destination, region, "drawn");
 			record_with_state(commandBuffer, COMMAND_DRAW_BLIT, &blit, sizeof blit);
+			continue;
+		}
+		if (drawn_depth_copy(source, destination, region, &blit)) {
+			log_part_copy(source, destination, region, "depth drawn");
+			record_with_state(commandBuffer, COMMAND_DRAW_DEPTH_COPY, &blit, sizeof blit);
 			continue;
 		}
 		const uint32_t mask = aspect_mask(source, region->srcSubresource.aspectMask);
