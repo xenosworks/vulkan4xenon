@@ -232,7 +232,7 @@ static void record_subpass(VkCommandBuffer commandBuffer)
 			memcpy(clears.colors[i], commandBuffer->clears[render_pass->color_indices[i]].color.float32,
 				sizeof clears.colors[i]);
 	}
-	if (render_pass->clears_depth) {
+	if (render_pass->clears_depth || render_pass->clears_depth_alone || render_pass->clears_stencil_alone) {
 		const VkClearDepthStencilValue *const value = &commandBuffer->clears[render_pass->depth_index].depthStencil;
 		clears.depth = value->depth;
 		clears.stencil = value->stencil;

@@ -111,34 +111,6 @@ static void check_attachments(const Harness *harness)
 		"objects: R8G8B8A8_UNORM is a blendable colour attachment, 16 texels across at one sample, but not at 2 "
 		"samples or with mips",
 		(properties.optimalTilingFeatures & wanted) == wanted && narrow && narrow_multisampled && mipped);
-	const VkAttachmentDescription attachments[2] = {
-		{ .format = VK_FORMAT_B8G8R8A8_UNORM,
-			.samples = VK_SAMPLE_COUNT_1_BIT,
-			.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-			.storeOp = VK_ATTACHMENT_STORE_OP_STORE },
-		{ .format = VK_FORMAT_D24_UNORM_S8_UINT,
-			.samples = VK_SAMPLE_COUNT_1_BIT,
-			.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-			.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_LOAD },
-	};
-	const VkAttachmentReference color = { 0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL };
-	const VkAttachmentReference depth = { 1, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL };
-	const VkSubpassDescription subpass = {
-		.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
-		.colorAttachmentCount = 1,
-		.pColorAttachments = &color,
-		.pDepthStencilAttachment = &depth,
-	};
-	const VkRenderPassCreateInfo pass_info = {
-		.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
-		.attachmentCount = 2,
-		.pAttachments = attachments,
-		.subpassCount = 1,
-		.pSubpasses = &subpass,
-	};
-	VkRenderPass render_pass;
-	check("objects: a render pass that clears depth and loads stencil is refused",
-		vkCreateRenderPass(harness->device, &pass_info, NULL, &render_pass) == VK_ERROR_FEATURE_NOT_PRESENT);
 }
 
 void test_objects(const Harness *harness)

@@ -106,8 +106,6 @@ static VkResult check_subpass(const VkRenderPassCreateInfo *info, uint32_t index
 	const VkAttachmentDescription *const stencil = &info->pAttachments[depth->attachment];
 	if (stencil->format != VK_FORMAT_D24_UNORM_S8_UINT || stencil->samples != samples_of(info, subpass))
 		return v4x_host_unsupported("depth attachments other than D24_UNORM_S8_UINT at the colour's samples");
-	if (clear_and_load(stencil->loadOp, stencil->stencilLoadOp))
-		return v4x_host_unsupported("depth and stencil attachments that clear one and load the other");
 	return VK_SUCCESS;
 }
 
@@ -166,8 +164,13 @@ static RenderPass subpass_pass(const VkRenderPassCreateInfo *info, uint32_t inde
 	const bool last = uses[depth->attachment].last == index;
 	pass.has_depth = true;
 	pass.depth_index = depth->attachment;
-	pass.clears_depth = first &&
+	// One register clears depth and stencil together (xsdk:src/gpu_resolve.c), so a pass that clears one and loads the
+	// other loads both, then clears its part alone (queue.c, clear_depth_part).
+	const bool part = first && clear_and_load(stencil->loadOp, stencil->stencilLoadOp);
+	pass.clears_depth = !part && first &&
 		(stencil->loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR || stencil->stencilLoadOp == VK_ATTACHMENT_LOAD_OP_CLEAR);
+	pass.clears_depth_alone = part && stencil->loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR;
+	pass.clears_stencil_alone = part && stencil->stencilLoadOp == VK_ATTACHMENT_LOAD_OP_CLEAR;
 	pass.loads_depth =
 		!first || stencil->loadOp == VK_ATTACHMENT_LOAD_OP_LOAD || stencil->stencilLoadOp == VK_ATTACHMENT_LOAD_OP_LOAD;
 	const bool stores = !last || stencil->storeOp == VK_ATTACHMENT_STORE_OP_STORE ||

@@ -386,7 +386,8 @@ Some are there to refuse, as the features they need aren't reported. Each logs w
   uses is kept, and replay in order makes the dependencies nothing.
 - Every load op: clear, load or don't-care. Store op store or don't-care.
 - Depth and stencil clear together, as one register holds both (xsdk:src/gpu_resolve.c). A depth attachment that
-  clears one and loads the other returns `VK_ERROR_FEATURE_NOT_PRESENT`.
+  clears one and loads the other loads both, then a rectangle over the render area clears the one alone, the other's
+  writes off, as `vkCmdClearAttachments` clears depth or stencil alone (milestone 67).
 - **Depth stays in eDRAM:** a depth attachment is stored in eDRAM. Loading it finds what the last pass left there, as
   long as no colour and no other depth reached its tiles in between: a pass with another depth places it under the
   first where both fit above the pass's colour (How it maps). **Deviation:** otherwise its contents are undefined, and

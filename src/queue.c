@@ -959,6 +959,22 @@ static void clear_image_depth(VkQueue queue, const Replay *replay, EdramPart *de
 		framebuffer, replay->depth_tile, image->pending_depth, image->pending_stencil, whole(framebuffer));
 }
 
+// A pass that clears depth and loads stencil, or the reverse, clears its part over the area after the load, the other's
+// writes off, as vkCmdClearAttachments clears depth or stencil alone (blit.c, v4x_blit_clear).
+static void clear_depth_part(VkQueue queue, const Replay *replay)
+{
+	const RenderPass *const render_pass = replay->render_pass;
+	if (!render_pass->clears_depth_alone && !render_pass->clears_stencil_alone)
+		return;
+	const ClearRect clear = { .rect = replay->area,
+		.depth = replay->clears->depth,
+		.stencil = replay->clears->stencil,
+		.clears_depth = render_pass->clears_depth_alone,
+		.clears_stencil = render_pass->clears_stencil_alone };
+	v4x_blit_clear(
+		&queue->blit, &clear, render_pass->color_count, replay->framebuffer->width, replay->framebuffer->height);
+}
+
 // A load draws each image back over the area unless eDRAM holds it there, into its target alone where there are
 // several.
 static void draw_back(VkQueue queue, const Replay *replay, EdramPart *colors)
@@ -1042,6 +1058,7 @@ static void begin_render_pass(VkQueue queue, Replay *replay)
 		clear_image_depth(queue, replay, &queue->depths[replay->depth_part]);
 	draw_back(queue, replay, colors);
 	clear_targets(queue, replay, colors);
+	clear_depth_part(queue, replay);
 	v4x_profile_pass_lap(V4X_PROFILE_PASS_FILL);
 	if (keep_colors(queue, colors, render_pass->color_count, replay->serial))
 		set_target(replay);
@@ -1388,6 +1405,7 @@ static void load_tiles(VkQueue queue, const Replay *replay)
 		!depth_kept(queue, replay)) {
 		depth_undefined();
 	}
+	clear_depth_part(queue, replay);
 	for (uint32_t i = 0; i < count; i++) {
 		if (render_pass->load_ops[i] != VK_ATTACHMENT_LOAD_OP_LOAD)
 			continue;

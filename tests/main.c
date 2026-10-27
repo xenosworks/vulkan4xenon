@@ -58,6 +58,7 @@ int main(void)
 		test_render_areas(&harness);
 		test_small_targets(&harness);
 		test_small_depth(&harness);
+		test_depth_parts(&harness);
 		test_gpu_blits(&harness);
 		test_render_to_texture(&harness);
 		test_edram_parts(&harness);

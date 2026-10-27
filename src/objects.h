@@ -461,6 +461,9 @@ typedef struct {
 	uint32_t depth_index;
 	bool clears_depth;
 	bool loads_depth;
+	// It clears depth and loads stencil, or the reverse: depth loads, then the one part clears.
+	bool clears_depth_alone;
+	bool clears_stencil_alone;
 	// It stores depth or stencil and leaves the attachment in a layout to sample it in, so a sampled depth image is
 	// resolved into its texture at its end; one kept as an attachment stays in eDRAM alone.
 	bool leaves_depth_to_read;
