@@ -311,6 +311,46 @@ static void blit_row(const BlitRow *blit, float towards_below)
 	}
 }
 
+// Whether a format's channels are 8-bit fixed point and fill its bytes, so a mean of its texels is each byte's mean.
+static bool bytes_are_channels(const V4xFormat *format)
+{
+	uint32_t bits = 0;
+	for (uint32_t c = 0; c < 4; c++) {
+		if (format->bits[c] && (format->bits[c] != 8 || format->shifts[c] % 8))
+			return false;
+		bits += format->bits[c];
+	}
+	return format->number == V4X_NUMBER_UNORM && !format->compressed && bits == format->texel_bytes * 8u;
+}
+
+// A linear blit of such a format that halves or keeps each side, as blits making a mip chain do (RetroArch's menu
+// textures): each destination texel's centre falls midway between source texels or on one, so it's the mean of the
+// 2x2, 2x1 or one texels under it, byte by byte. The float path unpacks and packs each texel: RetroArch's start spent
+// 10.6 s in 930 such blits on the console (2026-10-27).
+static bool box_blit(const BlitRow *blit, uint32_t from_height, uint32_t to_height)
+{
+	return blit->linear && bytes_are_channels(blit->format) &&
+		(blit->from_width == 2 * blit->to_width || blit->from_width == blit->to_width) &&
+		(from_height == 2 * to_height || from_height == to_height);
+}
+
+// A destination row as box_blit has it, from the source row above and the one below, the same row if the height
+// stays; each byte the mean rounded half up, where the float path rounds to even.
+static void box_row(const BlitRow *blit, uint32_t below)
+{
+	const uint32_t bytes = blit->format->texel_bytes;
+	const uint32_t second = blit->from_width == blit->to_width ? 0 : bytes;
+	const uint8_t *const upper = rows[ROW_ABOVE];
+	const uint8_t *const lower = rows[below];
+	for (uint32_t x = 0; x < blit->to_width; x++) {
+		const uint32_t at = x * (bytes + second);
+		for (uint32_t b = at; b < at + bytes; b++) {
+			const uint32_t sum = upper[b] + upper[b + second] + lower[b] + lower[b + second];
+			rows[ROW_OUT][x * bytes + b - at] = (uint8_t)((sum + 2) >> 2);
+		}
+	}
+}
+
 // A destination layer's or 3D slice's level from the source's.
 static void blit_slice(const Command *command, const BlitRow *blit, uint32_t from, uint32_t to)
 {
@@ -320,11 +360,17 @@ static void blit_slice(const Command *command, const BlitRow *blit, uint32_t fro
 	const uint32_t to_level = command->image_copy.destination_level;
 	const uint32_t from_height = level_size(source->height, from_level);
 	const uint32_t to_height = level_size(destination->height, to_level);
+	const bool box = box_blit(blit, from_height, to_height);
+	const bool two_rows = !box || from_height != to_height;
 	for (uint32_t y = 0; y < to_height; y++) {
 		const Taps down = taps(y, to_height, from_height, blit->linear);
 		xsdk_texture_download_slice_rows(&source->texture, from_level, from, down.first, 1, rows[ROW_ABOVE], 0);
-		xsdk_texture_download_slice_rows(&source->texture, from_level, from, down.second, 1, rows[ROW_BELOW], 0);
-		blit_row(blit, down.towards_second);
+		if (two_rows)
+			xsdk_texture_download_slice_rows(&source->texture, from_level, from, down.second, 1, rows[ROW_BELOW], 0);
+		if (box)
+			box_row(blit, two_rows ? ROW_BELOW : ROW_ABOVE);
+		else
+			blit_row(blit, down.towards_second);
 		xsdk_texture_upload_slice_rows(&destination->texture, to_level, to, y, 1, rows[ROW_OUT], 0);
 	}
 }

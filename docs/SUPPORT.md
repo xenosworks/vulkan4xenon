@@ -648,7 +648,11 @@ Some are there to refuse, as the features they need aren't reported. Each logs w
   filtering. Each destination texel samples the source at its centre, nearest or between the four texels around it,
   edges clamped: the CPU unpacks each texel's channels to floats, an sRGB format's colours through sRGB's curve, mixes
   them, and packs them again rounded to the nearest (src/format.c). A chain of levels blitted down from the base makes
-  an image's mips, a cube's a layer at a time. Each layer or 3D slice goes into one of its own; a blit that scales a 3D
+  an image's mips, a cube's a layer at a time. A linear blit that halves or keeps each side of a format whose channels
+  are all 8-bit fixed point (`R8_UNORM`, `R8G8_UNORM`, `R8G8B8A8_UNORM`, `B8G8R8A8_UNORM`, `A8B8G8R8_UNORM_PACK32`),
+  as each step of such a chain does, puts each destination texel's centre midway between source texels or on one, so
+  it takes each byte's mean of the 2x2, 2x1 or one texels under it, rounded half up, without unpacking them (milestone
+  67): RetroArch's start blits its menu's mips, 930 blits that took 10.6 s through floats. Each layer or 3D slice goes into one of its own; a blit that scales a 3D
   image's depth fails the command buffer, as does a blit neither path takes, such as one of part of a level the GPU
   doesn't draw.
 - `vkCmdClearColorImage` fills whole levels with the colour, packed as the format holds it, an sRGB format's colours

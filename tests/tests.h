@@ -88,6 +88,9 @@ void test_edram_parts(const Harness *harness);
 // Copies into images from the GPU's write-combined memory, drawn on the GPU: whole, a rectangle, before a fill of their
 // rows, in both 8-bit formats, each read back texel by texel, and the whole copy timed (milestone 67).
 void test_gpu_uploads(const Harness *harness);
+// Mip chains blitted down linearly on the CPU, a mean of 2x2 texels a texel, read back texel by texel and timed against
+// nearest blits (milestone 67).
+void test_cpu_mips(const Harness *harness);
 // Uniform arrays read at run-time indices: matrices picked per vertex, colours by pixel column (milestone 11).
 void test_run_time_index(const Harness *harness);
 // Copies from cached memory, R8 and R8G8 through swizzled views, R8 filtered, and copies around a draw (milestone 12).
