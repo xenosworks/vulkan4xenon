@@ -516,7 +516,9 @@ Some are there to refuse, as the features they need aren't reported. Each logs w
 - Depth images: `VK_FORMAT_D24_UNORM_S8_UINT`, one level, a depth attachment, sampled if they're made to be, and
   cleared by `vkCmdClearDepthStencilImage` if they're made a transfer destination. One that isn't sampled has a
   memory requirement of one page, which nothing uses. A sampled one is a tiled D24S8 texture (`XSDK_FORMAT_D24S8`),
-  both sides over 16 texels as a resolve needs, and needs its texture's memory:
+  one 16 texels or less on a side with its packed mips off, its base at the corner where a resolve writes, as a small
+  colour attachment's (milestone 67: PPSSPP makes 1x1 framebuffers with sampled depth); a multisampled one still needs
+  both sides over 16 texels. A sampled one needs its texture's memory:
   - after a pass leaves it to be read (Render passes), each texel's word in its memory holds depth's 24 bits above
     stencil's 8, as the CPU reads it, at `tiled_index` (tests/tiled_index.h) of the texel and the 32-texel pitch.
     **Deviation:** Vulkan leaves an optimal-tiled image's memory opaque; a mapped read of it is how an app reads depth

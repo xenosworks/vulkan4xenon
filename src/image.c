@@ -99,10 +99,9 @@ static VkResult check_depth_create_info(const VkImageCreateInfo *info)
 		!(info->usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) || (info->usage & ~V4X_DEPTH_IMAGE_USAGE) ||
 		(multisampled && (info->usage & VK_IMAGE_USAGE_SAMPLED_BIT)))
 		return v4x_host_unsupported("depth images other than an attachment of one level, sampled at one sample or not");
-	// A resolve writes from the corner, so the texture's base can't sit in the packed tail (xsdk:src/gpu_resolve.c).
-	if (((info->usage & VK_IMAGE_USAGE_SAMPLED_BIT) || multisampled) &&
-		(info->extent.width <= V4X_PACKED_SIDE || info->extent.height <= V4X_PACKED_SIDE))
-		return v4x_host_unsupported("sampled or multisampled depth images of 16 texels or less on a side");
+	// A resolve writes from the corner; a sampled one's base is put there (vkCreateImage), a multisampled one's not.
+	if (multisampled && (info->extent.width <= V4X_PACKED_SIDE || info->extent.height <= V4X_PACKED_SIDE))
+		return v4x_host_unsupported("multisampled depth images of 16 texels or less on a side");
 	return VK_SUCCESS;
 }
 
@@ -208,8 +207,10 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateImage(
 	image->is_sampled_depth = is_depth;
 	image->is_texture = !is_depth;
 	image->is_attachment = (pCreateInfo->usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) != 0;
-	// Its base at the corner, where resolves write (xsdk:docs/HARDWARE.md, "A small base with packed mips off").
-	if (image->is_attachment)
+	// Its base at the corner, where resolves write (xsdk:docs/HARDWARE.md, "A small base with packed mips off"): a
+	// colour attachment's, and a sampled depth image's, as PPSSPP's 1x1 framebuffers have (God of War: Chains of
+	// Olympus).
+	if (image->is_attachment || is_depth)
 		xsdk_texture_base_at_corner(&image->texture);
 	*pImage = v4x_handle(image);
 	return VK_SUCCESS;

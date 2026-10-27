@@ -91,6 +91,9 @@ void test_gpu_uploads(const Harness *harness);
 // Mip chains blitted down linearly on the CPU, a mean of 2x2 texels a texel, read back texel by texel and timed against
 // nearest blits (milestone 67).
 void test_cpu_mips(const Harness *harness);
+// Sampled depth attachments of 1x1, 4x4 and 16x16, their bases at the corner: resolved, sampled and loaded again
+// (milestone 67).
+void test_small_depth(const Harness *harness);
 // Uniform arrays read at run-time indices: matrices picked per vertex, colours by pixel column (milestone 11).
 void test_run_time_index(const Harness *harness);
 // Copies from cached memory, R8 and R8G8 through swizzled views, R8 filtered, and copies around a draw (milestone 12).
