@@ -9,12 +9,14 @@
 #include "tiled_index.h"
 #include "xsdk/log.h"
 
-// Render passes going back and forth between framebuffers (milestone 66): three of 1280x720, 720 tiles each, more than
-// eDRAM's 2048 hold, so going back to them draws one back, every texel kept; a main one with depth and a small one
-// drawn between its passes, as an emulator's palette blits go, kept in eDRAM side by side so neither is drawn back,
-// each pass's resolve put off till a pass samples the main one into a copy, then made before it;
-// then part of the main one blitted into the small one on the GPU while eDRAM holds the small one past the blit's
-// tiles, so the pass loading it after draws it back with the blit.
+// Render passes going back and forth between framebuffers (milestone 66): two of 1280x1040, 1040 tiles each, more than
+// half of eDRAM's 2048, so the second takes the first's tiles wherever either goes, and the first, loaded again, must
+// be resolved before and drawn back after; three of 1280x720, 720 tiles each, more than eDRAM holds, so going back to
+// them draws one back, every texel kept; a main one with depth and a small one drawn between its passes, as an
+// emulator's palette blits go, kept in eDRAM side by side so neither is drawn back, each pass's resolve put off till a
+// pass samples the main one into a copy, then made before it; then part of the main one blitted into the small one on
+// the GPU while eDRAM holds the small one past the blit's tiles, so the pass loading it after draws it back with the
+// blit.
 
 enum {
 	TOLERANCE = 2,
@@ -26,6 +28,8 @@ enum {
 	BIG_WIDTH = 1280,
 	BIG_HEIGHT = 720,
 	BIGS = 3,
+	TALL_HEIGHT = 1040,
+	TALL_PROBES = 5,
 	FENCE_TIMEOUT_NS = 1000000000,
 	// The main framebuffer's texels probed, and each big one's.
 	MAIN_PROBES = ROUNDS + 4,
@@ -46,6 +50,8 @@ typedef enum {
 	IMAGE_MAIN,
 	IMAGE_SMALL,
 	IMAGE_COPY,
+	IMAGE_TALL,
+	IMAGE_TALL_OTHER,
 	IMAGE_BIG,
 	IMAGES = IMAGE_BIG + BIGS,
 } ImageKind;
@@ -71,6 +77,8 @@ typedef struct {
 	VkFramebuffer main;
 	VkFramebuffer small;
 	VkFramebuffer copy;
+	VkFramebuffer tall;
+	VkFramebuffer tall_other;
 	VkFramebuffer bigs[BIGS];
 	VkPipelineLayout layout;
 	VkPipeline depth_pipeline;
@@ -154,6 +162,20 @@ static const Probe copy_probes[COPY_PROBES] = {
 	{ "round 2's quad", 40, 9, { 40, 200, 200 } },
 	{ "the clear colour, round 3's quad after the copy", 46, 9, { 0, 0, 96 } },
 	{ "the clear colour", 60, 50, { 0, 0, 96 } },
+};
+
+// The tall framebuffer's clear, a colour no other image here holds, its quad, the other's fill, then the quad drawn
+// once it's loaded again; probed at its first rows, which the other takes wherever both go, its last, and between.
+static const VkClearValue tall_clear = { .color = { .float32 = RGBA(180, 90, 20) } };
+static const HarnessQuad tall_quad = { 400, 300, 300, 200, 0.0f, RGBA(40, 200, 40), false };
+static const HarnessQuad tall_fill = { 0, 0, BIG_WIDTH, TALL_HEIGHT, 0.0f, RGBA(40, 40, 220), false };
+static const HarnessQuad tall_loaded_quad = { 900, 700, 200, 200, 0.0f, RGBA(230, 210, 30), false };
+static const Probe tall_probes[TALL_PROBES] = {
+	{ "the clear colour in the first rows", 20, 4, { 180, 90, 20 } },
+	{ "the clear colour in the last rows", 1260, 1036, { 180, 90, 20 } },
+	{ "the clear colour between", 640, 600, { 180, 90, 20 } },
+	{ "its quad", 550, 400, { 40, 200, 40 } },
+	{ "the quad drawn once loaded again", 1000, 800, { 230, 210, 30 } },
 };
 
 static HarnessQuad round_quad(uint32_t round)
@@ -241,9 +263,10 @@ static VkResult create_framebuffer(const Harness *harness, VkRenderPass render_p
 
 static VkResult create_targets(const Harness *harness, Parts *parts)
 {
-	static const uint32_t widths[IMAGES] = { MAIN_WIDTH, SMALL_WIDTH, SMALL_WIDTH, BIG_WIDTH, BIG_WIDTH, BIG_WIDTH };
-	static const uint32_t heights[IMAGES] = { MAIN_HEIGHT, SMALL_HEIGHT, SMALL_HEIGHT, BIG_HEIGHT, BIG_HEIGHT,
-		BIG_HEIGHT };
+	static const uint32_t widths[IMAGES] = { MAIN_WIDTH, SMALL_WIDTH, SMALL_WIDTH, BIG_WIDTH, BIG_WIDTH, BIG_WIDTH,
+		BIG_WIDTH, BIG_WIDTH };
+	static const uint32_t heights[IMAGES] = { MAIN_HEIGHT, SMALL_HEIGHT, SMALL_HEIGHT, TALL_HEIGHT, TALL_HEIGHT,
+		BIG_HEIGHT, BIG_HEIGHT, BIG_HEIGHT };
 	const VkImageUsageFlags usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
 		VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 	VkResult result = VK_SUCCESS;
@@ -278,6 +301,12 @@ static VkResult create_targets(const Harness *harness, Parts *parts)
 	if (result == VK_SUCCESS)
 		result = create_framebuffer(
 			harness, parts->passes[PASS_SMALL], &parts->views[IMAGE_COPY], 1, SMALL_WIDTH, SMALL_HEIGHT, &parts->copy);
+	if (result == VK_SUCCESS)
+		result = create_framebuffer(
+			harness, parts->passes[PASS_BIG_CLEAR], &parts->views[IMAGE_TALL], 1, BIG_WIDTH, TALL_HEIGHT, &parts->tall);
+	if (result == VK_SUCCESS)
+		result = create_framebuffer(harness, parts->passes[PASS_SMALL], &parts->views[IMAGE_TALL_OTHER], 1, BIG_WIDTH,
+			TALL_HEIGHT, &parts->tall_other);
 	for (uint32_t i = 0; i < BIGS && result == VK_SUCCESS; i++)
 		result = create_framebuffer(harness, parts->passes[PASS_BIG_CLEAR], &parts->views[IMAGE_BIG + i], 1, BIG_WIDTH,
 			BIG_HEIGHT, &parts->bigs[i]);
@@ -456,6 +485,23 @@ static void record_main(VkCommandBuffer commands, const Parts *parts)
 	vkCmdEndRenderPass(commands);
 }
 
+// The tall framebuffer cleared with a quad, the other filled over it, then the first loaded again with a quad.
+static void record_tall(VkCommandBuffer commands, const Parts *parts)
+{
+	begin(commands, parts, parts->passes[PASS_BIG_CLEAR], parts->tall, BIG_WIDTH, TALL_HEIGHT, &tall_clear, 1,
+		parts->flat_pipeline);
+	harness_push_quad_in(commands, parts->layout, &tall_quad, BIG_WIDTH, TALL_HEIGHT);
+	vkCmdEndRenderPass(commands);
+	begin(commands, parts, parts->passes[PASS_SMALL], parts->tall_other, BIG_WIDTH, TALL_HEIGHT, NULL, 0,
+		parts->flat_pipeline);
+	harness_push_quad_in(commands, parts->layout, &tall_fill, BIG_WIDTH, TALL_HEIGHT);
+	vkCmdEndRenderPass(commands);
+	begin(commands, parts, parts->passes[PASS_BIG_LOAD], parts->tall, BIG_WIDTH, TALL_HEIGHT, NULL, 0,
+		parts->flat_pipeline);
+	harness_push_quad_in(commands, parts->layout, &tall_loaded_quad, BIG_WIDTH, TALL_HEIGHT);
+	vkCmdEndRenderPass(commands);
+}
+
 // The three big framebuffers, then each loaded again with a quad of its own.
 static void record_bigs(VkCommandBuffer commands, const Parts *parts)
 {
@@ -592,6 +638,8 @@ static void destroy(const Harness *harness, Parts *parts)
 	vkDestroyPipelineLayout(device, parts->layout, NULL);
 	for (uint32_t i = 0; i < BIGS; i++)
 		vkDestroyFramebuffer(device, parts->bigs[i], NULL);
+	vkDestroyFramebuffer(device, parts->tall_other, NULL);
+	vkDestroyFramebuffer(device, parts->tall, NULL);
 	vkDestroyFramebuffer(device, parts->copy, NULL);
 	vkDestroyFramebuffer(device, parts->small, NULL);
 	vkDestroyFramebuffer(device, parts->main, NULL);
@@ -612,8 +660,11 @@ void test_edram_parts(const Harness *harness)
 	static Parts parts;
 	memset(&parts, 0, sizeof parts);
 	const bool built = build(harness, &parts);
-	check("edram parts: six images, six render passes and three pipelines made", built);
+	check("edram parts: eight images, six render passes and three pipelines made", built);
 	// The big ones first, so one holds tile 0 and the main one goes past the blit's tiles.
+	const bool tall_ran = built && run(harness, &parts, record_tall);
+	check("edram parts: a 1280x1040 framebuffer loaded after another took its tiles holds every texel it was drawn",
+		tall_ran && misses(harness, &parts, IMAGE_TALL, BIG_WIDTH, tall_probes, TALL_PROBES) == 0);
 	const uint32_t before = v4x_edram_counts().drawn_back;
 	const bool bigs_ran = built && run(harness, &parts, record_bigs);
 	const uint32_t big_drawn = v4x_edram_counts().drawn_back - before;
