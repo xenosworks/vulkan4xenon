@@ -614,7 +614,9 @@ Some are there to refuse, as the features they need aren't reported. Each logs w
   many texels by, the texels rounded up to 32 and then the bytes to 256 (xsdk:src/texture.c), so rows of 512 texels
   but not of 100, into any rectangle a drawn blit's destination takes (below), is that blit from the buffer's rows as
   a linear texture of the image's format, sampled texel for texel, nearest. The replay doesn't wait for it; a copy
-  into a buffer after it waits for the GPU, as after a draw. Any other region runs on the CPU.
+  into a buffer after it waits for the GPU, as after a draw. Any other region runs on the CPU. On the console the copy
+  is bit for bit, and Flycast's took 30 to 36 us of its submits and 0.3 ms more of the GPU a present
+  (results/2026-10-27-milestone-67/).
 - `vkCmdCopyImage` copies whole levels of one size between formats of one texel size, the bits as they are, a row at a
   time, as many of a cube's layers or a 3D image's slices as the other gives. A copy between a compressed and an
   uncompressed format, which Vulkan allows, fails the command buffer, as their 16-bit words lie in different orders.

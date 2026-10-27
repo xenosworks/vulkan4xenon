@@ -1,0 +1,1517 @@
+log: game:\flycast_libretro_xsdk.log
+log: named after \Device\Harddisk0\Partition1\XSDK\m65\cores\flycast_libretro_xsdk.xex
+log: also over UDP to 192.168.0.125:7371
+display: 1280x720 scaled to the 1920x1080 output
+display: the line counter reached 720 after 19998 us
+retroarch: started as \Device\Harddisk0\Partition1\XSDK\m65\cores\flycast_libretro_xsdk.xex; RetroArch's folder is /Device/Harddisk0/Partition1/XSDK/m65
+mkdir: NtCreateFile(\Device\Harddisk0\Partition1\XSDK\m65\cache) failed: 0xC0000035
+retroarch: launched with content /Device/Harddisk0/Partition1/XSDK/m65/roms/Sonic Adventure/Sonic Adventure USA Rev A.cue
+[INFO] === Build =======================================
+[INFO] Capabilities: VMX 
+[INFO] Version: 1.22.2
+[INFO] Built: Oct 27 2026
+[INFO] =================================================
+[INFO] [Input] Found input driver: "xsdk".
+[INFO] [Override] Redirecting save file to "/Device/Harddisk0/Partition1/XSDK/m65/saves/Flycast/Sonic Adventure USA Rev A.srm".
+[INFO] [Override] Redirecting save state to "/Device/Harddisk0/Partition1/XSDK/m65/states/Flycast/Sonic Adventure USA Rev A.state".
+[INFO] [Environ] GET_VFS_INTERFACE. Core requested version >= V3, providing V3.
+[INFO] [Environ] GET_CORE_OPTIONS_VERSION.
+[INFO] [Environ] SET_CORE_OPTIONS_V2_INTL.
+[INFO] [Environ] SET_CONTROLLER_INFO.
+[INFO] [Environ] SET_SUPPORT_NO_GAME: yes.
+[INFO] [Environ] GET_LED_INTERFACE.
+[INFO] [Environ] GET_LOG_INTERFACE.
+[INFO] [Environ] GET_PERF_INTERFACE.
+[INFO] [Environ] SET_PIXEL_FORMAT: XRGB8888.
+[INFO] [Environ] SET_KEYBOARD_CALLBACK.
+[INFO] [Environ] GET_DISK_CONTROL_INTERFACE_VERSION.
+[INFO] [Environ] SET_DISK_CONTROL_EXT_INTERFACE.
+[libretro WARN] [VMEM] Warning! nvmem is DISABLED (due to failure or not being built-in
+[libretro INFO] [VMEM] BASE 0x0 RAM(16 MB) 0x410a000 VRAM64(8 MB) 0x510b000 ARAM(2 MB) 0x590c000
+[INFO] [Content] Content loading skipped. Implementation will load it on its own.
+[libretro INFO] [BOOT] retro_load_game: /Device/Harddisk0/Partition1/XSDK/m65/roms/Sonic Adventure/Sonic Adventure USA Rev A.cue
+[INFO] [Environ] GET_RUMBLE_INTERFACE.
+[INFO] [Environ] GET_SYSTEM_DIRECTORY: "/Device/Harddisk0/Partition1/XSDK/m65/system".
+[INFO] [Environ] GET_SAVE_DIRECTORY: "/Device/Harddisk0/Partition1/XSDK/m65/saves/Flycast".
+[ERROR] [Environ] GET_VARIABLE: reicast_texupscale - Invalid value.
+[ERROR] [Environ] GET_VARIABLE: reicast_texupscale_max_filtered_texture_size - Invalid value.
+[ERROR] [Environ] GET_VARIABLE: reicast_dump_unique_textures - Invalid value.
+[INFO] [Environ] SET_SAVE_STATE_IN_BACKGROUND: no.
+[libretro INFO] File extension is: .cue
+[INFO] [Environ] GET_PREFERRED_HW_RENDER, video driver: "vulkan"...
+[INFO] [Environ] GET_PREFERRED_HW_RENDER: RETRO_HW_CONTEXT_VULKAN.
+[INFO] [Environ] SET_HW_RENDER, context type: vulkan.
+[INFO] [HW] Requesting Vulkan context.
+[INFO] [Environ] SET_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE.
+[libretro WARN] [VMEM] Warning! nvmem is DISABLED (due to failure or not being built-in
+[libretro INFO] [VMEM] BASE 0x0 RAM(16 MB) 0x410a000 VRAM64(8 MB) 0x510b000 ARAM(2 MB) 0x5d5d000
+[ERROR] [Environ] GET_VARIABLE: reicast_texupscale - Invalid value.
+[ERROR] [Environ] GET_VARIABLE: reicast_texupscale_max_filtered_texture_size - Invalid value.
+[ERROR] [Environ] GET_VARIABLE: reicast_dump_unique_textures - Invalid value.
+open: NtCreateFile(\Device\Harddisk0\Partition1\XSDK\m65\roms\Sonic Adventure) failed: 0xC00000BA
+open: NtCreateFile(\Device\Harddisk0\Partition1\XSDK\m65\roms\Sonic Adventure) failed: 0xC00000BA
+open: NtCreateFile(\Device\Harddisk0\Partition1\XSDK\m65\roms\Sonic Adventure) failed: 0xC00000BA
+[libretro INFO] [BOOT] Game ID is [MK-51000]
+[INFO] [Environ] GET_SYSTEM_DIRECTORY: "/Device/Harddisk0/Partition1/XSDK/m65/system".
+open: NtCreateFile(\Device\Harddisk0\Partition1\XSDK\m65\system\dc\textures\MK-51000) failed: 0xC000003A
+[libretro INFO] [BOOT] Did not load BIOS, using reios
+[libretro INFO] [BOOT] Game ID is [MK-51000]
+[INFO] [Environ] SET_ROTATION: "0" (0 deg).
+[INFO] [SRAM] Skipping SRAM load.
+[INFO] [Core] Version of libretro API: 1, Compiled against API: 1
+[INFO] [Core] Geometry: 640x480, Aspect: 1.333, FPS: 59.95, Sample rate: 44100.00 Hz.
+[INFO] [Video] Set video size to: fullscreen.
+[INFO] [Video] Using HW render, vulkan driver forced.
+[INFO] [Vulkan] Found GPU at index 0: "Xenos (vulkan4xenon)".
+[INFO] [Vulkan] Using GPU index 0.
+[INFO] [Vulkan] Got HW context negotiation interface 1.
+[INFO] [Vulkan] Found GPU at index 0: "Xenos (vulkan4xenon)".
+[INFO] [Vulkan] Using GPU index 0.
+[libretro INFO] [RENDERER] Device extension enabled: VK_KHR_swapchain
+[libretro INFO] [RENDERER] Device extension unavailable: VK_KHR_get_memory_requirements2
+[libretro INFO] [RENDERER] Device extension unavailable: VK_KHR_get_physical_device_properties2
+display: 1280x720 scaled to the 1920x1080 output
+display: the line counter reached 720 after 24946 us
+[INFO] [Vulkan] Using semaphores for WSI acquire.
+[INFO] [Vulkan] Using GPU: "Xenos (vulkan4xenon)".
+[INFO] [Vulkan] Got 3 swapchain images.
+[INFO] [Vulkan] Using resolution 1280x720.
+[INFO] [Vulkan] Using BGRA8888 format.
+[INFO] [Vulkan] Loading stock shader.
+vulkan4xenon: not supported: address modes other than repeat, mirrored repeat, clamp to edge and to border, and mirror clamp to edge with its extension
+vulkan4xenon: not supported: address modes other than repeat, mirrored repeat, clamp to edge and to border, and mirror clamp to edge with its extension
+vulkan4xenon: not supported: address modes other than repeat, mirrored repeat, clamp to edge and to border, and mirror clamp to edge with its extension
+vulkan4xenon: not supported: address modes other than repeat, mirrored repeat, clamp to edge and to border, and mirror clamp to edge with its extension
+[INFO] [Video] Graphics driver did not initialize an input driver. Attempting to pick a suitable driver.
+[INFO] [Input] Found joypad driver: "xsdk".
+[INFO] [Video] Found display server: "null".
+[libretro INFO] [RENDERER] retro_vk_context_reset
+[libretro INFO] [RENDERER] GPU Supports Vulkan API: 1.0.363
+[libretro INFO] [RENDERER] eR5G5B5A1UnormPack16 not supported for optimal tiling
+open: NtCreateFile(\Device\Harddisk0\Partition1\XSDK\m65\system\dc\vulkan_pipeline.cache) failed: 0xC0000034
+[libretro INFO] [RENDERER] Using depth format D24UnormS8Uint tiling Optimal
+[libretro INFO] [RENDERER] VulkanRenderer::Init
+[INFO] [Environ] GET_CORE_OPTIONS_VERSION.
+[INFO] [Environ] SET_CORE_OPTIONS_V2_INTL.
+[INFO] [Core] Saved core options file to "/Device/Harddisk0/Partition1/XSDK/m65/config/Flycast/Flycast.opt".
+[libretro INFO] [RENDERER] Current renderer does not support 'Per-Pixel' Alpha Sorting.
+[INFO] [Audio] Set audio input rate to: 44096.14 Hz.
+[INFO] [XSDK] Audio at 48000 Hz, 12 frames of 256 samples ahead.
+[INFO] [Audio] Started synchronous audio driver.
+[INFO] [Display] Found display driver: "vulkan".
+open: NtCreateFile(\Device\Harddisk0\Partition1\XSDK\m65\assets\xmb\monochrome\png\core-input-remapping-options.png) failed: 0xC0000034
+[INFO] [Environ] SET_INPUT_DESCRIPTORS.
+[ERROR] [Environ] GET_VARIABLE: reicast_texupscale - Invalid value.
+[ERROR] [Environ] GET_VARIABLE: reicast_texupscale_max_filtered_texture_size - Invalid value.
+[ERROR] [Environ] GET_VARIABLE: reicast_dump_unique_textures - Invalid value.
+[INFO] [Playlist] Loading favorites file: "/Device/Harddisk0/Partition1/XSDK/m65/playlists/builtin/content_favorites.lpl".
+[INFO] [Playlist] Loading history file: "/Device/Harddisk0/Partition1/XSDK/m65/playlists/builtin/content_history.lpl".
+[INFO] [Playlist] Loading history file: "/Device/Harddisk0/Partition1/XSDK/m65/playlists/builtin/content_music_history.lpl".
+[INFO] [Playlist] Written to file: "/Device/Harddisk0/Partition1/XSDK/m65/playlists/builtin/content_history.lpl".
+[libretro INFO] [REIOS] -----------------
+[libretro INFO] [REIOS] REIOS: Booting up
+[libretro INFO] [REIOS] -----------------
+vulkan4xenon: profile, the last 10 s: 1 draws, 1060 commands, 123 submits, 1 presents; a present 1.0 draws, 10632363.0 us submitting; a submit 0.0 draws, 86442.0 us; a lap 20.7 ns
+vulkan4xenon: profile, the last 10 s: dispatch 300 ns a draw, 280 less its 1.0 laps
+vulkan4xenon: profile, the last 10 s: push 0 ns a draw, 0 less its 0.0 laps
+vulkan4xenon: profile, the last 10 s: pipeline 8741 ns a draw, 8721 less its 1.0 laps
+vulkan4xenon: profile, the last 10 s: constants 721 ns a draw, 701 less its 1.0 laps
+vulkan4xenon: profile, the last 10 s: resources 5192 ns a draw, 5152 less its 2.0 laps
+vulkan4xenon: profile, the last 10 s: checks 3228 ns a draw, 3187 less its 2.0 laps
+vulkan4xenon: profile, the last 10 s: draws 681 ns a draw, 661 less its 1.0 laps
+vulkan4xenon: profile, the last 10 s: commands 2041633568 ns a draw, 2041611653 less its 1060.0 laps
+vulkan4xenon: profile, the last 10 s: submit 775979 ns a draw, 770907 less its 246.0 laps
+vulkan4xenon: profile, the last 10 s: all 2042428415 ns a draw, 2042401247 less its 1314.0 laps
+vulkan4xenon: profile, the last 10 s: command type 14 (src/objects.h), 10603441 us a present, 930 a present
+vulkan4xenon: profile, the last 10 s: the replay's waits for the GPU, 0 us a present, 0.0 a present
+vulkan4xenon: profile, the last 10 s: of them for draws before a copy into a buffer, 0 us a present, 0.0 a present
+vulkan4xenon: profile, the last 10 s: for what a submission used, 0 us a present, 0.0 a present
+vulkan4xenon: profile, the last 10 s: for room for a pass past eDRAM, 0 us a present, 0.0 a present
+vulkan4xenon: profile, the last 10 s: the app's waits for fences, outside the submit, 174846 us a present, 127.0 a present
+vulkan4xenon: profile, the last 10 s: images drawn back, 0.0 a present
+vulkan4xenon: profile, the last 10 s: resolves made to clear, 1.0 a present
+vulkan4xenon: profile, the last 10 s: resolves put off, 0.0 a present
+vulkan4xenon: profile, the last 10 s: put-off resolves made later, 0.0 a present
+vulkan4xenon: profile, the last 10 s: xsdk's waits for room in its ring, 0.0 a present
+vulkan4xenon: profile, the last 10 s: microseconds of them, 0.0 a present
+vulkan4xenon: profile, the last 10 s: passes' begins placing targets and forgetting what they reach, 5 us a present, 5734 ns a pass
+vulkan4xenon: profile, the last 10 s: passes' begins setting targets, 6 us a present, 6416 ns a pass
+vulkan4xenon: profile, the last 10 s: passes' begins drawing back and clearing, 20 us a present, 20491 ns a pass
+vulkan4xenon: profile, the last 10 s: passes' begins keeping parts, 1 us a present, 1784 ns a pass
+vulkan4xenon: profile, the last 10 s: passes' ends deciding stores, 0 us a present, 501 ns a pass
+vulkan4xenon: profile, the last 10 s: passes' ends resolving, 4 us a present, 4090 ns a pass
+vulkan4xenon: profile, the last 10 s: passes' ends' rest, 1 us a present, 1563 ns a pass
+vulkan4xenon: profile, the last 10 s: submits, 10632641 us a present, 123.0 a present, the longest 92960 us
+vulkan4xenon: profile, the last 10 s: fence waits, 0 us a present, 0.0 a present, the longest 0 us
+vulkan4xenon: profile, the last 10 s: acquires, 1 us a present, 1.0 a present, the longest 1 us
+vulkan4xenon: profile, the last 10 s: presents, 13 us a present, 1.0 a present, the longest 13 us
+vulkan4xenon: profile, the last 10 s: idle waits, 174854 us a present, 127.0 a present, the longest 2005 us
+vulkan4xenon: profile, the last 10 s: xsdk's vblanks 714, flips 1, vblanks showing the last frame again 0, flips past vblank 0; the longest wait for a buffer since the start 0 us
+vulkan4xenon: profile, timeline: idle wait by thread 000A0A30 on 801B0000 from 0 us to 1491 us, flips 0
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 3992 us to 95566 us, flips 0
+vulkan4xenon: profile, timeline: idle wait by thread 000A0A30 on 801B0000 from 95567 us to 97464 us, flips 0
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 99990 us to 191590 us, flips 0
+vulkan4xenon: profile, timeline: idle wait by thread 000A0A30 on 801B0000 from 191591 us to 193437 us, flips 0
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 195708 us to 287130 us, flips 0
+vulkan4xenon: profile, timeline: idle wait by thread 000A0A30 on 801B0000 from 287132 us to 288409 us, flips 0
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 290710 us to 382320 us, flips 0
+vulkan4xenon: profile, timeline: idle wait by thread 000A0A30 on 801B0000 from 382321 us to 383381 us, flips 0
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 385545 us to 477028 us, flips 0
+vulkan4xenon: profile, timeline: idle wait by thread 000A0A30 on 801B0000 from 477029 us to 478355 us, flips 0
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 480735 us to 572234 us, flips 0
+vulkan4xenon: profile, timeline: idle wait by thread 000A0A30 on 801B0000 from 572234 us to 573327 us, flips 0
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 575676 us to 667153 us, flips 0
+vulkan4xenon: profile, timeline: idle wait by thread 000A0A30 on 801B0000 from 667154 us to 668300 us, flips 0
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 670422 us to 762059 us, flips 0
+vulkan4xenon: profile, timeline: idle wait by thread 000A0A30 on 801B0000 from 762060 us to 762274 us, flips 0
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 764253 us to 855858 us, flips 0
+vulkan4xenon: profile, timeline: idle wait by thread 000A0A30 on 801B0000 from 855859 us to 857247 us, flips 0
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 859259 us to 950822 us, flips 0
+vulkan4xenon: profile, timeline: idle wait by thread 000A0A30 on 801B0000 from 950823 us to 952219 us, flips 0
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 954187 us to 1045775 us, flips 0
+vulkan4xenon: profile, timeline: idle wait by thread 000A0A30 on 801B0000 from 1045776 us to 1047193 us, flips 0
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 1049715 us to 1141309 us, flips 0
+vulkan4xenon: profile, timeline: idle wait by thread 000A0A30 on 801B0000 from 1141310 us to 1143166 us, flips 0
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 1145936 us to 1237594 us, flips 0
+vulkan4xenon: profile, timeline: idle wait by thread 000A0A30 on 801B0000 from 1237595 us to 1239137 us, flips 0
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 1241737 us to 1333438 us, flips 0
+vulkan4xenon: profile, timeline: idle wait by thread 000A0A30 on 801B0000 from 1333438 us to 1335110 us, flips 0
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 1337961 us to 1429616 us, flips 0
+vulkan4xenon: profile, timeline: idle wait by thread 000A0A30 on 801B0000 from 1429617 us to 1431083 us, flips 0
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 1433396 us to 1524925 us, flips 0
+vulkan4xenon: profile, timeline: idle wait by thread 000A0A30 on 801B0000 from 1524926 us to 1526055 us, flips 0
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 1528239 us to 1619903 us, flips 0
+vulkan4xenon: profile, timeline: idle wait by thread 000A0A30 on 801B0000 from 1619903 us to 1621028 us, flips 0
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 1623193 us to 1714616 us, flips 0
+vulkan4xenon: profile, timeline: idle wait by thread 000A0A30 on 801B0000 from 1714617 us to 1716001 us, flips 0
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 1718505 us to 1809891 us, flips 0
+vulkan4xenon: profile, timeline: idle wait by thread 000A0A30 on 801B0000 from 1809892 us to 1810974 us, flips 0
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 1813136 us to 1904703 us, flips 0
+vulkan4xenon: profile, timeline: idle wait by thread 000A0A30 on 801B0000 from 1904704 us to 1905947 us, flips 0
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 1908566 us to 2000059 us, flips 0
+vulkan4xenon: profile, timeline: idle wait by thread 000A0A30 on 801B0000 from 2000060 us to 2001920 us, flips 0
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 2003869 us to 2095349 us, flips 0
+vulkan4xenon: profile, timeline: idle wait by thread 000A0A30 on 801B0000 from 2095351 us to 2095894 us, flips 0
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 2097907 us to 2189374 us, flips 0
+vulkan4xenon: profile, timeline: idle wait by thread 000A0A30 on 801B0000 from 2189375 us to 2190866 us, flips 0
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 2193007 us to 2284356 us, flips 0
+vulkan4xenon: profile, timeline: idle wait by thread 000A0A30 on 801B0000 from 2284358 us to 2285838 us, flips 0
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 2288409 us to 2380768 us, flips 0
+vulkan4xenon: profile, timeline: idle wait by thread 000A0A30 on 801B0000 from 2380769 us to 2381811 us, flips 0
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 2384373 us to 2475821 us, flips 0
+vulkan4xenon: profile, timeline: idle wait by thread 000A0A30 on 801B0000 from 2475822 us to 2477783 us, flips 0
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 2480357 us to 2571872 us, flips 0
+vulkan4xenon: profile, timeline: idle wait by thread 000A0A30 on 801B0000 from 2571873 us to 2573757 us, flips 0
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 2576296 us to 2667998 us, flips 0
+vulkan4xenon: profile, timeline: idle wait by thread 000A0A30 on 801B0000 from 2667999 us to 2669729 us, flips 0
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 2673672 us to 2765798 us, flips 0
+vulkan4xenon: profile, timeline: idle wait by thread 000A0A30 on 801B0000 from 2765799 us to 2767701 us, flips 0
+vulkan4xenon: profile, timeline: idle wait by thread 000A0A30 on 801B0000 from 2770402 us to 2771699 us, flips 0
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 2771844 us to 2771850 us, flips 0
+vulkan4xenon: profile, timeline: idle wait by thread 000A0A30 on 801B0000 from 2771851 us to 2773699 us, flips 0
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 2941708 us to 2941781 us, flips 0
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 2941784 us to 2941797 us, flips 0
+vulkan4xenon: profile, the last 10 s: uniform blocks the GPU loaded, 1.0 a present
+vulkan4xenon: profile, the last 10 s: uniform blocks the CPU read, 0.0 a present
+vulkan4xenon: profile, the last 10 s: quads the CPU read from uniform blocks, 0.0 a present
+vulkan4xenon: profile, the last 10 s: push constant quads written, 0.0 a present
+vulkan4xenon: profile, the last 10 s: pipelines applied whole, 1.0 a present
+vulkan4xenon: profile, the last 10 s: textures pointed, 1.0 a present
+vulkan4xenon: profile, the last 10 s: streams pointed, 1.0 a present
+vulkan4xenon: profile, the last 10 s: bytes copied into images, 30408788.0 a present
+vulkan4xenon: profile, the last 10 s: of them from write-combined memory, 0.0 a present
+vulkan4xenon: profile, the last 10 s: bytes drawn into images from buffers, 0.0 a present
+vulkan4xenon: profile, the last 10 s: rows read back to copy part of a row, 0.0 a present
+vulkan4xenon: profile, the last 10 s: bytes copied out of images, 0.0 a present
+vulkan4xenon: profile, the last 10 s: bytes copied between images, 0.0 a present
+vulkan4xenon: profile, the last 10 s: bytes copied into buffers, 0.0 a present
+vulkan4xenon: profile, the last 10 s: literal registers written, 0.0 a present
+vulkan4xenon: profile, the last 10 s: pipelines applied whole again, 0.0 a present
+vulkan4xenon: profile, the last 10 s: the GPU's time on the submits, 381 us a present, over 115 submits it finished
+[INFO] [Environ] SET_GEOMETRY: 640x480, Aspect: 1.333.
+vulkan4xenon: SPIR-V 9E66C52834271F46 read from the shader cache
+vulkan4xenon: SPIR-V 33279CC1D403EE99 read from the shader cache
+vulkan4xenon: SPIR-V 82B5D1F6C8B45F0A read from the shader cache
+vulkan4xenon: profile, the last 10 s: 89 draws, 719 commands, 92 submits, 88 presents; a present 1.0 draws, 25.4 us submitting; a submit 1.0 draws, 24.3 us; a lap 20.7 ns
+vulkan4xenon: profile, the last 10 s: dispatch 137 ns a draw, 116 less its 1.0 laps
+vulkan4xenon: profile, the last 10 s: push 5 ns a draw, 5 less its 0.0 laps
+vulkan4xenon: profile, the last 10 s: pipeline 2849 ns a draw, 2829 less its 1.0 laps
+vulkan4xenon: profile, the last 10 s: constants 180 ns a draw, 159 less its 1.0 laps
+vulkan4xenon: profile, the last 10 s: resources 797 ns a draw, 756 less its 2.0 laps
+vulkan4xenon: profile, the last 10 s: checks 1182 ns a draw, 1141 less its 2.0 laps
+vulkan4xenon: profile, the last 10 s: draws 149 ns a draw, 129 less its 1.0 laps
+vulkan4xenon: profile, the last 10 s: commands 16194 ns a draw, 16027 less its 8.1 laps
+vulkan4xenon: profile, the last 10 s: submit 3609 ns a draw, 3566 less its 2.1 laps
+vulkan4xenon: profile, the last 10 s: all 25103 ns a draw, 24727 less its 18.2 laps
+vulkan4xenon: profile, the last 10 s: command type 0 (src/objects.h), 8 us a present, 1 a present
+vulkan4xenon: profile, the last 10 s: command type 1 (src/objects.h), 6 us a present, 1 a present
+vulkan4xenon: profile, the last 10 s: command type 7 (src/objects.h), 1 us a present, 0 a present
+vulkan4xenon: profile, the last 10 s: the replay's waits for the GPU, 0 us a present, 0.0 a present
+vulkan4xenon: profile, the last 10 s: of them for draws before a copy into a buffer, 0 us a present, 0.0 a present
+vulkan4xenon: profile, the last 10 s: for what a submission used, 0 us a present, 0.0 a present
+vulkan4xenon: profile, the last 10 s: for room for a pass past eDRAM, 0 us a present, 0.0 a present
+vulkan4xenon: profile, the last 10 s: the app's waits for fences, outside the submit, 134 us a present, 0.1 a present
+vulkan4xenon: profile, the last 10 s: images drawn back, 0.0 a present
+vulkan4xenon: profile, the last 10 s: resolves made to clear, 0.0 a present
+vulkan4xenon: profile, the last 10 s: resolves put off, 0.0 a present
+vulkan4xenon: profile, the last 10 s: put-off resolves made later, 0.0 a present
+vulkan4xenon: profile, the last 10 s: xsdk's waits for room in its ring, 0.0 a present
+vulkan4xenon: profile, the last 10 s: microseconds of them, 0.0 a present
+vulkan4xenon: profile, the last 10 s: passes' begins placing targets and forgetting what they reach, 2 us a present, 1920 ns a pass
+vulkan4xenon: profile, the last 10 s: passes' begins setting targets, 2 us a present, 2359 ns a pass
+vulkan4xenon: profile, the last 10 s: passes' begins drawing back and clearing, 1 us a present, 599 ns a pass
+vulkan4xenon: profile, the last 10 s: passes' begins keeping parts, 2 us a present, 1850 ns a pass
+vulkan4xenon: profile, the last 10 s: passes' ends deciding stores, 0 us a present, 98 ns a pass
+vulkan4xenon: profile, the last 10 s: passes' ends resolving, 5 us a present, 4821 ns a pass
+vulkan4xenon: profile, the last 10 s: passes' ends' rest, 1 us a present, 1018 ns a pass
+vulkan4xenon: profile, the last 10 s: submits, 26 us a present, 1.0 a present, the longest 131 us
+vulkan4xenon: profile, the last 10 s: fence waits, 0 us a present, 0.0 a present, the longest 0 us
+vulkan4xenon: profile, the last 10 s: acquires, 2 us a present, 1.0 a present, the longest 156 us
+vulkan4xenon: profile, the last 10 s: presents, 5 us a present, 1.0 a present, the longest 16 us
+vulkan4xenon: profile, the last 10 s: idle waits, 134 us a present, 0.1 a present, the longest 2613 us
+vulkan4xenon: profile, the last 10 s: xsdk's vblanks 565, flips 88, vblanks showing the last frame again 477, flips past vblank 0; the longest wait for a buffer since the start 0 us
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 0 us to 4 us, flips 67
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 5 us to 5 us, flips 67
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 99950 us to 99969 us, flips 68
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 99970 us to 99974 us, flips 68
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 99975 us to 99975 us, flips 68
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 199921 us to 199942 us, flips 69
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 199943 us to 199948 us, flips 69
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 199949 us to 199949 us, flips 69
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 299893 us to 299912 us, flips 70
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 299913 us to 299917 us, flips 70
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 299918 us to 299918 us, flips 70
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 399862 us to 399882 us, flips 71
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 399883 us to 399887 us, flips 71
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 399888 us to 399888 us, flips 71
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 499835 us to 499856 us, flips 72
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 499857 us to 499861 us, flips 72
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 499862 us to 499863 us, flips 72
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 599806 us to 599828 us, flips 73
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 599829 us to 599833 us, flips 73
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 599835 us to 599835 us, flips 73
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 699777 us to 699795 us, flips 74
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 699796 us to 699800 us, flips 74
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 699801 us to 699802 us, flips 74
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 799748 us to 799766 us, flips 75
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 799767 us to 799771 us, flips 75
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 799772 us to 799773 us, flips 75
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 899720 us to 899741 us, flips 76
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 899742 us to 899747 us, flips 76
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 899747 us to 899748 us, flips 76
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 999693 us to 999713 us, flips 77
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 999714 us to 999719 us, flips 77
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 999720 us to 999720 us, flips 77
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 1099663 us to 1099682 us, flips 78
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 1099683 us to 1099687 us, flips 78
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 1099688 us to 1099688 us, flips 78
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 1199636 us to 1199655 us, flips 79
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 1199655 us to 1199660 us, flips 79
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 1199660 us to 1199661 us, flips 79
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 1299606 us to 1299625 us, flips 80
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 1299626 us to 1299630 us, flips 80
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 1299631 us to 1299631 us, flips 80
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 1399578 us to 1399599 us, flips 81
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 1399600 us to 1399605 us, flips 81
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 1399606 us to 1399606 us, flips 81
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 1499551 us to 1499571 us, flips 82
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 1499571 us to 1499577 us, flips 82
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 1499578 us to 1499578 us, flips 82
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 1599520 us to 1599540 us, flips 83
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 1599541 us to 1599545 us, flips 83
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 1599546 us to 1599546 us, flips 83
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 1699493 us to 1699512 us, flips 84
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 1699513 us to 1699517 us, flips 84
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 1699518 us to 1699518 us, flips 84
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 1799462 us to 1799480 us, flips 85
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 1799481 us to 1799485 us, flips 85
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 1799486 us to 1799486 us, flips 85
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 1899433 us to 1899452 us, flips 86
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 1899453 us to 1899457 us, flips 86
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 1899458 us to 1899458 us, flips 86
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 1999406 us to 1999424 us, flips 87
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 1999424 us to 1999429 us, flips 87
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 1999430 us to 1999430 us, flips 87
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 2099379 us to 2099396 us, flips 88
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 2099397 us to 2099401 us, flips 88
+vulkan4xenon: profile, the last 10 s: uniform blocks the GPU loaded, 1.0 a present
+vulkan4xenon: profile, the last 10 s: uniform blocks the CPU read, 0.0 a present
+vulkan4xenon: profile, the last 10 s: quads the CPU read from uniform blocks, 0.0 a present
+vulkan4xenon: profile, the last 10 s: push constant quads written, 0.0 a present
+vulkan4xenon: profile, the last 10 s: pipelines applied whole, 1.0 a present
+vulkan4xenon: profile, the last 10 s: textures pointed, 1.0 a present
+vulkan4xenon: profile, the last 10 s: streams pointed, 1.0 a present
+vulkan4xenon: profile, the last 10 s: bytes copied into images, 11.7 a present
+vulkan4xenon: profile, the last 10 s: of them from write-combined memory, 11.6 a present
+vulkan4xenon: profile, the last 10 s: bytes drawn into images from buffers, 13963.6 a present
+vulkan4xenon: profile, the last 10 s: rows read back to copy part of a row, 0.0 a present
+vulkan4xenon: profile, the last 10 s: bytes copied out of images, 0.0 a present
+vulkan4xenon: profile, the last 10 s: bytes copied between images, 0.0 a present
+vulkan4xenon: profile, the last 10 s: bytes copied into buffers, 0.0 a present
+vulkan4xenon: profile, the last 10 s: literal registers written, 0.0 a present
+vulkan4xenon: profile, the last 10 s: pipelines applied whole again, 0.0 a present
+vulkan4xenon: profile, the last 10 s: the GPU's time on the submits, 450 us a present, over 92 submits it finished
+[libretro INFO] [COMMON] DIAG 10.01 s: vblanks 80 renders 0 presents 1 runs 94 dupes 93; emu on hw 2 busy 100.0%, render on hw 0 busy 6.4%; mftb 14.3 ns
+[libretro INFO] [COMMON] DIAG emu ms: jit 4363.4(0) memreg 80.8(556670) memvram 22.0(307200) memp4 0.7(2366) memother 4717.1(71974973) canon 1.5(0) compile 79.7(395) sched 38.7(60223) arm7 144.9(59851) mix 92.6(59851) dsp 1.9(59851) spg 69.6(405) gdrom 371.2(0) audio 21.7(59851) sum 10005.8
+[libretro INFO] [COMMON] DIAG render ms: frontend 6.1(0) run 63.2(94) wait 9369.5(470) texupload 2.7(2) record 464.6(1) submit 0.0(1) submitpresent 0.1(1) gpuwait 0.0(2) video 71.1(94) audio 28.4(94) sum 10005.8
+[libretro INFO] [COMMON] DIAG jit: blocks 25046999 guest ops 172632466 (6.9 a block) check words 98871056 stores 24547044 loads 73236556 dynamic exits 113034 conditional exits 24920682 compiled 226 check fails 0 resets 1
+[libretro INFO] [COMMON] DIAG ops: canon 26450: div32s 9666 div32p2 7227 div32u 7143 div1 2411 setpeq 3; ifb 0:
+[libretro INFO] [COMMON] DIAG samples 5005, in blocks 2341: jit 46.8% memreg 0.6% memvram 0.2% memother 44.1% canon 0.0% compile 0.8% sched 0.4% arm7 1.5% mix 1.0% spg 0.7% gdrom 3.7% audio 0.3%
+[libretro INFO] [COMMON] DIAG slow: 8c0084f0 t44.6% g95.5% r23542438 o7 c4 s1 l3 h404 e16; 8c00909a t0.9% g1.3% r556482 o4 c2 s0 l2 h272 e17; 8c008348 t0.4% g0.7% r307199 o4 c2 s1 l1 h324 e16; 8c008374 t0.2% g0.5% r307200 o3 c2 s1 l0 h300 e16; 8c008ef0 t0.1% g0.1% r26063 o5 c3 s0 l2 h312 e17; 8c008ad0 t0.1% g0.5% r30896 o29 c15 s6 l7 h972 e12; 8c008f42 t0.1% g0.1% r25974 o7 c4 s1 l3 h420 e16; 8c008ee4 t0.1% g0.1% r26063 o6 c3 s0 l2 h312 e17;
+[libretro INFO] [COMMON] DIAG hot: 8c0084f0 t44.6% g95.5% r23542438 o7 c4 s1 l3 h404 e16; 8c00909a t0.9% g1.3% r556482 o4 c2 s0 l2 h272 e17; 8c008348 t0.4% g0.7% r307199 o4 c2 s1 l1 h324 e16; 8c008374 t0.2% g0.5% r307200 o3 c2 s1 l0 h300 e16; 8c008ad0 t0.1% g0.5% r30896 o29 c15 s6 l7 h972 e12; 8c008efa t0.1% g0.3% r26063 o19 c10 s0 l11 h716 e10; 8c008f20 t0.1% g0.2% r26063 o12 c6 s2 l4 h528 e16; 8c008f42 t0.1% g0.1% r25974 o7 c4 s1 l3 h420 e16;
+[libretro INFO] [COMMON] DIAG vk per render (0): draw 0.0 bindPipeline 0.0 bindDescriptorSets 0.0 pushConstants 0.0 setScissor 0.0 setViewport 0.0 bindVertexBuffers 0.0 descriptorWrites 0.0 allocateDescriptorSets 0.0 copyBufferToImage 0.0 pipelineBarrier 0.0 beginRenderPass 0.0 queueSubmits 0.0 submittedBuffers 0.0 createPipelines 0.0
+[libretro INFO] [COMMON] DIAG textures: dropped 0
+vulkan4xenon: SPIR-V EBB70D05E5C060E0 read from the shader cache
+vulkan4xenon: SPIR-V 1198058B2212E89E read from the shader cache
+vulkan4xenon: SPIR-V B55495D4153EC577 read from the shader cache
+vulkan4xenon: SPIR-V F784E7AFFFF3D7D7 read from the shader cache
+vulkan4xenon: SPIR-V 7BE022EB2680FA96 read from the shader cache
+vulkan4xenon: profile, the last 10 s: 562 draws, 3196 commands, 243 submits, 137 presents; a present 4.1 draws, 208.2 us submitting; a submit 2.3 draws, 117.4 us; a lap 20.7 ns
+vulkan4xenon: profile, the last 10 s: dispatch 161 ns a draw, 137 less its 1.2 laps
+vulkan4xenon: profile, the last 10 s: push 49 ns a draw, 45 less its 0.2 laps
+vulkan4xenon: profile, the last 10 s: pipeline 2455 ns a draw, 2434 less its 1.0 laps
+vulkan4xenon: profile, the last 10 s: constants 367 ns a draw, 319 less its 2.3 laps
+vulkan4xenon: profile, the last 10 s: resources 1980 ns a draw, 1911 less its 3.3 laps
+vulkan4xenon: profile, the last 10 s: checks 740 ns a draw, 699 less its 2.0 laps
+vulkan4xenon: profile, the last 10 s: draws 137 ns a draw, 116 less its 1.0 laps
+vulkan4xenon: profile, the last 10 s: commands 43416 ns a draw, 43298 less its 5.7 laps
+vulkan4xenon: profile, the last 10 s: submit 1459 ns a draw, 1442 less its 0.9 laps
+vulkan4xenon: profile, the last 10 s: all 50764 ns a draw, 50401 less its 17.6 laps
+vulkan4xenon: profile, the last 10 s: command type 0 (src/objects.h), 18 us a present, 2 a present
+vulkan4xenon: profile, the last 10 s: command type 1 (src/objects.h), 14 us a present, 2 a present
+vulkan4xenon: profile, the last 10 s: command type 7 (src/objects.h), 144 us a present, 0 a present
+vulkan4xenon: profile, the last 10 s: the replay's waits for the GPU, 0 us a present, 0.0 a present
+vulkan4xenon: profile, the last 10 s: of them for draws before a copy into a buffer, 0 us a present, 0.0 a present
+vulkan4xenon: profile, the last 10 s: for what a submission used, 0 us a present, 0.0 a present
+vulkan4xenon: profile, the last 10 s: for room for a pass past eDRAM, 0 us a present, 0.0 a present
+vulkan4xenon: profile, the last 10 s: the app's waits for fences, outside the submit, 0 us a present, 0.0 a present
+vulkan4xenon: profile, the last 10 s: images drawn back, 0.0 a present
+vulkan4xenon: profile, the last 10 s: resolves made to clear, 0.0 a present
+vulkan4xenon: profile, the last 10 s: resolves put off, 0.0 a present
+vulkan4xenon: profile, the last 10 s: put-off resolves made later, 0.0 a present
+vulkan4xenon: profile, the last 10 s: xsdk's waits for room in its ring, 0.0 a present
+vulkan4xenon: profile, the last 10 s: microseconds of them, 0.0 a present
+vulkan4xenon: profile, the last 10 s: passes' begins placing targets and forgetting what they reach, 5 us a present, 2731 ns a pass
+vulkan4xenon: profile, the last 10 s: passes' begins setting targets, 5 us a present, 2931 ns a pass
+vulkan4xenon: profile, the last 10 s: passes' begins drawing back and clearing, 1 us a present, 641 ns a pass
+vulkan4xenon: profile, the last 10 s: passes' begins keeping parts, 3 us a present, 1681 ns a pass
+vulkan4xenon: profile, the last 10 s: passes' ends deciding stores, 0 us a present, 269 ns a pass
+vulkan4xenon: profile, the last 10 s: passes' ends resolving, 11 us a present, 6220 ns a pass
+vulkan4xenon: profile, the last 10 s: passes' ends' rest, 2 us a present, 1243 ns a pass
+vulkan4xenon: profile, the last 10 s: submits, 209 us a present, 1.8 a present, the longest 19709 us
+vulkan4xenon: profile, the last 10 s: fence waits, 0 us a present, 0.0 a present, the longest 0 us
+vulkan4xenon: profile, the last 10 s: acquires, 35 us a present, 1.0 a present, the longest 4520 us
+vulkan4xenon: profile, the last 10 s: presents, 8 us a present, 1.0 a present, the longest 14 us
+vulkan4xenon: profile, the last 10 s: idle waits, 0 us a present, 0.0 a present, the longest 0 us
+vulkan4xenon: profile, the last 10 s: xsdk's vblanks 600, flips 137, vblanks showing the last frame again 463, flips past vblank 0; the longest wait for a buffer since the start 0 us
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 0 us to 77 us, flips 213
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 103 us to 121 us, flips 213
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 159 us to 175 us, flips 213
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 177 us to 186 us, flips 213
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 187 us to 188 us, flips 213
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 23855 us to 23930 us, flips 214
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 23953 us to 23971 us, flips 214
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 24008 us to 24025 us, flips 214
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 24027 us to 24039 us, flips 214
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 24042 us to 24043 us, flips 214
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 48782 us to 48858 us, flips 215
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 48878 us to 48896 us, flips 215
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 48933 us to 48950 us, flips 215
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 48952 us to 48962 us, flips 215
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 48963 us to 48964 us, flips 215
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 72658 us to 72730 us, flips 216
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 72754 us to 72772 us, flips 216
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 72810 us to 72827 us, flips 216
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 72829 us to 72837 us, flips 216
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 72840 us to 72841 us, flips 216
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 97542 us to 97618 us, flips 217
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 97640 us to 97657 us, flips 217
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 97693 us to 97709 us, flips 217
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 97711 us to 97721 us, flips 217
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 97722 us to 97723 us, flips 217
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 121425 us to 121503 us, flips 218
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 121526 us to 121545 us, flips 218
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 121582 us to 121601 us, flips 218
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 121603 us to 121613 us, flips 218
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 121615 us to 121616 us, flips 218
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 146353 us to 146426 us, flips 219
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 146449 us to 146467 us, flips 219
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 146504 us to 146520 us, flips 219
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 146521 us to 146531 us, flips 219
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 146533 us to 146534 us, flips 219
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 170562 us to 170640 us, flips 220
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 170665 us to 170683 us, flips 220
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 170721 us to 170738 us, flips 220
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 170740 us to 170750 us, flips 220
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 170752 us to 170753 us, flips 220
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 195502 us to 195579 us, flips 221
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 195602 us to 195619 us, flips 221
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 195655 us to 195671 us, flips 221
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 195673 us to 195682 us, flips 221
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 195684 us to 195685 us, flips 221
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 219491 us to 219571 us, flips 222
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 219594 us to 219612 us, flips 222
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 219652 us to 219668 us, flips 222
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 219670 us to 219680 us, flips 222
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 219682 us to 219683 us, flips 222
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 244399 us to 244474 us, flips 223
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 244498 us to 244516 us, flips 223
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 244553 us to 244570 us, flips 223
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 244572 us to 244583 us, flips 223
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 244585 us to 244585 us, flips 223
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 268321 us to 268396 us, flips 224
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 268421 us to 268439 us, flips 224
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 268477 us to 268493 us, flips 224
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 268495 us to 268503 us, flips 224
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 268505 us to 268506 us, flips 224
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 292164 us to 292242 us, flips 225
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 292267 us to 292285 us, flips 225
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 292322 us to 292339 us, flips 225
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 292340 us to 292350 us, flips 225
+vulkan4xenon: profile, the last 10 s: uniform blocks the GPU loaded, 3.7 a present
+vulkan4xenon: profile, the last 10 s: uniform blocks the CPU read, 2.7 a present
+vulkan4xenon: profile, the last 10 s: quads the CPU read from uniform blocks, 16.3 a present
+vulkan4xenon: profile, the last 10 s: push constant quads written, 5.8 a present
+vulkan4xenon: profile, the last 10 s: pipelines applied whole, 2.4 a present
+vulkan4xenon: profile, the last 10 s: textures pointed, 3.8 a present
+vulkan4xenon: profile, the last 10 s: streams pointed, 1.8 a present
+vulkan4xenon: profile, the last 10 s: bytes copied into images, 5772.1 a present
+vulkan4xenon: profile, the last 10 s: of them from write-combined memory, 5772.1 a present
+vulkan4xenon: profile, the last 10 s: bytes drawn into images from buffers, 0.0 a present
+vulkan4xenon: profile, the last 10 s: rows read back to copy part of a row, 0.0 a present
+vulkan4xenon: profile, the last 10 s: bytes copied out of images, 0.0 a present
+vulkan4xenon: profile, the last 10 s: bytes copied between images, 0.0 a present
+vulkan4xenon: profile, the last 10 s: bytes copied into buffers, 0.0 a present
+vulkan4xenon: profile, the last 10 s: literal registers written, 9.2 a present
+vulkan4xenon: profile, the last 10 s: pipelines applied whole again, 0.0 a present
+vulkan4xenon: profile, the last 10 s: the GPU's time on the submits, 876 us a present, over 243 submits it finished
+[libretro INFO] [COMMON] DIAG 10.02 s: vblanks 169 renders 80 presents 79 runs 157 dupes 78; emu on hw 2 busy 99.2%, render on hw 0 busy 2.9%; mftb 14.3 ns
+[libretro INFO] [COMMON] DIAG emu ms: jit 5559.6(0) memreg 297.7(2718020) memvram 157.0(2341336) memp4 13.4(68477) memother 2495.9(38182243) sq 0.3(2490) ta 0.6(2495) ifb 10.7(124482) canon 1.0(0) compile 433.4(7828) sched 81.3(125449) arm7 406.3(124434) mix 201.8(124434) dsp 4.3(124434) spg 5.3(846) pvr 0.9(80) gdrom 220.4(124690) audio 43.9(124434) waitrenderend 54.4(79) waitframe 30.5(1) sum 10018.6
+[libretro INFO] [COMMON] DIAG render ms: frontend 21.9(0) run 7.3(157) wait 9726.3(629) parse 6.4(79) sort 0.2(79) texdecode 4.7(6) texupload 0.4(8) record 139.2(161) submit 26.2(79) submitpresent 1.5(79) gpuwait 0.2(158) video 55.1(157) audio 29.3(157) sum 10018.6
+[libretro INFO] [COMMON] DIAG jit: blocks 73324271 guest ops 372671063 (5.1 a block) check words 201377380 stores 25983616 loads 147025146 dynamic exits 22033120 conditional exits 50762004 compiled 4524 check fails 0 resets 
+[libretro INFO] [COMMON] DIAG ops: canon 14061: div32u 5013 div32p2 3792 frswap 2328 div32s 1928 div1 961; ifb 124482: 085b reios_trap 124482
+[libretro INFO] [COMMON] DIAG samples 5028, in blocks 2920: jit 58.1% memreg 2.2% memvram 1.2% memp4 0.1% memother 23.3% ifb 0.1% canon 0.0% compile 4.2% sched 1.0% arm7 4.1% mix 2.0% dsp 0.1% spg 0.1% gdrom 2.0% audio 0.5% waitrenderend 0.6% waitframe 0.3%
+[libretro INFO] [COMMON] DIAG slow: 8c0084f0 t24.0% g23.9% r12717561 o7 c4 s1 l3 h404 e16; 8c642060 t5.0% g20.5% r7632844 o10 c5 s0 l6 h392 e16; 8c642058 t4.3% g8.2% r7632872 o4 c2 s0 l3 h268 e10; 8c6416ec t2.6% g4.1% r7632927 o2 c1 s0 l0 h152 e12; 8c10d8b2 t2.4% g3.9% r1048585 o14 c7 s3 l6 h768 e16; 8c642078 t2.3% g8.2% r7632936 o4 c2 s0 l2 h240 e16; 8c65253e t2.3% g3.4% r2098063 o6 c3 s1 l1 h372 e16; 8c65254a t1.9% g1.1% r2098063 o2 c1 s0 l0 h168 e12;
+[libretro INFO] [COMMON] DIAG hot: 8c0084f0 t24.0% g23.9% r12717561 o7 c4 s1 l3 h404 e16; 8c642060 t5.0% g20.5% r7632844 o10 c5 s0 l6 h392 e16; 8c642078 t2.3% g8.2% r7632936 o4 c2 s0 l2 h240 e16; 8c642058 t4.3% g8.2% r7632872 o4 c2 s0 l3 h268 e10; 8c6416ec t2.6% g4.1% r7632927 o2 c1 s0 l0 h152 e12; 8c10d8b2 t2.4% g3.9% r1048585 o14 c7 s3 l6 h768 e16; 8c65253e t2.3% g3.4% r2098063 o6 c3 s1 l1 h372 e16; 8c643ee6 t1.1% g3.4% r4194313 o3 c2 s0 l0 h204 e16;
+[libretro INFO] [COMMON] DIAG vk per render (80): draw 1.0 drawIndexed 6.9 bindPipeline 9.9 bindDescriptorSets 7.5 pushConstants 2.0 setScissor 3.0 setViewport 2.0 bindVertexBuffers 2.0 bindIndexBuffer 1.0 descriptorWrites 10.5 allocateDescriptorSets 0.4 copyBufferToImage 0.1 pipelineBarrier 0.2 beginRenderPass 2.0 queueSubmits 2.0 submittedBuffers 3.0 createPipelines 0.0
+[libretro INFO] [COMMON] DIAG textures: 553480 fmt1 256x256 vq0 mip0 scan0 stride0 new1 vram0 pal0 0.9ms; 573480 fmt1 256x256 vq0 mip0 scan0 stride0 new1 vram0 pal0 0.8ms; 593480 fmt1 256x256 vq0 mip0 scan0 stride0 new1 vram0 pal0 0.8ms; 5b3480 fmt1 256x256 vq0 mip0 scan0 stride0 new1 vram0 pal0 0.8ms; 5d3480 fmt1 256x256 vq0 mip0 scan0 stride0 new1 vram0 pal0 0.8ms; 5f3480 fmt1 256x256 vq0 mip0 scan0 stride0 new1 vram0 pal0 0.8ms; dropped 0
+vulkan4xenon: SPIR-V 4B1543507955AABB read from the shader cache
+vulkan4xenon: profile, the last 10 s: 1560 draws, 9033 commands, 624 submits, 216 presents; a present 7.2 draws, 113.7 us submitting; a submit 2.5 draws, 39.4 us; a lap 20.7 ns
+vulkan4xenon: profile, the last 10 s: dispatch 178 ns a draw, 152 less its 1.3 laps
+vulkan4xenon: profile, the last 10 s: push 73 ns a draw, 67 less its 0.3 laps
+vulkan4xenon: profile, the last 10 s: pipeline 2292 ns a draw, 2271 less its 1.0 laps
+vulkan4xenon: profile, the last 10 s: constants 391 ns a draw, 340 less its 2.5 laps
+vulkan4xenon: profile, the last 10 s: resources 2140 ns a draw, 2068 less its 3.5 laps
+vulkan4xenon: profile, the last 10 s: checks 675 ns a draw, 633 less its 2.0 laps
+vulkan4xenon: profile, the last 10 s: draws 121 ns a draw, 100 less its 1.0 laps
+vulkan4xenon: profile, the last 10 s: commands 8570 ns a draw, 8450 less its 5.8 laps
+vulkan4xenon: profile, the last 10 s: submit 1311 ns a draw, 1295 less its 0.8 laps
+vulkan4xenon: profile, the last 10 s: all 15750 ns a draw, 15377 less its 18.0 laps
+vulkan4xenon: profile, the last 10 s: command type 0 (src/objects.h), 27 us a present, 3 a present
+vulkan4xenon: profile, the last 10 s: command type 1 (src/objects.h), 23 us a present, 3 a present
+vulkan4xenon: profile, the last 10 s: command type 35 (src/objects.h), 8 us a present, 0 a present
+vulkan4xenon: profile, the last 10 s: the replay's waits for the GPU, 0 us a present, 0.0 a present
+vulkan4xenon: profile, the last 10 s: of them for draws before a copy into a buffer, 0 us a present, 0.0 a present
+vulkan4xenon: profile, the last 10 s: for what a submission used, 0 us a present, 0.0 a present
+vulkan4xenon: profile, the last 10 s: for room for a pass past eDRAM, 0 us a present, 0.0 a present
+vulkan4xenon: profile, the last 10 s: the app's waits for fences, outside the submit, 0 us a present, 0.0 a present
+vulkan4xenon: profile, the last 10 s: images drawn back, 0.1 a present
+vulkan4xenon: profile, the last 10 s: resolves made to clear, 0.0 a present
+vulkan4xenon: profile, the last 10 s: resolves put off, 0.0 a present
+vulkan4xenon: profile, the last 10 s: put-off resolves made later, 0.0 a present
+vulkan4xenon: profile, the last 10 s: xsdk's waits for room in its ring, 0.0 a present
+vulkan4xenon: profile, the last 10 s: microseconds of them, 0.0 a present
+vulkan4xenon: profile, the last 10 s: passes' begins placing targets and forgetting what they reach, 8 us a present, 2716 ns a pass
+vulkan4xenon: profile, the last 10 s: passes' begins setting targets, 7 us a present, 2538 ns a pass
+vulkan4xenon: profile, the last 10 s: passes' begins drawing back and clearing, 2 us a present, 659 ns a pass
+vulkan4xenon: profile, the last 10 s: passes' begins keeping parts, 4 us a present, 1452 ns a pass
+vulkan4xenon: profile, the last 10 s: passes' ends deciding stores, 1 us a present, 307 ns a pass
+vulkan4xenon: profile, the last 10 s: passes' ends resolving, 18 us a present, 6164 ns a pass
+vulkan4xenon: profile, the last 10 s: passes' ends' rest, 4 us a present, 1284 ns a pass
+vulkan4xenon: profile, the last 10 s: submits, 114 us a present, 2.9 a present, the longest 106 us
+vulkan4xenon: profile, the last 10 s: fence waits, 0 us a present, 0.0 a present, the longest 0 us
+vulkan4xenon: profile, the last 10 s: acquires, 97 us a present, 1.0 a present, the longest 12466 us
+vulkan4xenon: profile, the last 10 s: presents, 10 us a present, 1.0 a present, the longest 14 us
+vulkan4xenon: profile, the last 10 s: idle waits, 0 us a present, 0.0 a present, the longest 0 us
+vulkan4xenon: profile, the last 10 s: xsdk's vblanks 601, flips 216, vblanks showing the last frame again 385, flips past vblank 0; the longest wait for a buffer since the start 0 us
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 0 us to 96 us, flips 429
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 134 us to 154 us, flips 429
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 207 us to 225 us, flips 429
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 227 us to 241 us, flips 429
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 244 us to 245 us, flips 429
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 98746 us to 98844 us, flips 430
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 98880 us to 98900 us, flips 430
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 98953 us to 98972 us, flips 430
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 98974 us to 98986 us, flips 430
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 98989 us to 98990 us, flips 430
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 187597 us to 187692 us, flips 431
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 187729 us to 187750 us, flips 431
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 187803 us to 187821 us, flips 431
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 187823 us to 187836 us, flips 431
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 187838 us to 187840 us, flips 431
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 288020 us to 288118 us, flips 432
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 288155 us to 288175 us, flips 432
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 288228 us to 288247 us, flips 432
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 288249 us to 288263 us, flips 432
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 288266 us to 288267 us, flips 432
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 378219 us to 378315 us, flips 433
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 378350 us to 378370 us, flips 433
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 378426 us to 378445 us, flips 433
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 378446 us to 378461 us, flips 433
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 378463 us to 378465 us, flips 433
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 475028 us to 475124 us, flips 434
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 475161 us to 475181 us, flips 434
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 475235 us to 475253 us, flips 434
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 475255 us to 475267 us, flips 434
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 475269 us to 475271 us, flips 434
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 567994 us to 568090 us, flips 435
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 568126 us to 568145 us, flips 435
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 568197 us to 568215 us, flips 435
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 568216 us to 568230 us, flips 435
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 568233 us to 568234 us, flips 435
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 661928 us to 662029 us, flips 436
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 662066 us to 662086 us, flips 436
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 662139 us to 662155 us, flips 436
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 662158 us to 662170 us, flips 436
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 662173 us to 662174 us, flips 436
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 756132 us to 756230 us, flips 437
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 756269 us to 756291 us, flips 437
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 756344 us to 756360 us, flips 437
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 756362 us to 756375 us, flips 437
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 756377 us to 756379 us, flips 437
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 854446 us to 854543 us, flips 438
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 854579 us to 854598 us, flips 438
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 854650 us to 854668 us, flips 438
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 854670 us to 854684 us, flips 438
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 854686 us to 854688 us, flips 438
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 950450 us to 950545 us, flips 439
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 950582 us to 950603 us, flips 439
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 950656 us to 950673 us, flips 439
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 950675 us to 950689 us, flips 439
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 950691 us to 950693 us, flips 439
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 1048436 us to 1048534 us, flips 440
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 1048569 us to 1048589 us, flips 440
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 1048641 us to 1048659 us, flips 440
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 1048661 us to 1048674 us, flips 440
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 1048676 us to 1048678 us, flips 440
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 1145758 us to 1145854 us, flips 441
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 1145892 us to 1145911 us, flips 441
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 1145963 us to 1145980 us, flips 441
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 1145982 us to 1145995 us, flips 441
+vulkan4xenon: profile, the last 10 s: uniform blocks the GPU loaded, 6.3 a present
+vulkan4xenon: profile, the last 10 s: uniform blocks the CPU read, 5.3 a present
+vulkan4xenon: profile, the last 10 s: quads the CPU read from uniform blocks, 31.7 a present
+vulkan4xenon: profile, the last 10 s: push constant quads written, 11.5 a present
+vulkan4xenon: profile, the last 10 s: pipelines applied whole, 3.9 a present
+vulkan4xenon: profile, the last 10 s: textures pointed, 6.8 a present
+vulkan4xenon: profile, the last 10 s: streams pointed, 2.9 a present
+vulkan4xenon: profile, the last 10 s: bytes copied into images, 0.0 a present
+vulkan4xenon: profile, the last 10 s: of them from write-combined memory, 0.0 a present
+vulkan4xenon: profile, the last 10 s: bytes drawn into images from buffers, 223307.9 a present
+vulkan4xenon: profile, the last 10 s: rows read back to copy part of a row, 0.0 a present
+vulkan4xenon: profile, the last 10 s: bytes copied out of images, 0.0 a present
+vulkan4xenon: profile, the last 10 s: bytes copied between images, 0.0 a present
+vulkan4xenon: profile, the last 10 s: bytes copied into buffers, 0.0 a present
+vulkan4xenon: profile, the last 10 s: literal registers written, 16.5 a present
+vulkan4xenon: profile, the last 10 s: pipelines applied whole again, 0.0 a present
+vulkan4xenon: profile, the last 10 s: the GPU's time on the submits, 1353 us a present, over 624 submits it finished
+[libretro INFO] [COMMON] DIAG 10.07 s: vblanks 257 renders 185 presents 185 runs 197 dupes 12; emu on hw 2 busy 99.4%, render on hw 0 busy 5.3%; mftb 14.3 ns
+[libretro INFO] [COMMON] DIAG emu ms: jit 7596.4(0) memreg 124.5(568639) memvram 2.3(20672) memp4 50.8(274272) sq 23.3(440066) ta 1.2(4228) ifb 7.5(82145) canon 18.1(0) compile 395.7(8197) sched 150.7(191027) arm7 862.9(189078) mix 434.1(189078) dsp 10.3(189078) spg 7.4(1285) pvr 2.1(185) gdrom 244.3(82545) audio 78.8(189078) waitrenderend 61.3(185) sum 10071.6
+[libretro INFO] [COMMON] DIAG render ms: frontend 27.6(0) run 11.9(197) wait 9532.9(792) parse 14.6(185) sort 0.3(185) texdecode 229.8(53) texupload 39.9(53) record 56.0(372) submit 16.1(185) submitpresent 3.6(185) gpuwait 0.4(370) video 90.2(197) audio 48.3(197) sum 10071.6
+[libretro INFO] [COMMON] DIAG jit: blocks 81306834 guest ops 733402105 (9.0 a block) check words 378683535 stores 71375131 loads 240628667 dynamic exits 30307481 conditional exits 46218547 compiled 4502 check fails 0 resets 
+[libretro INFO] [COMMON] DIAG ops: canon 276265: div32u 84099 div32p2 82627 div32s 65394 div1 37634 frswap 6492; ifb 82146: 085b reios_trap 82146
+[libretro INFO] [COMMON] DIAG samples 5073, in blocks 3794: jit 74.8% memreg 1.4% memp4 0.6% sq 0.2% ifb 0.1% canon 0.2% compile 3.9% sched 1.3% arm7 8.9% mix 4.9% dsp 0.1% spg 0.0% pvr 0.0% gdrom 2.5% audio 0.6% waitrenderend 0.6%
+[libretro INFO] [COMMON] DIAG slow: 8c642060 t8.2% g15.5% r11385833 o10 c5 s0 l6 h392 e16; 8c642058 t6.3% g6.2% r11385893 o4 c2 s0 l3 h268 e10; 8ceb1742 t4.3% g7.2% r853780 o62 c31 s9 l7 h1920 e16; 8c642078 t4.0% g6.2% r11385965 o4 c2 s0 l2 h240 e16; 8ceb2354 t3.7% g8.8% r935849 o69 c35 s8 l16 h1836 e16; 8c6416ec t3.0% g3.1% r11385882 o2 c1 s0 l0 h152 e12; 8ceb1626 t1.8% g1.4% r365909 o28 c14 s8 l4 h1616 e16; 8ceb1d00 t1.7% g4.1% r521612 o58 c29 s8 l24 h1956 e16;
+[libretro INFO] [COMMON] DIAG hot: 8c642060 t8.2% g15.5% r11385833 o10 c5 s0 l6 h392 e16; 8ceb2354 t3.7% g8.8% r935849 o69 c35 s8 l16 h1836 e16; 8ceb1742 t4.3% g7.2% r853780 o62 c31 s9 l7 h1920 e16; 8c642078 t4.0% g6.2% r11385965 o4 c2 s0 l2 h240 e16; 8c642058 t6.3% g6.2% r11385893 o4 c2 s0 l3 h268 e10; 8ceb1d00 t1.7% g4.1% r521612 o58 c29 s8 l24 h1956 e16; 8ceb2050 t1.0% g3.3% r327411 o74 c37 s8 l16 h1680 e16; 8c6416ec t3.0% g3.1% r11385882 o2 c1 s0 l0 h152 e12;
+[libretro INFO] [COMMON] DIAG vk per render (185): draw 1.0 drawIndexed 5.3 bindPipeline 8.3 bindDescriptorSets 6.1 pushConstants 2.0 setScissor 3.0 setViewport 2.0 bindVertexBuffers 2.0 bindIndexBuffer 1.0 descriptorWrites 9.1 copyBufferToImage 0.3 pipelineBarrier 0.6 beginRenderPass 2.0 queueSubmits 2.0 submittedBuffers 3.0 createPipelines 0.0
+[libretro INFO] [COMMON] DIAG textures: 140000 fmt3 512x512 vq0 mip0 scan1 stride1 new1 vram26 pal0 139.1ms; 1c0000 fmt3 512x512 vq0 mip0 scan1 stride1 new1 vram25 pal0 130.6ms; dropped 0
+[INFO] [XSDK] Audio: 1875 frames queued, 1869 played, 4518 silent; fewest queued 0, longest wait 931041 us.
+vulkan4xenon: profile, the last 10 s: 402 draws, 3416 commands, 302 submits, 102 presents; a present 3.9 draws, 133.0 us submitting; a submit 1.3 draws, 44.9 us; a lap 20.7 ns
+vulkan4xenon: profile, the last 10 s: dispatch 303 ns a draw, 273 less its 1.5 laps
+vulkan4xenon: profile, the last 10 s: push 169 ns a draw, 158 less its 0.5 laps
+vulkan4xenon: profile, the last 10 s: pipeline 3969 ns a draw, 3948 less its 1.0 laps
+vulkan4xenon: profile, the last 10 s: constants 529 ns a draw, 488 less its 2.0 laps
+vulkan4xenon: profile, the last 10 s: resources 2409 ns a draw, 2347 less its 3.0 laps
+vulkan4xenon: profile, the last 10 s: checks 1285 ns a draw, 1243 less its 2.0 laps
+vulkan4xenon: profile, the last 10 s: draws 203 ns a draw, 182 less its 1.0 laps
+vulkan4xenon: profile, the last 10 s: commands 21906 ns a draw, 21730 less its 8.5 laps
+vulkan4xenon: profile, the last 10 s: submit 2964 ns a draw, 2933 less its 1.5 laps
+vulkan4xenon: profile, the last 10 s: all 33737 ns a draw, 33303 less its 21.0 laps
+vulkan4xenon: profile, the last 10 s: command type 0 (src/objects.h), 27 us a present, 3 a present
+vulkan4xenon: profile, the last 10 s: command type 1 (src/objects.h), 21 us a present, 3 a present
+vulkan4xenon: profile, the last 10 s: command type 35 (src/objects.h), 35 us a present, 1 a present
+vulkan4xenon: profile, the last 10 s: the replay's waits for the GPU, 0 us a present, 0.0 a present
+vulkan4xenon: profile, the last 10 s: of them for draws before a copy into a buffer, 0 us a present, 0.0 a present
+vulkan4xenon: profile, the last 10 s: for what a submission used, 0 us a present, 0.0 a present
+vulkan4xenon: profile, the last 10 s: for room for a pass past eDRAM, 0 us a present, 0.0 a present
+vulkan4xenon: profile, the last 10 s: the app's waits for fences, outside the submit, 0 us a present, 0.0 a present
+vulkan4xenon: profile, the last 10 s: images drawn back, 0.5 a present
+vulkan4xenon: profile, the last 10 s: resolves made to clear, 0.0 a present
+vulkan4xenon: profile, the last 10 s: resolves put off, 0.0 a present
+vulkan4xenon: profile, the last 10 s: put-off resolves made later, 0.0 a present
+vulkan4xenon: profile, the last 10 s: xsdk's waits for room in its ring, 0.0 a present
+vulkan4xenon: profile, the last 10 s: microseconds of them, 0.0 a present
+vulkan4xenon: profile, the last 10 s: passes' begins placing targets and forgetting what they reach, 9 us a present, 3033 ns a pass
+vulkan4xenon: profile, the last 10 s: passes' begins setting targets, 5 us a present, 1846 ns a pass
+vulkan4xenon: profile, the last 10 s: passes' begins drawing back and clearing, 4 us a present, 1224 ns a pass
+vulkan4xenon: profile, the last 10 s: passes' begins keeping parts, 3 us a present, 1128 ns a pass
+vulkan4xenon: profile, the last 10 s: passes' ends deciding stores, 1 us a present, 298 ns a pass
+vulkan4xenon: profile, the last 10 s: passes' ends resolving, 15 us a present, 4953 ns a pass
+vulkan4xenon: profile, the last 10 s: passes' ends' rest, 4 us a present, 1401 ns a pass
+vulkan4xenon: profile, the last 10 s: submits, 134 us a present, 3.0 a present, the longest 101 us
+vulkan4xenon: profile, the last 10 s: fence waits, 0 us a present, 0.0 a present, the longest 0 us
+vulkan4xenon: profile, the last 10 s: acquires, 103 us a present, 1.0 a present, the longest 10340 us
+vulkan4xenon: profile, the last 10 s: presents, 13 us a present, 1.0 a present, the longest 19 us
+vulkan4xenon: profile, the last 10 s: idle waits, 0 us a present, 0.0 a present, the longest 0 us
+vulkan4xenon: profile, the last 10 s: xsdk's vblanks 598, flips 101, vblanks showing the last frame again 497, flips past vblank 0; the longest wait for a buffer since the start 0 us
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 0 us to 98 us, flips 531
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 134 us to 153 us, flips 531
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 207 us to 224 us, flips 531
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 227 us to 241 us, flips 531
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 243 us to 244 us, flips 531
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 96280 us to 96378 us, flips 532
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 96415 us to 96435 us, flips 532
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 96487 us to 96505 us, flips 532
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 96507 us to 96520 us, flips 532
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 96523 us to 96524 us, flips 532
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 191474 us to 191569 us, flips 533
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 191605 us to 191626 us, flips 533
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 191678 us to 191696 us, flips 533
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 191699 us to 191712 us, flips 533
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 191715 us to 191716 us, flips 533
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 283708 us to 283806 us, flips 534
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 283844 us to 283863 us, flips 534
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 283915 us to 283933 us, flips 534
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 283935 us to 283949 us, flips 534
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 283951 us to 283952 us, flips 534
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 378121 us to 378216 us, flips 535
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 378253 us to 378273 us, flips 535
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 378326 us to 378343 us, flips 535
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 378345 us to 378359 us, flips 535
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 378361 us to 378363 us, flips 535
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 473932 us to 474029 us, flips 536
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 474068 us to 474087 us, flips 536
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 474139 us to 474157 us, flips 536
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 474159 us to 474172 us, flips 536
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 474174 us to 474176 us, flips 536
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 569552 us to 569648 us, flips 537
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 569684 us to 569704 us, flips 537
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 569764 us to 569782 us, flips 537
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 569784 us to 569797 us, flips 537
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 569800 us to 569801 us, flips 537
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 664938 us to 665036 us, flips 538
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 665075 us to 665095 us, flips 538
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 665147 us to 665165 us, flips 538
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 665166 us to 665179 us, flips 538
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 665182 us to 665183 us, flips 538
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 760211 us to 760308 us, flips 539
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 760346 us to 760366 us, flips 539
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 760419 us to 760436 us, flips 539
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 760438 us to 760452 us, flips 539
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 760454 us to 760455 us, flips 539
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 856203 us to 856302 us, flips 540
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 856337 us to 856356 us, flips 540
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 856409 us to 856427 us, flips 540
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 856429 us to 856442 us, flips 540
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 856445 us to 856446 us, flips 540
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 950337 us to 950433 us, flips 541
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 950471 us to 950493 us, flips 541
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 950550 us to 950572 us, flips 541
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 950573 us to 950587 us, flips 541
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 950590 us to 950591 us, flips 541
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 1046332 us to 1046431 us, flips 542
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 1046467 us to 1046487 us, flips 542
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 1046541 us to 1046562 us, flips 542
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 1046564 us to 1046576 us, flips 542
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 1046579 us to 1046581 us, flips 542
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 1140349 us to 1140446 us, flips 543
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 1140482 us to 1140501 us, flips 543
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 1140554 us to 1140574 us, flips 543
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 1140576 us to 1140589 us, flips 543
+vulkan4xenon: profile, the last 10 s: uniform blocks the GPU loaded, 3.0 a present
+vulkan4xenon: profile, the last 10 s: uniform blocks the CPU read, 2.0 a present
+vulkan4xenon: profile, the last 10 s: quads the CPU read from uniform blocks, 11.8 a present
+vulkan4xenon: profile, the last 10 s: push constant quads written, 4.9 a present
+vulkan4xenon: profile, the last 10 s: pipelines applied whole, 3.9 a present
+vulkan4xenon: profile, the last 10 s: textures pointed, 3.0 a present
+vulkan4xenon: profile, the last 10 s: streams pointed, 3.0 a present
+vulkan4xenon: profile, the last 10 s: bytes copied into images, 0.0 a present
+vulkan4xenon: profile, the last 10 s: of them from write-combined memory, 0.0 a present
+vulkan4xenon: profile, the last 10 s: bytes drawn into images from buffers, 1028015.7 a present
+vulkan4xenon: profile, the last 10 s: rows read back to copy part of a row, 0.0 a present
+vulkan4xenon: profile, the last 10 s: bytes copied out of images, 0.0 a present
+vulkan4xenon: profile, the last 10 s: bytes copied between images, 0.0 a present
+vulkan4xenon: profile, the last 10 s: bytes copied into buffers, 0.0 a present
+vulkan4xenon: profile, the last 10 s: literal registers written, 9.8 a present
+vulkan4xenon: profile, the last 10 s: pipelines applied whole again, 0.0 a present
+vulkan4xenon: profile, the last 10 s: the GPU's time on the submits, 1469 us a present, over 302 submits it finished
+[libretro INFO] [COMMON] DIAG 10.07 s: vblanks 202 renders 101 presents 101 runs 103 dupes 2; emu on hw 2 busy 99.1%, render on hw 0 busy 7.0%; mftb 14.3 ns
+[libretro INFO] [COMMON] DIAG emu ms: jit 8198.7(0) memreg 122.5(27233) memvram 0.3(4848) memp4 45.0(273375) sq 34.7(728314) ta 0.5(707) ifb 0.2(677) canon 11.2(0) compile 3.0(47) sched 131.0(150334) arm7 737.3(148609) mix 478.2(148609) dsp 8.6(148609) spg 7.4(1010) pvr 1.4(101) gdrom 126.1(1053) audio 69.6(148609) waitrenderend 92.5(101) sum 10068.1
+[libretro INFO] [COMMON] DIAG render ms: frontend 25.8(0) run 8.1(103) wait 9365.0(609) parse 8.3(101) sort 0.1(101) texdecode 436.0(101) texupload 68.7(101) record 13.0(202) submit 10.3(101) submitpresent 2.1(101) gpuwait 0.3(202) video 73.6(103) audio 57.0(103) sum 10068.1
+[libretro INFO] [COMMON] DIAG jit: blocks 44954871 guest ops 801110412 (17.8 a block) check words 412120260 stores 115352041 loads 179446030 dynamic exits 5679270 conditional exits 33072317 compiled 17 check fails 0 resets 0
+[libretro INFO] [COMMON] DIAG ops: canon 170478: div32u 50207 div32p2 48128 div32s 46176 div1 20475 frswap 5492; ifb 677: 085b reios_trap 677
+[libretro INFO] [COMMON] DIAG samples 4899, in blocks 3921: jit 80.0% memreg 1.4% memp4 0.4% sq 0.4% ta 0.0% canon 0.1% compile 0.0% sched 1.1% arm7 8.1% mix 5.3% dsp 0.2% spg 0.1% gdrom 1.3% audio 0.6% waitrenderend 1.0%
+[libretro INFO] [COMMON] DIAG slow: 8ceb1742 t8.8% g12.6% r1631450 o62 c31 s9 l7 h1920 e16; 8ceb2354 t5.7% g11.8% r1369988 o69 c35 s8 l16 h1836 e16; 8ceb1d00 t3.8% g7.0% r963291 o58 c29 s8 l24 h1956 e16; 8ceb20e8 t3.3% g8.4% r688128 o98 c49 s8 l32 h2556 e16; 8ceb1626 t3.1% g2.4% r699164 o28 c14 s8 l4 h1616 e16; 8ceb15ea t2.7% g2.4% r699154 o28 c14 s8 l4 h1616 e16; 8ceb1552 t2.4% g1.6% r233047 o54 c27 s16 l16 h5068 e16; 8ceb16a2 t2.0% g1.6% r233049 o54 c27 s16 l16 h5068 e16;
+[libretro INFO] [COMMON] DIAG hot: 8ceb1742 t8.8% g12.6% r1631450 o62 c31 s9 l7 h1920 e16; 8ceb2354 t5.7% g11.8% r1369988 o69 c35 s8 l16 h1836 e16; 8ceb20e8 t3.3% g8.4% r688128 o98 c49 s8 l32 h2556 e16; 8ceb1d00 t3.8% g7.0% r963291 o58 c29 s8 l24 h1956 e16; 8ceb2050 t1.0% g3.5% r376446 o74 c37 s8 l16 h1680 e16; 8ceb1b64 t1.4% g2.7% r1373251 o16 c8 s0 l3 h448 e17; 8ceb1626 t3.1% g2.4% r699164 o28 c14 s8 l4 h1616 e16; 8ceb15ea t2.7% g2.4% r699154 o28 c14 s8 l4 h1616 e16;
+[libretro INFO] [COMMON] DIAG vk per render (101): draw 1.0 drawIndexed 2.0 bindPipeline 5.0 bindDescriptorSets 3.0 pushConstants 2.0 setScissor 3.0 setViewport 2.0 bindVertexBuffers 2.0 bindIndexBuffer 1.0 descriptorWrites 6.0 copyBufferToImage 1.0 pipelineBarrier 2.0 beginRenderPass 2.0 queueSubmits 2.0 submittedBuffers 3.0
+[libretro INFO] [COMMON] DIAG textures: 140000 fmt3 512x512 vq0 mip0 scan1 stride1 new0 vram50 pal0 249.6ms; 1c0000 fmt3 512x512 vq0 mip0 scan1 stride1 new0 vram51 pal0 255.0ms; dropped 0
+vulkan4xenon: profile, the last 10 s: 401 draws, 3464 commands, 311 submits, 105 presents; a present 3.8 draws, 129.2 us submitting; a submit 1.3 draws, 43.6 us; a lap 20.7 ns
+vulkan4xenon: profile, the last 10 s: dispatch 310 ns a draw, 279 less its 1.5 laps
+vulkan4xenon: profile, the last 10 s: push 175 ns a draw, 164 less its 0.5 laps
+vulkan4xenon: profile, the last 10 s: pipeline 4034 ns a draw, 4013 less its 1.0 laps
+vulkan4xenon: profile, the last 10 s: constants 535 ns a draw, 495 less its 2.0 laps
+vulkan4xenon: profile, the last 10 s: resources 2400 ns a draw, 2339 less its 3.0 laps
+vulkan4xenon: profile, the last 10 s: checks 1320 ns a draw, 1279 less its 2.0 laps
+vulkan4xenon: profile, the last 10 s: draws 219 ns a draw, 199 less its 1.0 laps
+vulkan4xenon: profile, the last 10 s: commands 21805 ns a draw, 21626 less its 8.6 laps
+vulkan4xenon: profile, the last 10 s: submit 3038 ns a draw, 3006 less its 1.6 laps
+vulkan4xenon: profile, the last 10 s: all 33837 ns a draw, 33400 less its 21.1 laps
+vulkan4xenon: profile, the last 10 s: command type 0 (src/objects.h), 28 us a present, 3 a present
+vulkan4xenon: profile, the last 10 s: command type 1 (src/objects.h), 22 us a present, 3 a present
+vulkan4xenon: profile, the last 10 s: command type 35 (src/objects.h), 30 us a present, 1 a present
+vulkan4xenon: profile, the last 10 s: the replay's waits for the GPU, 0 us a present, 0.0 a present
+vulkan4xenon: profile, the last 10 s: of them for draws before a copy into a buffer, 0 us a present, 0.0 a present
+vulkan4xenon: profile, the last 10 s: for what a submission used, 0 us a present, 0.0 a present
+vulkan4xenon: profile, the last 10 s: for room for a pass past eDRAM, 0 us a present, 0.0 a present
+vulkan4xenon: profile, the last 10 s: the app's waits for fences, outside the submit, 0 us a present, 0.0 a present
+vulkan4xenon: profile, the last 10 s: images drawn back, 0.4 a present
+vulkan4xenon: profile, the last 10 s: resolves made to clear, 0.0 a present
+vulkan4xenon: profile, the last 10 s: resolves put off, 0.0 a present
+vulkan4xenon: profile, the last 10 s: put-off resolves made later, 0.0 a present
+vulkan4xenon: profile, the last 10 s: xsdk's waits for room in its ring, 0.0 a present
+vulkan4xenon: profile, the last 10 s: microseconds of them, 0.0 a present
+vulkan4xenon: profile, the last 10 s: passes' begins placing targets and forgetting what they reach, 9 us a present, 3036 ns a pass
+vulkan4xenon: profile, the last 10 s: passes' begins setting targets, 6 us a present, 2012 ns a pass
+vulkan4xenon: profile, the last 10 s: passes' begins drawing back and clearing, 4 us a present, 1211 ns a pass
+vulkan4xenon: profile, the last 10 s: passes' begins keeping parts, 3 us a present, 1132 ns a pass
+vulkan4xenon: profile, the last 10 s: passes' ends deciding stores, 1 us a present, 311 ns a pass
+vulkan4xenon: profile, the last 10 s: passes' ends resolving, 15 us a present, 5235 ns a pass
+vulkan4xenon: profile, the last 10 s: passes' ends' rest, 4 us a present, 1424 ns a pass
+vulkan4xenon: profile, the last 10 s: submits, 130 us a present, 3.0 a present, the longest 104 us
+vulkan4xenon: profile, the last 10 s: fence waits, 0 us a present, 0.0 a present, the longest 0 us
+vulkan4xenon: profile, the last 10 s: acquires, 65 us a present, 1.0 a present, the longest 6697 us
+vulkan4xenon: profile, the last 10 s: presents, 13 us a present, 1.0 a present, the longest 15 us
+vulkan4xenon: profile, the last 10 s: idle waits, 0 us a present, 0.0 a present, the longest 0 us
+vulkan4xenon: profile, the last 10 s: xsdk's vblanks 605, flips 106, vblanks showing the last frame again 499, flips past vblank 0; the longest wait for a buffer since the start 0 us
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 0 us to 97 us, flips 636
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 133 us to 152 us, flips 636
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 203 us to 221 us, flips 636
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 223 us to 236 us, flips 636
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 239 us to 240 us, flips 636
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 103379 us to 103482 us, flips 637
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 103522 us to 103542 us, flips 637
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 103594 us to 103612 us, flips 637
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 103614 us to 103626 us, flips 637
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 103628 us to 103630 us, flips 637
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 200759 us to 200859 us, flips 638
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 200895 us to 200915 us, flips 638
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 200969 us to 200987 us, flips 638
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 200989 us to 201002 us, flips 638
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 201005 us to 201006 us, flips 638
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 303788 us to 303883 us, flips 639
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 303920 us to 303939 us, flips 639
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 303992 us to 304010 us, flips 639
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 304012 us to 304026 us, flips 639
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 304028 us to 304029 us, flips 639
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 399713 us to 399814 us, flips 640
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 399849 us to 399868 us, flips 640
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 399921 us to 399939 us, flips 640
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 399941 us to 399955 us, flips 640
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 399957 us to 399959 us, flips 640
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 501091 us to 501188 us, flips 641
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 501226 us to 501245 us, flips 641
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 501301 us to 501321 us, flips 641
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 501323 us to 501335 us, flips 641
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 501338 us to 501339 us, flips 641
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 599671 us to 599770 us, flips 642
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 599816 us to 599837 us, flips 642
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 599892 us to 599911 us, flips 642
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 599913 us to 599926 us, flips 642
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 599929 us to 599930 us, flips 642
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 696918 us to 697012 us, flips 643
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 697050 us to 697068 us, flips 643
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 697120 us to 697138 us, flips 643
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 697139 us to 697152 us, flips 643
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 697154 us to 697155 us, flips 643
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 795727 us to 795826 us, flips 644
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 795863 us to 795883 us, flips 644
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 795936 us to 795953 us, flips 644
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 795955 us to 795969 us, flips 644
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 795971 us to 795973 us, flips 644
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 897840 us to 897935 us, flips 645
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 897970 us to 897990 us, flips 645
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 898043 us to 898060 us, flips 645
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 898062 us to 898075 us, flips 645
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 898077 us to 898078 us, flips 645
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 996751 us to 996851 us, flips 646
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 996887 us to 996906 us, flips 646
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 996959 us to 996976 us, flips 646
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 996978 us to 996992 us, flips 646
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 996995 us to 996996 us, flips 646
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 1099981 us to 1100074 us, flips 647
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 1100108 us to 1100133 us, flips 647
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 1100185 us to 1100202 us, flips 647
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 1100204 us to 1100216 us, flips 647
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 1100218 us to 1100219 us, flips 647
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 1198987 us to 1199085 us, flips 648
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 1199127 us to 1199147 us, flips 648
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 1199199 us to 1199217 us, flips 648
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 1199219 us to 1199232 us, flips 648
+vulkan4xenon: profile, the last 10 s: uniform blocks the GPU loaded, 2.8 a present
+vulkan4xenon: profile, the last 10 s: uniform blocks the CPU read, 1.8 a present
+vulkan4xenon: profile, the last 10 s: quads the CPU read from uniform blocks, 11.0 a present
+vulkan4xenon: profile, the last 10 s: push constant quads written, 4.7 a present
+vulkan4xenon: profile, the last 10 s: pipelines applied whole, 3.8 a present
+vulkan4xenon: profile, the last 10 s: textures pointed, 2.8 a present
+vulkan4xenon: profile, the last 10 s: streams pointed, 3.0 a present
+vulkan4xenon: profile, the last 10 s: bytes copied into images, 0.0 a present
+vulkan4xenon: profile, the last 10 s: of them from write-combined memory, 0.0 a present
+vulkan4xenon: profile, the last 10 s: bytes drawn into images from buffers, 878806.6 a present
+vulkan4xenon: profile, the last 10 s: rows read back to copy part of a row, 0.0 a present
+vulkan4xenon: profile, the last 10 s: bytes copied out of images, 0.0 a present
+vulkan4xenon: profile, the last 10 s: bytes copied between images, 0.0 a present
+vulkan4xenon: profile, the last 10 s: bytes copied into buffers, 0.0 a present
+vulkan4xenon: profile, the last 10 s: literal registers written, 9.3 a present
+vulkan4xenon: profile, the last 10 s: pipelines applied whole again, 0.0 a present
+vulkan4xenon: profile, the last 10 s: the GPU's time on the submits, 1409 us a present, over 311 submits it finished
+[libretro INFO] [COMMON] DIAG 10.02 s: vblanks 204 renders 102 presents 102 runs 104 dupes 2; emu on hw 2 busy 99.2%, render on hw 0 busy 6.2%; mftb 14.3 ns
+[libretro INFO] [COMMON] DIAG emu ms: jit 8079.6(0) memreg 112.6(25750) memvram 0.3(4896) memp4 68.8(394347) sq 29.0(626040) ta 0.5(662) ifb 0.2(568) canon 32.9(0) compile 34.8(714) sched 137.5(151747) arm7 737.6(150083) mix 481.6(150083) dsp 10.3(150083) spg 8.4(1020) pvr 1.4(102) gdrom 129.8(890) audio 72.9(150083) waitrenderend 78.6(102) sum 10017.0
+[libretro INFO] [COMMON] DIAG render ms: frontend 21.4(0) run 8.1(104) wait 9393.3(615) parse 8.1(102) sort 0.1(102) texdecode 376.7(87) texupload 60.5(87) record 12.7(204) submit 10.0(102) submitpresent 2.1(102) gpuwait 0.3(204) video 86.1(104) audio 37.7(104) sum 10017.0
+[libretro INFO] [COMMON] DIAG jit: blocks 50818648 guest ops 732693105 (14.4 a block) check words 386758389 stores 107991967 loads 168720463 dynamic exits 10251643 conditional exits 33636230 compiled 400 check fails 0 resets
+[libretro INFO] [COMMON] DIAG ops: canon 556951: div32u 207016 div32p2 164273 div32s 111545 div1 68829 frswap 5288; ifb 570: 085b reios_trap 570
+[libretro INFO] [COMMON] DIAG samples 5036, in blocks 4051: jit 80.4% memreg 1.3% memp4 0.8% sq 0.2% canon 0.4% compile 0.3% sched 1.2% arm7 7.4% mix 4.9% dsp 0.2% spg 0.1% pvr 0.0% gdrom 1.2% audio 0.9% waitrenderend 0.8%
+[libretro INFO] [COMMON] DIAG slow: 8ceb1742 t8.1% g13.1% r1553301 o62 c31 s9 l7 h1920 e16; 8ceb2354 t3.8% g8.0% r846804 o69 c35 s8 l16 h1836 e16; 8ceb1d00 t3.6% g8.4% r1055180 o58 c29 s8 l24 h1956 e16; 8ceb15ea t2.9% g2.5% r665683 o28 c14 s8 l4 h1616 e16; 8ceb1626 t2.7% g2.5% r665684 o28 c14 s8 l4 h1616 e16; 8ceb20e8 t2.2% g6.7% r499416 o98 c49 s8 l32 h2556 e16; 8ceb1552 t2.1% g1.6% r221891 o54 c27 s16 l16 h5068 e16; 8ceb16a2 t2.1% g1.6% r221888 o54 c27 s16 l16 h5068 e16;
+[libretro INFO] [COMMON] DIAG hot: 8ceb1742 t8.1% g13.1% r1553301 o62 c31 s9 l7 h1920 e16; 8ceb1d00 t3.6% g8.4% r1055180 o58 c29 s8 l24 h1956 e16; 8ceb2354 t3.8% g8.0% r846804 o69 c35 s8 l16 h1836 e16; 8ceb20e8 t2.2% g6.7% r499416 o98 c49 s8 l32 h2556 e16; 8ceb1626 t2.7% g2.5% r665684 o28 c14 s8 l4 h1616 e16; 8ceb15ea t2.9% g2.5% r665683 o28 c14 s8 l4 h1616 e16; 8ceb1b64 t0.8% g2.2% r1015470 o16 c8 s0 l3 h448 e17; 8ceb173c t1.5% g2.0% r221892 o65 c33 s9 l9 h2080 e16;
+[libretro INFO] [COMMON] DIAG vk per render (102): draw 1.0 drawIndexed 1.9 bindPipeline 4.9 bindDescriptorSets 2.9 pushConstants 2.0 setScissor 3.0 setViewport 2.0 bindVertexBuffers 2.0 bindIndexBuffer 1.0 descriptorWrites 5.9 copyBufferToImage 0.9 pipelineBarrier 1.7 beginRenderPass 2.0 queueSubmits 2.0 submittedBuffers 3.0
+[libretro INFO] [COMMON] DIAG textures: 140000 fmt3 512x512 vq0 mip0 scan1 stride1 new0 vram44 pal0 221.1ms; 1c0000 fmt3 512x512 vq0 mip0 scan1 stride1 new0 vram43 pal0 216.1ms; dropped 0
+[libretro INFO] [DYNAREC] DIAG dump 8ceb1742: 62 ops, 124 guest bytes, 1920 host bytes, type 16, jcond 1, cycles 44
+[libretro INFO] [DYNAREC] DIAG sh4 8ceb1742+000: ftrv xmtrx,<FV_N> ;  | fmov.s @R3+,FR2 ; R3=a0 FR2=512.621643  | fmov.s @R3+,FR0 ; R3=a0 FR0=511.888367  | fmov FR2,FR6 ; FR2=512.621643 FR6=512.378357  | fmov FR0,FR4 ; FR0=511.888367 FR4=513.111633  | fadd FR8,FR0 ; FR8=0.815953 FR0=511.888367 
+[libretro INFO] [DYNAREC] DIAG sh4 8ceb1742+00c: fadd FR9,FR1 ; FR9=0.815953 FR1=512.153564  | fadd FR10,FR2 ; FR10=0.815953 FR2=512.621643  | fadd FR11,FR3 ; FR11=0.815953 FR3=513.018494  | fsub FR8,FR4 ; FR8=0.815953 FR4=513.111633  | fsub FR9,FR5 ; FR9=0.815953 FR5=512.846436  | fmov.s @R7,FR12 ; R7=140 FR12=512.500000 
+[libretro INFO] [DYNAREC] DIAG sh4 8ceb1742+018: fsub FR10,FR6 ; FR10=0.815953 FR6=512.378357  | fmov.s @R1+,FR8 ; R1=2d48 FR8=0.815953  | fsub FR11,FR7 ; FR11=0.815953 FR7=511.981506  | fmov.s @R1+,FR10 ; R1=2d48 FR10=0.815953  | fadd FR12,FR0 ; FR12=512.500000 FR0=511.888367  | mov.l R3,@(0x30,R7) ; R3=a0 R7=140 
+[libretro INFO] [DYNAREC] DIAG sh4 8ceb1742+024: fadd FR12,FR1 ; FR12=512.500000 FR1=512.153564  | mov.l @(0x18,R7),R3 ; R7=140 R3=a0  | fadd FR12,FR2 ; FR12=512.500000 FR2=512.621643  | fadd FR12,FR3 ; FR12=512.500000 FR3=513.018494  | fadd FR12,FR4 ; FR12=512.500000 FR4=513.111633  | fadd FR12,FR5 ; FR12=512.500000 FR5=512.846436 
+[libretro INFO] [DYNAREC] DIAG sh4 8ceb1742+030: fadd FR12,FR6 ; FR12=512.500000 FR6=512.378357  | fadd FR12,FR7 ; FR12=512.500000 FR7=511.981506  | ftrc FR0, FPUL ; FR0=511.888367  | sts FPUL,R4 ; R4=1  | ftrc FR1, FPUL ; FR1=512.153564  | sts FPUL,R5 ; R5=ffffffff 
+[libretro INFO] [DYNAREC] DIAG sh4 8ceb1742+03c: sub R3,R4 ; R3=a0 R4=1  | mov.w R4,@R0 ; R4=1 R0=0  | ftrc FR2, FPUL ; FR2=512.621643  | sts FPUL,R4 ; R4=1  | sub R3,R5 ; R3=a0 R5=ffffffff  | mov.w R5,@(R0,R9) ; R5=ffffffff R9=8cee1f98 
+[libretro INFO] [DYNAREC] DIAG sh4 8ceb1742+048: ftrc FR3, FPUL ; FR3=513.018494  | sts FPUL,R5 ; R5=ffffffff  | sub R3,R4 ; R3=a0 R4=1  | mov.w R4,@(R0,R11) ; R4=1 R11=8eee8000  | ftrc FR4, FPUL ; FR4=513.111633  | sts FPUL,R4 ; R4=1 
+[libretro INFO] [DYNAREC] DIAG sh4 8ceb1742+054: sub R3,R5 ; R3=a0 R5=ffffffff  | mov.w R5,@(R0,R13) ; R5=ffffffff R13=140  | ftrc FR5, FPUL ; FR5=512.846436  | sts FPUL,R5 ; R5=ffffffff  | sub R3,R4 ; R3=a0 R4=1  | mov.w R4,@(R0,R14) ; R4=1 R14=8cee1f88 
+[libretro INFO] [DYNAREC] DIAG sh4 8ceb1742+060: ftrc FR6, FPUL ; FR6=512.378357  | sts FPUL,R4 ; R4=1  | sub R3,R5 ; R3=a0 R5=ffffffff  | mov.w R5,@(R0,R12) ; R5=ffffffff R12=8eee8c60  | ftrc FR7, FPUL ; FR7=511.981506  | sts FPUL,R5 ; R5=ffffffff 
+[libretro INFO] [DYNAREC] DIAG sh4 8ceb1742+06c: sub R3,R4 ; R3=a0 R4=1  | mov.w R4,@(R0,R10) ; R4=1 R10=8eee81e8  | dt R2 ; R2=0  | sub R3,R5 ; R3=a0 R5=ffffffff  | mov.w R5,@(R0,R8) ; R5=ffffffff R8=1  | add #2,R0 ; R0=0 
+[libretro INFO] [DYNAREC] DIAG sh4 8ceb1742+078: bf.s 0x8CEB1742 ;  | mov.l @(0x30,R7),R3 ; R7=140 R3=a0 
+[libretro INFO] [DYNAREC] DIAG shil 8ceb1742 000: ftrv f8v4.1 <- f8v4.0, f16v16.0 | readm f2v2.1 <- r3.0 | add r3.1 <- r3.0, 8
+[libretro INFO] [DYNAREC] DIAG shil 8ceb1742 003: readm f0v2.1 <- r3.1 | add r3.2 <- r3.1, 8 | mov64 f6v2.1 <- f2v2.1
+[libretro INFO] [DYNAREC] DIAG shil 8ceb1742 006: mov64 f4v2.1 <- f0v2.1 | fadd f0.2 <- f0.1, f8.1 | fadd f1.2 <- f1.1, f9.1
+[libretro INFO] [DYNAREC] DIAG shil 8ceb1742 009: fadd f2.2 <- f2.1, f10.1 | fadd f3.2 <- f3.1, f11.1 | fsub f4.2 <- f4.1, f8.1
+[libretro INFO] [DYNAREC] DIAG shil 8ceb1742 012: fsub f5.2 <- f5.1, f9.1 | readm f12v2.1 <- r7.0 | fsub f6.2 <- f6.1, f10.1
+[libretro INFO] [DYNAREC] DIAG shil 8ceb1742 015: readm f8v2.2 <- r1.0 | add r1.1 <- r1.0, 8 | fsub f7.2 <- f7.1, f11.1
+[libretro INFO] [DYNAREC] DIAG shil 8ceb1742 018: readm f10v2.2 <- r1.1 | add r1.2 <- r1.1, 8 | fadd f0.3 <- f0.2, f12.1
+[libretro INFO] [DYNAREC] DIAG shil 8ceb1742 021: writem  <- r7.0, r3.2, 48 | fadd f1.3 <- f1.2, f12.1 | readm r3.3 <- r7.0, 24
+[libretro INFO] [DYNAREC] DIAG shil 8ceb1742 024: fadd f2.3 <- f2.2, f12.1 | fadd f3.3 <- f3.2, f12.1 | fadd f4.3 <- f4.2, f12.1
+[libretro INFO] [DYNAREC] DIAG shil 8ceb1742 027: fadd f5.3 <- f5.2, f12.1 | fadd f6.3 <- f6.2, f12.1 | fadd f7.3 <- f7.2, f12.1
+[libretro INFO] [DYNAREC] DIAG shil 8ceb1742 030: cvt_f2i_t fpul.1 <- f0.3 | mov32 r4.1 <- fpul.1 | cvt_f2i_t fpul.2 <- f1.3
+[libretro INFO] [DYNAREC] DIAG shil 8ceb1742 033: mov32 r5.1 <- fpul.2 | sub r4.2 <- r4.1, r3.3 | writem  <- r0.0, r4.2
+[libretro INFO] [DYNAREC] DIAG shil 8ceb1742 036: cvt_f2i_t fpul.3 <- f2.3 | mov32 r4.3 <- fpul.3 | sub r5.2 <- r5.1, r3.3
+[libretro INFO] [DYNAREC] DIAG shil 8ceb1742 039: writem  <- r9.0, r5.2, r0.0 | cvt_f2i_t fpul.4 <- f3.3 | mov32 r5.3 <- fpul.4
+[libretro INFO] [DYNAREC] DIAG shil 8ceb1742 042: sub r4.4 <- r4.3, r3.3 | writem  <- r11.0, r4.4, r0.0 | cvt_f2i_t fpul.5 <- f4.3
+[libretro INFO] [DYNAREC] DIAG shil 8ceb1742 045: mov32 r4.5 <- fpul.5 | sub r5.4 <- r5.3, r3.3 | writem  <- r13.0, r5.4, r0.0
+[libretro INFO] [DYNAREC] DIAG shil 8ceb1742 048: cvt_f2i_t fpul.6 <- f5.3 | mov32 r5.5 <- fpul.6 | sub r4.6 <- r4.5, r3.3
+[libretro INFO] [DYNAREC] DIAG shil 8ceb1742 051: writem  <- r14.0, r4.6, r0.0 | cvt_f2i_t fpul.7 <- f6.3 | mov32 r4.7 <- fpul.7
+[libretro INFO] [DYNAREC] DIAG shil 8ceb1742 054: sub r5.6 <- r5.5, r3.3 | writem  <- r12.0, r5.6, r0.0 | cvt_f2i_t fpul.8 <- f7.3
+[libretro INFO] [DYNAREC] DIAG shil 8ceb1742 057: sub r4.8 <- r4.7, r3.3 | writem  <- r10.0, r4.8, r0.0 | sub r2.1 <- r2.0, 1
+[libretro INFO] [DYNAREC] DIAG shil 8ceb1742 060: seteq sr.T.1 <- r2.1, 0 | sub r5.7 <- fpul.8, r3.3 | writem  <- r8.0, r5.7, r0.0
+[libretro INFO] [DYNAREC] DIAG shil 8ceb1742 063: add r0.1 <- r0.0, 2 | jcond pc_dyn.1 <- sr.T.1 | readm r3.4 <- r7.0, 48
+[libretro INFO] [DYNAREC] DIAG host 8ceb1742+0000: 3d80836f 618cadc0 816c0000 396b0001 916c0000 3d608353 616b3018 918b0000 3d8004fb 618cb740 3d608416 616bd2a8 a06c0002 a08b0002 80ac0004 80cb0004
+[libretro INFO] [DYNAREC] DIAG host 8ceb1742+0040: e8ec0008 e90b0008 e92c0010 e94b0010 7c632278 7ca53278 7ce74278 7d295278 7c601b78 7c002b78 7c003b78 7c004b78 e86c0018 e88b0018 e8ac0020 e8cb0020
+[libretro INFO] [DYNAREC] DIAG host 8ceb1742+0080: e8ec0028 e90b0028 e92c0030 e94b0030 7c632278 7ca53278 7ce74278 7d295278 7c001b78 7c002b78 7c003b78 7c004b78 e86c0038 e88b0038 e8ac0040 e8cb0040
+[libretro INFO] [DYNAREC] DIAG host 8ceb1742+00c0: e8ec0048 e90b0048 e92c0050 e94b0050 7c632278 7ca53278 7ce74278 7d295278 7c001b78 7c002b78 7c003b78 7c004b78 e86c0058 e88b0058 e8ac0060 e8cb0060
+[libretro INFO] [DYNAREC] DIAG host 8ceb1742+0100: e8ec0068 e90b0068 e92c0070 e94b0070 7c632278 7ca53278 7ce74278 7d295278 7c001b78 7c002b78 7c003b78 7c004b78 806c0078 808b0078 a0ac007c a0cb007c
+[libretro INFO] [DYNAREC] DIAG host 8ceb1742+0140: 7c632278 7ca53278 7c001b78 7c002b78 2c200000 41820010 3c608ceb 60631742 4bd42dc0 807f0174 2c030000 40800010 3c808ceb 60841742 4bd42b61 3863ffd4
+[libretro INFO] [DYNAREC] DIAG host 8ceb1742+0180: 907f0174 c01f00a0 c03f00a4 c05f00a8 c07f00ac c09f0040 fca00132 c09f0050 fca1293a c09f0060 fca2293a c09f0070 fca3293a fcc02818 c09f0044 fca00132
+[libretro INFO] [DYNAREC] DIAG host 8ceb1742+01c0: c09f0054 fca1293a c09f0064 fca2293a c09f0074 fca3293a fce02818 c09f0048 fca00132 c09f0058 fca1293a c09f0068 fca2293a c09f0078 fca3293a fd002818
+[libretro INFO] [DYNAREC] DIAG host 8ceb1742+0200: c09f004c fca00132 c09f005c fca1293a c09f006c fca2293a c09f007c fca3293a fd202818 d0df00a0 d0ff00a4 d11f00a8 d13f00ac 837f00cc 576b36be 396b0005
+[libretro INFO] [DYNAREC] DIAG host 8ceb1742+0240: 716b0047 408203b8 576b023e 7c9e5c2c 396b0004 7cbe5c2c 909f0088 90bf008c 3b7b0008 576b36be 396b0005 716b0047 408203b0 576b023e 7c9e5c2c 396b0004
+[libretro INFO] [DYNAREC] DIAG host 8ceb1742+0280: 7cbe5c2c 909f0080 90bf0084 3b7b0008 807f0088 809f008c 907f0098 909f009c 807f0080 809f0084 907f0090 909f0094 c3ff0080 c3df00a0 effff02a c3bf0084
+[libretro INFO] [DYNAREC] DIAG host 8ceb1742+02c0: c39f00a4 efbde02a c37f0088 c35f00a8 ef7bd02a c33f008c c31f00ac ef39c02a c2ff0090 eef7f028 c2df0094 eed6e028 835f00dc 574b36be 396b0005 716b0047
+[libretro INFO] [DYNAREC] DIAG host 8ceb1742+0300: 40820344 574b023e 7c9e5c2c 396b0004 7cbe5c2c 909f00b0 90bf00b4 c2bf0098 eeb5d028 833f00c4 572b36be 396b0005 716b0047 40820334 572b023e 7c9e5c2c
+[libretro INFO] [DYNAREC] DIAG host 8ceb1742+0340: 396b0004 7cbe5c2c 909f00a0 90bf00a4 3b390008 c29f009c ee94c028 572b36be 396b0005 716b0047 40820324 572b023e 7c9e5c2c 396b0004 7cbe5c2c 909f00a8
+[libretro INFO] [DYNAREC] DIAG host 8ceb1742+0380: 90bf00ac 3b390008 933f00c4 c27f00b0 efff982a d3ff0080 387a0030 546b36be 396b0005 716b0047 40820308 546b023e 7f7e5d2c efbd982a d3bf0084 387a0018
+[libretro INFO] [DYNAREC] DIAG host 8ceb1742+03c0: 546b36be 396b0005 716b0047 4082030c 546b023e 7f7e5c2c ef7b982a d37f0088 ef39982a d33f008c eef7982a d2ff0090 eed6982a d2df0094 eeb5982a d2bf0098
+[libretro INFO] [DYNAREC] DIAG host 8ceb1742+0400: ee94982a d29f009c fc00f81e d8010060 83010064 7f17c378 fc00e81e d8010060 83010064 7f16c378 7efbb850 82bf00c0 56ab36be 396b0005 716b0047 408202a8
+[libretro INFO] [DYNAREC] DIAG host 8ceb1742+0440: 56ab023e 7efe5f2c fc00d81e d8010060 83010064 7f17c378 7edbb050 829f00e4 7c74aa14 546b36be 396b0005 716b0047 40820284 546b023e 7ede5f2c fc00c81e
+[libretro INFO] [DYNAREC] DIAG host 8ceb1742+0480: d8010060 83010064 7f16c378 7efbb850 827f00ec 7c73aa14 546b36be 396b0005 716b0047 4082025c 546b023e 7efe5f2c fc00b81e d8010060 83010064 7f17c378
+[libretro INFO] [DYNAREC] DIAG host 8ceb1742+04c0: 7edbb050 825f00f4 7c72aa14 546b36be 396b0005 716b0047 40820234 546b023e 7ede5f2c fc00b01e d8010060 83010064 7f16c378 7efbb850 823f00f8 7c71aa14
+[libretro INFO] [DYNAREC] DIAG host 8ceb1742+0500: 546b36be 396b0005 716b0047 4082020c 546b023e 7efe5f2c fc00a81e d8010060 83010064 7f17c378 7edbb050 821f00f0 7c70aa14 546b36be 396b0005 716b0047
+[libretro INFO] [DYNAREC] DIAG host 8ceb1742+0540: 408201e4 546b023e 7ede5f2c fc00a01e d8010060 83010064 931f0144 7efbb850 92ff00d0 81ff00e8 7c6faa14 546b36be 396b0005 716b0047 408201b8 546b023e
+[libretro INFO] [DYNAREC] DIAG host 8ceb1742+0580: 7efe5f2c 81df00c8 39ceffff 91df00c8 7dcb0034 5579d97e 933f0154 7edbc050 92df00d4 81df00e0 7c6eaa14 546b36be 396b0005 716b0047 40820184 546b023e
+[libretro INFO] [DYNAREC] DIAG host 8ceb1742+05c0: 7ede5f2c 3ab50002 92bf00c0 7f35cb78 7ebdab78 92bf014c 387a0030 546b36be 396b0005 716b0047 40820160 546b023e 7f7e5c2c 937f00cc 4800015c 7f63db78
+[libretro INFO] [DYNAREC] DIAG host 8ceb1742+0600: 90610060 4a965b15 907f0088 80610060 38630004 4a965b05 907f008c 4bfffc44 7f63db78 90610060 4a965af1 907f0080 80610060 38630004 4a965ae1 907f0084
+[libretro INFO] [DYNAREC] DIAG host 8ceb1742+0640: 4bfffc4c 7f43d378 90610060 4a965acd 907f00b0 80610060 38630004 4a965abd 907f00b4 4bfffcb8 7f23cb78 90610060 4a965aa9 907f00a0 80610060 38630004
+[libretro INFO] [DYNAREC] DIAG host 8ceb1742+0680: 4a965a99 907f00a4 4bfffcc8 7f23cb78 90610060 4a965a85 907f00a8 80610060 38630004 4a965a75 907f00ac 4bfffcd8 546036be 28000038 40820014 399f0000
+[libretro INFO] [DYNAREC] DIAG host 8ceb1742+06c0: 546b06be 7f6c5d2c 4bfffcec 7f64db78 4a965b59 4bfffce0 4a965a41 7c7b1b78 4bfffcf8 7ea3ab78 56e4043e 4a967d9d 4bfffd58 56c4043e 4a967d91 4bfffd80
+[libretro INFO] [DYNAREC] DIAG host 8ceb1742+0700: 56e4043e 4a967d85 4bfffda8 56c4043e 4a967d79 4bfffdd0 56e4043e 4a967d6d 4bfffdf8 56c4043e 4a967d61 4bfffe20 56e4043e 4a967d55 4bfffe4c 56c4043e
+[libretro INFO] [DYNAREC] DIAG host 8ceb1742+0740: 4a967d49 4bfffe80 4a9659d1 7c7b1b78 4bfffea4 7fabeb78 2c0b0000 40820014 4bfff8a0 60000000 60000000 60000000 4800002c 60000000 60000000 60000000
+[libretro INFO] [DYNAREC] DIAG dump 8ceb2354: 69 ops, 138 guest bytes, 1836 host bytes, type 16, jcond 1, cycles 42
+[libretro INFO] [DYNAREC] DIAG sh4 8ceb2354+000: sett ;  | extu.b R2,R2 ; R2=0 R2=0  | mov.b @R6+,R4 ; R6=f8000000 R4=0  | extu.b R3,R3 ; R3=8eee8ce0 R3=8eee8ce0  | mov.b @R7+,R5 ; R7=8eee8090 R5=1  | addc R3,R2 ; R3=8eee8ce0 R2=0 
+[libretro INFO] [DYNAREC] DIAG sh4 8ceb2354+00c: sett ;  | shar R2 ; R2=0  | extu.b R4,R4 ; R4=0 R4=0  | mov.b R2,@R13 ; R2=0 R13=60  | mov.b @R6+,R2 ; R6=f8000000 R2=0  | extu.b R5,R0 ; R5=1 R0=8eee83f0 
+[libretro INFO] [DYNAREC] DIAG sh4 8ceb2354+018: mov.b @R7+,R3 ; R7=8eee8090 R3=8eee8ce0  | addc R4,R0 ; R4=0 R0=8eee83f0  | sett ;  | shar R0 ; R0=8eee83f0  | extu.b R2,R2 ; R2=0 R2=0  | mov.b R0,@(0x1,R13) ; R13=60 
+[libretro INFO] [DYNAREC] DIAG sh4 8ceb2354+024: mov.b @R6+,R4 ; R6=f8000000 R4=0  | extu.b R3,R0 ; R3=8eee8ce0 R0=8eee83f0  | mov.b @R7+,R5 ; R7=8eee8090 R5=1  | addc R2,R0 ; R2=0 R0=8eee83f0  | sett ;  | shar R0 ; R0=8eee83f0 
+[libretro INFO] [DYNAREC] DIAG sh4 8ceb2354+030: extu.b R4,R4 ; R4=0 R4=0  | mov.b R0,@(0x2,R13) ; R13=60  | mov.b @R6+,R2 ; R6=f8000000 R2=0  | extu.b R5,R0 ; R5=1 R0=8eee83f0  | mov.b @R7+,R3 ; R7=8eee8090 R3=8eee8ce0  | addc R4,R0 ; R4=0 R0=8eee83f0 
+[libretro INFO] [DYNAREC] DIAG sh4 8ceb2354+03c: sett ;  | shar R0 ; R0=8eee83f0  | extu.b R2,R2 ; R2=0 R2=0  | mov.b R0,@(0x3,R13) ; R13=60  | mov.b @R6+,R4 ; R6=f8000000 R4=0  | extu.b R3,R0 ; R3=8eee8ce0 R0=8eee83f0 
+[libretro INFO] [DYNAREC] DIAG sh4 8ceb2354+048: mov.b @R7+,R5 ; R7=8eee8090 R5=1  | addc R2,R0 ; R2=0 R0=8eee83f0  | sett ;  | shar R0 ; R0=8eee83f0  | extu.b R4,R4 ; R4=0 R4=0  | mov.b R0,@(0x4,R13) ; R13=60 
+[libretro INFO] [DYNAREC] DIAG sh4 8ceb2354+054: mov.b @R6+,R2 ; R6=f8000000 R2=0  | extu.b R5,R0 ; R5=1 R0=8eee83f0  | mov.b @R7+,R3 ; R7=8eee8090 R3=8eee8ce0  | addc R4,R0 ; R4=0 R0=8eee83f0  | sett ;  | shar R0 ; R0=8eee83f0 
+[libretro INFO] [DYNAREC] DIAG sh4 8ceb2354+060: extu.b R2,R2 ; R2=0 R2=0  | mov.b R0,@(0x5,R13) ; R13=60  | mov.b @R6,R4 ; R6=f8000000 R4=0  | extu.b R3,R0 ; R3=8eee8ce0 R0=8eee83f0  | mov.b @R7,R5 ; R7=8eee8090 R5=1  | addc R2,R0 ; R2=0 R0=8eee83f0 
+[libretro INFO] [DYNAREC] DIAG sh4 8ceb2354+06c: sett ;  | shar R0 ; R0=8eee83f0  | extu.b R4,R4 ; R4=0 R4=0  | mov.b R0,@(0x6,R13) ; R13=60  | extu.b R5,R0 ; R5=1 R0=8eee83f0  | add R14,R6 ; R14=70 R6=f8000000 
+[libretro INFO] [DYNAREC] DIAG sh4 8ceb2354+078: addc R4,R0 ; R4=0 R0=8eee83f0  | add R14,R7 ; R14=70 R7=8eee8090  | mov.b @R6+,R2 ; R6=f8000000 R2=0  | shar R0 ; R0=8eee83f0  | mov.b @R7+,R3 ; R7=8eee8090 R3=8eee8ce0  | dt R1 ; R1=8eee8d70 
+[libretro INFO] [DYNAREC] DIAG sh4 8ceb2354+084: mov.b R0,@(0x7,R13) ; R13=60  | bf.s 0x8CEB2354 ;  | add #8,R13 ; R13=60 
+[libretro INFO] [DYNAREC] DIAG shil 8ceb2354 000: mov32 sr.T.1 <- 1 | and r2.1 <- r2.0, 0xff | readm r4.1 <- r6.0
+[libretro INFO] [DYNAREC] DIAG shil 8ceb2354 003: add r6.1 <- r6.0, 1 | and r3.1 <- r3.0, 0xff | readm r5.1 <- r7.0
+[libretro INFO] [DYNAREC] DIAG shil 8ceb2354 006: add r7.1 <- r7.0, 1 | adc r2.2, sr.T.2 <- r2.1, r3.1, sr.T.1 | and sr.T.3 <- r2.2, 1
+[libretro INFO] [DYNAREC] DIAG shil 8ceb2354 009: sar r2.3 <- r2.2, 1 | and r4.2 <- r4.1, 0xff | writem  <- r13.0, r2.3
+[libretro INFO] [DYNAREC] DIAG shil 8ceb2354 012: readm r2.4 <- r6.1 | add r6.2 <- r6.1, 1 | and r0.1 <- r5.1, 0xff
+[libretro INFO] [DYNAREC] DIAG shil 8ceb2354 015: readm r3.2 <- r7.1 | add r7.2 <- r7.1, 1 | adc r0.2, sr.T.4 <- r0.1, r4.2, sr.T.3
+[libretro INFO] [DYNAREC] DIAG shil 8ceb2354 018: and sr.T.5 <- r0.2, 1 | sar r0.3 <- r0.2, 1 | and r2.5 <- r2.4, 0xff
+[libretro INFO] [DYNAREC] DIAG shil 8ceb2354 021: writem  <- r13.0, r0.3, 1 | readm r4.3 <- r6.2 | add r6.3 <- r6.2, 1
+[libretro INFO] [DYNAREC] DIAG shil 8ceb2354 024: and r0.4 <- r3.2, 0xff | readm r5.2 <- r7.2 | add r7.3 <- r7.2, 1
+[libretro INFO] [DYNAREC] DIAG shil 8ceb2354 027: adc r0.5, sr.T.6 <- r0.4, r2.5, sr.T.5 | and sr.T.7 <- r0.5, 1 | sar r0.6 <- r0.5, 1
+[libretro INFO] [DYNAREC] DIAG shil 8ceb2354 030: and r4.4 <- r4.3, 0xff | writem  <- r13.0, r0.6, 2 | readm r2.6 <- r6.3
+[libretro INFO] [DYNAREC] DIAG shil 8ceb2354 033: add r6.4 <- r6.3, 1 | and r0.7 <- r5.2, 0xff | readm r3.3 <- r7.3
+[libretro INFO] [DYNAREC] DIAG shil 8ceb2354 036: add r7.4 <- r7.3, 1 | adc r0.8, sr.T.8 <- r0.7, r4.4, sr.T.7 | and sr.T.9 <- r0.8, 1
+[libretro INFO] [DYNAREC] DIAG shil 8ceb2354 039: sar r0.9 <- r0.8, 1 | and r2.7 <- r2.6, 0xff | writem  <- r13.0, r0.9, 3
+[libretro INFO] [DYNAREC] DIAG shil 8ceb2354 042: readm r4.5 <- r6.4 | add r6.5 <- r6.4, 1 | and r0.10 <- r3.3, 0xff
+[libretro INFO] [DYNAREC] DIAG shil 8ceb2354 045: readm r5.3 <- r7.4 | add r7.5 <- r7.4, 1 | adc r0.11, sr.T.10 <- r0.10, r2.7, sr.T.9
+[libretro INFO] [DYNAREC] DIAG shil 8ceb2354 048: and sr.T.11 <- r0.11, 1 | sar r0.12 <- r0.11, 1 | and r4.6 <- r4.5, 0xff
+[libretro INFO] [DYNAREC] DIAG shil 8ceb2354 051: writem  <- r13.0, r0.12, 4 | readm r2.8 <- r6.5 | add r6.6 <- r6.5, 1
+[libretro INFO] [DYNAREC] DIAG shil 8ceb2354 054: and r0.13 <- r5.3, 0xff | readm r3.4 <- r7.5 | add r7.6 <- r7.5, 1
+[libretro INFO] [DYNAREC] DIAG shil 8ceb2354 057: adc r0.14, sr.T.12 <- r0.13, r4.6, sr.T.11 | and sr.T.13 <- r0.14, 1 | sar r0.15 <- r0.14, 1
+[libretro INFO] [DYNAREC] DIAG shil 8ceb2354 060: and r2.9 <- r2.8, 0xff | writem  <- r13.0, r0.15, 5 | readm r4.7 <- r6.6
+[libretro INFO] [DYNAREC] DIAG shil 8ceb2354 063: and r0.16 <- r3.4, 0xff | readm r5.4 <- r7.6 | adc r0.17, sr.T.14 <- r0.16, r2.9, sr.T.13
+[libretro INFO] [DYNAREC] DIAG shil 8ceb2354 066: and sr.T.15 <- r0.17, 1 | sar r0.18 <- r0.17, 1 | and r4.8 <- r4.7, 0xff
+[libretro INFO] [DYNAREC] DIAG shil 8ceb2354 069: writem  <- r13.0, r0.18, 6 | and r0.19 <- r5.4, 0xff | add r6.7 <- r6.6, r14.0
+[libretro INFO] [DYNAREC] DIAG shil 8ceb2354 072: adc r0.20, sr.T.16 <- r0.19, r4.8, sr.T.15 | add r7.7 <- r7.6, r14.0 | readm r2.10 <- r6.7
+[libretro INFO] [DYNAREC] DIAG shil 8ceb2354 075: add r6.8 <- r6.7, 1 | sar r0.21 <- r0.20, 1 | readm r3.5 <- r7.7
+[libretro INFO] [DYNAREC] DIAG shil 8ceb2354 078: add r7.8 <- r7.7, 1 | sub r1.1 <- r1.0, 1 | seteq sr.T.17 <- r1.1, 0
+[libretro INFO] [DYNAREC] DIAG shil 8ceb2354 081: writem  <- r13.0, r0.21, 7 | jcond pc_dyn.1 <- sr.T.17 | add r13.1 <- r13.0, 8
+[libretro INFO] [DYNAREC] DIAG host 8ceb2354+0000: 3d80836f 618cb3ac 816c0000 396b0001 916c0000 3d608353 616b3018 918b0000 3d8004fb 618cc350 3d60841a 616b0d08 806c0004 808b0004 e8ac0008 e8cb0008
+[libretro INFO] [DYNAREC] DIAG host 8ceb2354+0040: e8ec0010 e90b0010 e92c0018 e94b0018 7c632278 7ca53278 7ce74278 7d295278 7c601b78 7c002b78 7c003b78 7c004b78 e86c0020 e88b0020 e8ac0028 e8cb0028
+[libretro INFO] [DYNAREC] DIAG host 8ceb2354+0080: e8ec0030 e90b0030 e92c0038 e94b0038 7c632278 7ca53278 7ce74278 7d295278 7c001b78 7c002b78 7c003b78 7c004b78 e86c0040 e88b0040 e8ac0048 e8cb0048
+[libretro INFO] [DYNAREC] DIAG host 8ceb2354+00c0: e8ec0050 e90b0050 e92c0058 e94b0058 7c632278 7ca53278 7ce74278 7d295278 7c001b78 7c002b78 7c003b78 7c004b78 e86c0060 e88b0060 e8ac0068 e8cb0068
+[libretro INFO] [DYNAREC] DIAG host 8ceb2354+0100: e8ec0070 e90b0070 e92c0078 e94b0078 7c632278 7ca53278 7ce74278 7d295278 7c001b78 7c002b78 7c003b78 7c004b78 e86c0080 e88b0080 80ac0088 80cb0088
+[libretro INFO] [DYNAREC] DIAG host 8ceb2354+0140: a0ec008c a10b008c 7c632278 7ca53278 7ce74278 7c001b78 7c002b78 7c003b78 2c200000 41820010 3c608ceb 60632354 4bd0f340 807f0174 2c030000 40800010
+[libretro INFO] [DYNAREC] DIAG host 8ceb2354+0180: 3c808ceb 60842354 4bd0f0e1 3863ffd6 907f0174 3b600001 835f00c8 735a00ff 833f00d8 572b36be 396b0005 716b0047 408203ec 572b023e 7f1e58ae 3b390001
+[libretro INFO] [DYNAREC] DIAG host 8ceb2354+01c0: 82ff00cc 72f700ff 82df00dc 56cb36be 396b0005 716b0047 408203d4 56cb023e 7ebe58ae 7eb50774 3ad60001 301bffff 7f5ab914 38000000 7f600194 735b0001
+[libretro INFO] [DYNAREC] DIAG host 8ceb2354+0200: 7f5a0e70 829f00f4 568b36be 396b0005 716b0047 408203a8 568b023e 7f5e59ae 572b36be 396b0005 716b0047 408203a0 572b023e 7f5e58ae 3b390001 72b300ff
+[libretro INFO] [DYNAREC] DIAG host 8ceb2354+0240: 56cb36be 396b0005 716b0047 40820390 56cb023e 7efe58ae 7ef70774 3ad60001 301bffff 7e73c114 38000000 7f600194 727b0001 7e730e70 38740001 546b36be
+[libretro INFO] [DYNAREC] DIAG host 8ceb2354+0280: 396b0005 716b0047 40820364 546b023e 7e7e59ae 572b36be 396b0005 716b0047 40820358 572b023e 7f1e58ae 3b390001 72f300ff 56cb36be 396b0005 716b0047
+[libretro INFO] [DYNAREC] DIAG host 8ceb2354+02c0: 40820348 56cb023e 7ebe58ae 7eb50774 3ad60001 301bffff 7e73d114 38000000 7f600194 727b0001 7e730e70 38740002 546b36be 396b0005 716b0047 4082031c
+[libretro INFO] [DYNAREC] DIAG host 8ceb2354+0300: 546b023e 7e7e59ae 572b36be 396b0005 716b0047 40820310 572b023e 7f5e58ae 3b390001 72b300ff 56cb36be 396b0005 716b0047 40820300 56cb023e 7efe58ae
+[libretro INFO] [DYNAREC] DIAG host 8ceb2354+0340: 7ef70774 3ad60001 301bffff 7e73c114 38000000 7f600194 727b0001 7e730e70 38740003 546b36be 396b0005 716b0047 408202d4 546b023e 7e7e59ae 572b36be
+[libretro INFO] [DYNAREC] DIAG host 8ceb2354+0380: 396b0005 716b0047 408202c8 572b023e 7f1e58ae 3b390001 72f300ff 56cb36be 396b0005 716b0047 408202b8 56cb023e 7ebe58ae 7eb50774 3ad60001 301bffff
+[libretro INFO] [DYNAREC] DIAG host 8ceb2354+03c0: 7e73d114 38000000 7f600194 727b0001 7e730e70 38740004 546b36be 396b0005 716b0047 4082028c 546b023e 7e7e59ae 572b36be 396b0005 716b0047 40820280
+[libretro INFO] [DYNAREC] DIAG host 8ceb2354+0400: 572b023e 7f5e58ae 3b390001 72b300ff 56cb36be 396b0005 716b0047 40820270 56cb023e 7efe58ae 7ef70774 3ad60001 301bffff 7e73c114 38000000 7f600194
+[libretro INFO] [DYNAREC] DIAG host 8ceb2354+0440: 727b0001 7e730e70 38740005 546b36be 396b0005 716b0047 40820244 546b023e 7e7e59ae 572b36be 396b0005 716b0047 40820238 572b023e 7f1e58ae 72f300ff
+[libretro INFO] [DYNAREC] DIAG host 8ceb2354+0480: 56cb36be 396b0005 716b0047 4082022c 56cb023e 7ebe58ae 7eb50774 92bf00d4 301bffff 7e73d114 38000000 7f600194 727b0001 7e730e70 931f00d0 38740006
+[libretro INFO] [DYNAREC] DIAG host 8ceb2354+04c0: 546b36be 396b0005 716b0047 408201fc 546b023e 7e7e59ae 72b300ff 825f00f8 7f399214 301bffff 7e73c114 38000000 7f600194 7ed69214 572b36be 396b0005
+[libretro INFO] [DYNAREC] DIAG host 8ceb2354+0500: 716b0047 408201d0 572b023e 7f5e58ae 7f5a0774 935f00c8 3b390001 933f00d8 7e730e70 927f00c0 56cb36be 396b0005 716b0047 408201b0 56cb023e 7efe58ae
+[libretro INFO] [DYNAREC] DIAG host 8ceb2354+0540: 7ef70774 92ff00cc 3ad60001 92df00dc 823f00c4 3a31ffff 923f00c4 7e2b0034 557bd97e 937f0154 38740007 546b36be 396b0005 716b0047 4082017c 546b023e
+[libretro INFO] [DYNAREC] DIAG host 8ceb2354+0580: 7e7e59ae 7f70db78 7e1d8378 921f014c 3a940008 929f00f4 48000168 7f23cb78 4a934259 5478063e 4bfffc14 7ec3b378 4a934249 7c750774 4bfffc30 7e83a378
+[libretro INFO] [DYNAREC] DIAG host 8ceb2354+05c0: 5744063e 4a934345 4bfffc58 7f23cb78 4a934229 547a063e 4bfffc60 7ec3b378 4a934219 7c770774 4bfffc74 5664063e 4a934319 4bfffca0 7f23cb78 4a9341fd
+[libretro INFO] [DYNAREC] DIAG host 8ceb2354+0600: 5478063e 4bfffca8 7ec3b378 4a9341ed 7c750774 4bfffcbc 5664063e 4a9342ed 4bfffce8 7f23cb78 4a9341d1 547a063e 4bfffcf0 7ec3b378 4a9341c1 7c770774
+[libretro INFO] [DYNAREC] DIAG host 8ceb2354+0640: 4bfffd04 5664063e 4a9342c1 4bfffd30 7f23cb78 4a9341a5 5478063e 4bfffd38 7ec3b378 4a934195 7c750774 4bfffd4c 5664063e 4a934295 4bfffd78 7f23cb78
+[libretro INFO] [DYNAREC] DIAG host 8ceb2354+0680: 4a934179 547a063e 4bfffd80 7ec3b378 4a934169 7c770774 4bfffd94 5664063e 4a934269 4bfffdc0 7f23cb78 4a93414d 5478063e 4bfffdc8 7ec3b378 4a93413d
+[libretro INFO] [DYNAREC] DIAG host 8ceb2354+06c0: 7c750774 4bfffdd8 5664063e 4a93423d 4bfffe08 7f23cb78 4a934121 7c7a0774 4bfffe34 7ec3b378 4a934111 7c770774 4bfffe54 5664063e 4a934211 4bfffe88
+[libretro INFO] [DYNAREC] DIAG host 8ceb2354+0700: 7fabeb78 2c0b0000 40820014 4bfff8f4 60000000 60000000 60000000 48000018 60000000 60000000 60000000
+[libretro INFO] [DYNAREC] DIAG dump 8ceb1d00: 58 ops, 116 guest bytes, 1956 host bytes, type 16, jcond 1, cycles 39
+[libretro INFO] [DYNAREC] DIAG sh4 8ceb1d00+000: mov.b @R5+,R10 ; R5=0 R10=30  | add R2,R1 ; R2=6 R1=8eee8e10  | mov.w @R6+,R11 ; R6=f0000000 R11=40  | mov.b @(R0,R1),R1 ; R1=8eee8e10 R1=8eee8e10  | extu.b R10,R10 ; R10=30 R10=30  | mov.b @R5+,R2 ; R5=0 R2=6 
+[libretro INFO] [DYNAREC] DIAG sh4 8ceb1d00+00c: add R11,R10 ; R11=40 R10=30  | mov.b @(R0,R10),R10 ; R10=30 R10=30  | mov.b R1,@R3 ; R1=8eee8e10 R3=8eee8d80  | add #1,R3 ; R3=8eee8d80  | mov.b R10,@R3 ; R10=30 R3=8eee8d80  | add #1,R3 ; R3=8eee8d80 
+[libretro INFO] [DYNAREC] DIAG sh4 8ceb1d00+018: mov.w @R6+,R1 ; R6=f0000000 R1=8eee8e10  | mov.b @R5+,R11 ; R5=0 R11=40  | extu.b R2,R2 ; R2=6 R2=6  | mov.w @R6+,R10 ; R6=f0000000 R10=30  | add R1,R2 ; R1=8eee8e10 R2=6  | mov.b @(R0,R2),R2 ; R2=6 R2=6 
+[libretro INFO] [DYNAREC] DIAG sh4 8ceb1d00+024: extu.b R11,R11 ; R11=40 R11=40  | mov.b @R5+,R1 ; R5=0 R1=8eee8e10  | add R10,R11 ; R10=30 R11=40  | mov.b @(R0,R11),R11 ; R11=40 R11=40  | mov.b R2,@R3 ; R2=6 R3=8eee8d80  | add #1,R3 ; R3=8eee8d80 
+[libretro INFO] [DYNAREC] DIAG sh4 8ceb1d00+030: mov.b R11,@R3 ; R11=40 R3=8eee8d80  | add #1,R3 ; R3=8eee8d80  | mov.w @R6+,R2 ; R6=f0000000 R2=6  | mov.b @R5+,R10 ; R5=0 R10=30  | extu.b R1,R1 ; R1=8eee8e10 R1=8eee8e10  | mov.w @R6+,R11 ; R6=f0000000 R11=40 
+[libretro INFO] [DYNAREC] DIAG sh4 8ceb1d00+03c: add R2,R1 ; R2=6 R1=8eee8e10  | mov.b @(R0,R1),R1 ; R1=8eee8e10 R1=8eee8e10  | extu.b R10,R10 ; R10=30 R10=30  | mov.b @R5+,R2 ; R5=0 R2=6  | add R11,R10 ; R11=40 R10=30  | mov.b @(R0,R10),R10 ; R10=30 R10=30 
+[libretro INFO] [DYNAREC] DIAG sh4 8ceb1d00+048: mov.b R1,@R3 ; R1=8eee8e10 R3=8eee8d80  | add #1,R3 ; R3=8eee8d80  | mov.b R10,@R3 ; R10=30 R3=8eee8d80  | add #1,R3 ; R3=8eee8d80  | mov.w @R6+,R1 ; R6=f0000000 R1=8eee8e10  | mov.b @R5+,R11 ; R5=0 R11=40 
+[libretro INFO] [DYNAREC] DIAG sh4 8ceb1d00+054: extu.b R2,R2 ; R2=6 R2=6  | mov.w @R6+,R10 ; R6=f0000000 R10=30  | add R1,R2 ; R1=8eee8e10 R2=6  | mov.b @(R0,R2),R2 ; R2=6 R2=6  | extu.b R11,R11 ; R11=40 R11=40  | mov.b @R5+,R1 ; R5=0 R1=8eee8e10 
+[libretro INFO] [DYNAREC] DIAG sh4 8ceb1d00+060: add R10,R11 ; R10=30 R11=40  | mov.b @(R0,R11),R11 ; R11=40 R11=40  | dt R13 ; R13=60  | mov.b R2,@R3 ; R2=6 R3=8eee8d80  | add #1,R3 ; R3=8eee8d80  | mov.b R11,@R3 ; R11=40 R3=8eee8d80 
+[libretro INFO] [DYNAREC] DIAG sh4 8ceb1d00+06c: add #1,R3 ; R3=8eee8d80  | mov.w @R6+,R2 ; R6=f0000000 R2=6  | bf.s 0x8CEB1D00 ;  | extu.b R1,R1 ; R1=8eee8e10 R1=8eee8e10 
+[libretro INFO] [DYNAREC] DIAG shil 8ceb1d00 000: readm r10.1 <- r5.0 | add r5.1 <- r5.0, 1 | add r1.1 <- r1.0, r2.0
+[libretro INFO] [DYNAREC] DIAG shil 8ceb1d00 003: readm r11.1 <- r6.0 | add r6.1 <- r6.0, 2 | readm r1.2 <- r1.1, r0.0
+[libretro INFO] [DYNAREC] DIAG shil 8ceb1d00 006: and r10.2 <- r10.1, 0xff | readm r2.1 <- r5.1 | add r5.2 <- r5.1, 1
+[libretro INFO] [DYNAREC] DIAG shil 8ceb1d00 009: add r10.3 <- r10.2, r11.1 | readm r10.4 <- r10.3, r0.0 | writem  <- r3.0, r1.2
+[libretro INFO] [DYNAREC] DIAG shil 8ceb1d00 012: add r3.1 <- r3.0, 1 | writem  <- r3.1, r10.4 | add r3.2 <- r3.1, 1
+[libretro INFO] [DYNAREC] DIAG shil 8ceb1d00 015: readm r1.3 <- r6.1 | add r6.2 <- r6.1, 2 | readm r11.2 <- r5.2
+[libretro INFO] [DYNAREC] DIAG shil 8ceb1d00 018: add r5.3 <- r5.2, 1 | and r2.2 <- r2.1, 0xff | readm r10.5 <- r6.2
+[libretro INFO] [DYNAREC] DIAG shil 8ceb1d00 021: add r6.3 <- r6.2, 2 | add r2.3 <- r2.2, r1.3 | readm r2.4 <- r2.3, r0.0
+[libretro INFO] [DYNAREC] DIAG shil 8ceb1d00 024: and r11.3 <- r11.2, 0xff | readm r1.4 <- r5.3 | add r5.4 <- r5.3, 1
+[libretro INFO] [DYNAREC] DIAG shil 8ceb1d00 027: add r11.4 <- r11.3, r10.5 | readm r11.5 <- r11.4, r0.0 | writem  <- r3.2, r2.4
+[libretro INFO] [DYNAREC] DIAG shil 8ceb1d00 030: add r3.3 <- r3.2, 1 | writem  <- r3.3, r11.5 | add r3.4 <- r3.3, 1
+[libretro INFO] [DYNAREC] DIAG shil 8ceb1d00 033: readm r2.5 <- r6.3 | add r6.4 <- r6.3, 2 | readm r10.6 <- r5.4
+[libretro INFO] [DYNAREC] DIAG shil 8ceb1d00 036: add r5.5 <- r5.4, 1 | and r1.5 <- r1.4, 0xff | readm r11.6 <- r6.4
+[libretro INFO] [DYNAREC] DIAG shil 8ceb1d00 039: add r6.5 <- r6.4, 2 | add r1.6 <- r1.5, r2.5 | readm r1.7 <- r1.6, r0.0
+[libretro INFO] [DYNAREC] DIAG shil 8ceb1d00 042: and r10.7 <- r10.6, 0xff | readm r2.6 <- r5.5 | add r5.6 <- r5.5, 1
+[libretro INFO] [DYNAREC] DIAG shil 8ceb1d00 045: add r10.8 <- r10.7, r11.6 | readm r10.9 <- r10.8, r0.0 | writem  <- r3.4, r1.7
+[libretro INFO] [DYNAREC] DIAG shil 8ceb1d00 048: add r3.5 <- r3.4, 1 | writem  <- r3.5, r10.9 | add r3.6 <- r3.5, 1
+[libretro INFO] [DYNAREC] DIAG shil 8ceb1d00 051: readm r1.8 <- r6.5 | add r6.6 <- r6.5, 2 | readm r11.7 <- r5.6
+[libretro INFO] [DYNAREC] DIAG shil 8ceb1d00 054: add r5.7 <- r5.6, 1 | and r2.7 <- r2.6, 0xff | readm r10.10 <- r6.6
+[libretro INFO] [DYNAREC] DIAG shil 8ceb1d00 057: add r6.7 <- r6.6, 2 | add r2.8 <- r2.7, r1.8 | readm r2.9 <- r2.8, r0.0
+[libretro INFO] [DYNAREC] DIAG shil 8ceb1d00 060: and r11.8 <- r11.7, 0xff | readm r1.9 <- r5.7 | add r5.8 <- r5.7, 1
+[libretro INFO] [DYNAREC] DIAG shil 8ceb1d00 063: add r11.9 <- r11.8, r10.10 | readm r11.10 <- r11.9, r0.0 | sub r13.1 <- r13.0, 1
+[libretro INFO] [DYNAREC] DIAG shil 8ceb1d00 066: seteq sr.T.1 <- r13.1, 0 | writem  <- r3.6, r2.9 | add r3.7 <- r3.6, 1
+[libretro INFO] [DYNAREC] DIAG shil 8ceb1d00 069: writem  <- r3.7, r11.10 | add r3.8 <- r3.7, 1 | readm r2.10 <- r6.7
+[libretro INFO] [DYNAREC] DIAG shil 8ceb1d00 072: add r6.8 <- r6.7, 2 | jcond pc_dyn.1 <- sr.T.1 | and r1.10 <- r1.9, 0xff
+[libretro INFO] [DYNAREC] DIAG host 8ceb1d00+0000: 3d80836f 618cb2b4 816c0000 396b0001 916c0000 3d608353 616b3018 918b0000 3d8004fb 618cbd00 3d608419 616b2520 e86c0000 e88b0000 e8ac0008 e8cb0008
+[libretro INFO] [DYNAREC] DIAG host 8ceb1d00+0040: e8ec0010 e90b0010 e92c0018 e94b0018 7c632278 7ca53278 7ce74278 7d295278 7c601b78 7c002b78 7c003b78 7c004b78 e86c0020 e88b0020 e8ac0028 e8cb0028
+[libretro INFO] [DYNAREC] DIAG host 8ceb1d00+0080: e8ec0030 e90b0030 e92c0038 e94b0038 7c632278 7ca53278 7ce74278 7d295278 7c001b78 7c002b78 7c003b78 7c004b78 e86c0040 e88b0040 e8ac0048 e8cb0048
+[libretro INFO] [DYNAREC] DIAG host 8ceb1d00+00c0: e8ec0050 e90b0050 e92c0058 e94b0058 7c632278 7ca53278 7ce74278 7d295278 7c001b78 7c002b78 7c003b78 7c004b78 e86c0060 e88b0060 e8ac0068 e8cb0068
+[libretro INFO] [DYNAREC] DIAG host 8ceb1d00+0100: 80ec0070 810b0070 7c632278 7ca53278 7ce74278 7c001b78 7c002b78 7c003b78 2c200000 41820010 3c608ceb 60631d00 4bd1db84 807f0174 2c030000 40800010
+[libretro INFO] [DYNAREC] DIAG host 8ceb1d00+0140: 3c808ceb 60841d00 4bd1d925 3863ffd9 907f0174 837f00d4 576b36be 396b0005 716b0047 40820434 576b023e 7f5e58ae 3b7b0001 833f00c4 831f00c8 7f39c214
+[libretro INFO] [DYNAREC] DIAG host 8ceb1d00+0180: 82ff00d8 56eb36be 396b0005 716b0047 40820418 56eb023e 7ede5e2c 7ed60734 3af70002 82bf00c0 7c79aa14 546b36be 396b0005 716b0047 40820400 546b023e
+[libretro INFO] [DYNAREC] DIAG host 8ceb1d00+01c0: 7f3e58ae 7f390774 576b36be 396b0005 716b0047 408203f0 576b023e 7f1e58ae 3b7b0001 7f5ab214 7c7aaa14 546b36be 396b0005 716b0047 408203dc 546b023e
+[libretro INFO] [DYNAREC] DIAG host 8ceb1d00+0200: 7f5e58ae 7f5a0774 829f00cc 568b36be 396b0005 716b0047 408203c8 568b023e 7f3e59ae 3a940001 568b36be 396b0005 716b0047 408203bc 568b023e 7f5e59ae
+[libretro INFO] [DYNAREC] DIAG host 8ceb1d00+0240: 3a940001 56eb36be 396b0005 716b0047 408203b0 56eb023e 7f3e5e2c 7f390734 3af70002 576b36be 396b0005 716b0047 408203a0 576b023e 7ede58ae 3b7b0001
+[libretro INFO] [DYNAREC] DIAG host 8ceb1d00+0280: 56eb36be 396b0005 716b0047 40820394 56eb023e 7f5e5e2c 7f5a0734 3af70002 7f18ca14 7c78aa14 546b36be 396b0005 716b0047 4082037c 546b023e 7f1e58ae
+[libretro INFO] [DYNAREC] DIAG host 8ceb1d00+02c0: 7f180774 576b36be 396b0005 716b0047 4082036c 576b023e 7f3e58ae 3b7b0001 7ed6d214 7c76aa14 546b36be 396b0005 716b0047 40820358 546b023e 7ede58ae
+[libretro INFO] [DYNAREC] DIAG host 8ceb1d00+0300: 7ed60774 568b36be 396b0005 716b0047 40820348 568b023e 7f1e59ae 3a940001 568b36be 396b0005 716b0047 4082033c 568b023e 7ede59ae 3a940001 56eb36be
+[libretro INFO] [DYNAREC] DIAG host 8ceb1d00+0340: 396b0005 716b0047 40820330 56eb023e 7f1e5e2c 7f180734 3af70002 576b36be 396b0005 716b0047 40820320 576b023e 7f5e58ae 3b7b0001 56eb36be 396b0005
+[libretro INFO] [DYNAREC] DIAG host 8ceb1d00+0380: 716b0047 40820314 56eb023e 7ede5e2c 7ed60734 3af70002 7f39c214 7c79aa14 546b36be 396b0005 716b0047 408202fc 546b023e 7f3e58ae 7f390774 576b36be
+[libretro INFO] [DYNAREC] DIAG host 8ceb1d00+03c0: 396b0005 716b0047 408202ec 576b023e 7f1e58ae 3b7b0001 7f5ab214 7c7aaa14 546b36be 396b0005 716b0047 408202d8 546b023e 7f5e58ae 7f5a0774 568b36be
+[libretro INFO] [DYNAREC] DIAG host 8ceb1d00+0400: 396b0005 716b0047 408202c8 568b023e 7f3e59ae 3a940001 568b36be 396b0005 716b0047 408202bc 568b023e 7f5e59ae 3a940001 56eb36be 396b0005 716b0047
+[libretro INFO] [DYNAREC] DIAG host 8ceb1d00+0440: 408202b0 56eb023e 7f3e5e2c 7f390734 3af70002 576b36be 396b0005 716b0047 408202a0 576b023e 7ede58ae 3b7b0001 56eb36be 396b0005 716b0047 40820294
+[libretro INFO] [DYNAREC] DIAG host 8ceb1d00+0480: 56eb023e 7f5e5e2c 7f5a0734 935f00e8 3af70002 7f18ca14 7c78aa14 546b36be 396b0005 716b0047 40820278 546b023e 7f1e58ae 7f180774 576b36be 396b0005
+[libretro INFO] [DYNAREC] DIAG host 8ceb1d00+04c0: 716b0047 40820268 576b023e 7f3e58ae 7f390774 3b7b0001 937f00d4 7ed6d214 7c76aa14 546b36be 396b0005 716b0047 4082024c 546b023e 7ede58ae 7ed60774
+[libretro INFO] [DYNAREC] DIAG host 8ceb1d00+0500: 92df00ec 827f00f4 3a73ffff 927f00f4 7e6b0034 5572d97e 925f0154 568b36be 396b0005 716b0047 40820220 568b023e 7f1e59ae 3a940001 568b36be 396b0005
+[libretro INFO] [DYNAREC] DIAG host 8ceb1d00+0540: 716b0047 40820214 568b023e 7ede59ae 3a940001 929f00cc 56eb36be 396b0005 716b0047 40820204 56eb023e 7f1e5e2c 7f180734 931f00c8 3af70002 92ff00d8
+[libretro INFO] [DYNAREC] DIAG host 8ceb1d00+0580: 7e519378 7e3d8b78 923f014c 733900ff 933f00c4 480001e4 7f63db78 4a942a61 547a063e 4bfffbcc 7ee3bb78 4a9425f9 7c760734 4bfffbec 4a942a45 7c790774
+[libretro INFO] [DYNAREC] DIAG host 8ceb1d00+05c0: 4bfffc08 7f63db78 4a942a35 5478063e 4bfffc10 4a942a29 7c7a0774 4bfffc2c 7e83a378 5724063e 4a942b25 4bfffc38 7e83a378 5744063e 4a942b15 4bfffc44
+[libretro INFO] [DYNAREC] DIAG host 8ceb1d00+0600: 7ee3bb78 4a9425a1 7c790734 4bfffc54 7f63db78 4a9429e9 5476063e 4bfffc60 7ee3bb78 4a942581 7c7a0734 4bfffc70 4a9429cd 7c780774 4bfffc8c 7f63db78
+[libretro INFO] [DYNAREC] DIAG host 8ceb1d00+0640: 4a9429bd 5479063e 4bfffc94 4a9429b1 7c760774 4bfffcb0 7e83a378 5704063e 4a942aad 4bfffcb8 7e83a378 56c4063e 4a942a9d 4bfffcc4 7ee3bb78 4a942529
+[libretro INFO] [DYNAREC] DIAG host 8ceb1d00+0680: 7c780734 4bfffcd4 7f63db78 4a942971 547a063e 4bfffce0 7ee3bb78 4a942509 7c760734 4bfffcf0 4a942955 7c790774 4bfffd0c 7f63db78 4a942945 5478063e
+[libretro INFO] [DYNAREC] DIAG host 8ceb1d00+06c0: 4bfffd14 4a942939 7c7a0774 4bfffd30 7e83a378 5724063e 4a942a35 4bfffd38 7e83a378 5744063e 4a942a25 4bfffd44 7ee3bb78 4a9424b1 7c790734 4bfffd54
+[libretro INFO] [DYNAREC] DIAG host 8ceb1d00+0700: 7f63db78 4a9428f9 5476063e 4bfffd60 7ee3bb78 4a942491 7c7a0734 4bfffd70 4a9428dd 7c780774 4bfffd90 7f63db78 4a9428cd 7c790774 4bfffd9c 4a9428c1
+[libretro INFO] [DYNAREC] DIAG host 8ceb1d00+0740: 7c760774 4bfffdbc 7e83a378 5704063e 4a9429bd 4bfffde0 7e83a378 56c4063e 4a9429ad 4bfffdec 7ee3bb78 4a942439 7c780734 4bfffe00 7fabeb78 2c0b0000
+[libretro INFO] [DYNAREC] DIAG host 8ceb1d00+0780: 40820014 4bfff87c 60000000 60000000 60000000 48000050 60000000 60000000 60000000
+[libretro INFO] [DYNAREC] DIAG dump 8ceb15ea: 28 ops, 56 guest bytes, 1616 host bytes, type 16, jcond 1, cycles 23
+[libretro INFO] [DYNAREC] DIAG sh4 8ceb15ea+000: ftrv xmtrx,<FV_N> ;  | fmov.s @R3+,FR2 ; R3=8eee8ca8 FR2=-0.000000  | fmov.s @R3+,FR0 ; R3=8eee8ca8 FR0=-0.000000  | fmov FR2,FR6 ; FR2=-0.000000 FR6=-0.000000  | fmov FR0,FR4 ; FR0=-0.000000 FR4=-0.000000  | fadd FR8,FR0 ; FR8=0.000000 FR0=-0.000000 
+[libretro INFO] [DYNAREC] DIAG sh4 8ceb15ea+00c: fadd FR9,FR1 ; FR9=0.000000 FR1=-0.000000  | fadd FR10,FR2 ; FR10=0.000000 FR2=-0.000000  | fschg ;  | fmov.s FR0,@R0 ; FR0=-0.000000 R0=8eef9d80  | fadd FR11,FR3 ; FR11=0.000000 FR3=-0.000000  | fmov.s FR1,@(R0,R9) ; FR1=-0.000000 R9=8cee2010 
+[libretro INFO] [DYNAREC] DIAG sh4 8ceb15ea+018: fsub FR8,FR4 ; FR8=0.000000 FR4=-0.000000  | fmov.s FR2,@(R0,R11) ; FR2=-0.000000 R11=76  | fsub FR9,FR5 ; FR9=0.000000 FR5=-0.000000  | fmov.s FR3,@(R0,R13) ; FR3=-0.000000 R13=7  | fsub FR10,FR6 ; FR10=0.000000 FR6=-0.000000  | fmov.s FR4,@(R0,R14) ; FR4=-0.000000 R14=80 
+[libretro INFO] [DYNAREC] DIAG sh4 8ceb15ea+024: fsub FR11,FR7 ; FR11=0.000000 FR7=-0.000000  | fmov.s FR5,@(R0,R12) ; FR5=-0.000000 R12=5  | fmov.s FR6,@(R0,R10) ; FR6=-0.000000 R10=0  | dt R2 ; R2=0  | fmov.s FR7,@(R0,R8) ; FR7=-0.000000 R8=8eee8000  | fschg ; 
+[libretro INFO] [DYNAREC] DIAG sh4 8ceb15ea+030: fmov.s @R1+,FR8 ; R1=77 FR8=0.000000  | fmov.s @R1+,FR10 ; R1=77 FR10=0.000000  | bf.s 0x8CEB15EA ;  | add #4,R0 ; R0=8eef9d80 
+[libretro INFO] [DYNAREC] DIAG shil 8ceb15ea 000: ftrv f8v4.1 <- f8v4.0, f16v16.0 | readm f2v2.1 <- r3.0 | add r3.1 <- r3.0, 8
+[libretro INFO] [DYNAREC] DIAG shil 8ceb15ea 003: readm f0v2.1 <- r3.1 | add r3.2 <- r3.1, 8 | mov64 f6v2.1 <- f2v2.1
+[libretro INFO] [DYNAREC] DIAG shil 8ceb15ea 006: mov64 f4v2.1 <- f0v2.1 | fadd f0.2 <- f0.1, f8.1 | fadd f1.2 <- f1.1, f9.1
+[libretro INFO] [DYNAREC] DIAG shil 8ceb15ea 009: fadd f2.2 <- f2.1, f10.1 | xor fpscr.1 <- fpscr.0, 0x100000 | writem  <- r0.0, f0.2
+[libretro INFO] [DYNAREC] DIAG shil 8ceb15ea 012: fadd f3.2 <- f3.1, f11.1 | writem  <- r9.0, f1.2, r0.0 | fsub f4.2 <- f4.1, f8.1
+[libretro INFO] [DYNAREC] DIAG shil 8ceb15ea 015: writem  <- r11.0, f2.2, r0.0 | fsub f5.2 <- f5.1, f9.1 | writem  <- r13.0, f3.2, r0.0
+[libretro INFO] [DYNAREC] DIAG shil 8ceb15ea 018: fsub f6.2 <- f6.1, f10.1 | writem  <- r14.0, f4.2, r0.0 | fsub f7.2 <- f7.1, f11.1
+[libretro INFO] [DYNAREC] DIAG shil 8ceb15ea 021: writem  <- r12.0, f5.2, r0.0 | writem  <- r10.0, f6.2, r0.0 | sub r2.1 <- r2.0, 1
+[libretro INFO] [DYNAREC] DIAG shil 8ceb15ea 024: seteq sr.T.1 <- r2.1, 0 | writem  <- r8.0, f7.2, r0.0 | xor fpscr.2 <- fpscr.1, 0x100000
+[libretro INFO] [DYNAREC] DIAG shil 8ceb15ea 027: readm f8v2.2 <- r1.0 | add r1.1 <- r1.0, 8 | readm f10v2.2 <- r1.1
+[libretro INFO] [DYNAREC] DIAG shil 8ceb15ea 030: add r1.2 <- r1.1, 8 | jcond pc_dyn.1 <- sr.T.1 | add r0.1 <- r0.0, 4
+[libretro INFO] [DYNAREC] DIAG host 8ceb15ea+0000: 3d80836f 618cad90 816c0000 396b0001 916c0000 3d608353 616b3018 918b0000 3d8004fb 618cb5e8 3d608416 616b92a8 a06c0002 a08b0002 80ac0004 80cb0004
+[libretro INFO] [DYNAREC] DIAG host 8ceb15ea+0040: e8ec0008 e90b0008 e92c0010 e94b0010 7c632278 7ca53278 7ce74278 7d295278 7c601b78 7c002b78 7c003b78 7c004b78 e86c0018 e88b0018 e8ac0020 e8cb0020
+[libretro INFO] [DYNAREC] DIAG host 8ceb15ea+0080: e8ec0028 e90b0028 e92c0030 e94b0030 7c632278 7ca53278 7ce74278 7d295278 7c001b78 7c002b78 7c003b78 7c004b78 a06c0038 a08b0038 7c632278 7c001b78
+[libretro INFO] [DYNAREC] DIAG host 8ceb15ea+00c0: 2c200000 41820010 3c608ceb 606315ea 4bd46e94 807f0174 2c030000 40800010 3c808ceb 608415ea 4bd46c35 3863ffe9 907f0174 c01f00a0 c03f00a4 c05f00a8
+[libretro INFO] [DYNAREC] DIAG host 8ceb15ea+0100: c07f00ac c09f0040 fca00132 c09f0050 fca1293a c09f0060 fca2293a c09f0070 fca3293a fcc02818 c09f0044 fca00132 c09f0054 fca1293a c09f0064 fca2293a
+[libretro INFO] [DYNAREC] DIAG host 8ceb15ea+0140: c09f0074 fca3293a fce02818 c09f0048 fca00132 c09f0058 fca1293a c09f0068 fca2293a c09f0078 fca3293a fd002818 c09f004c fca00132 c09f005c fca1293a
+[libretro INFO] [DYNAREC] DIAG host 8ceb15ea+0180: c09f006c fca2293a c09f007c fca3293a fd202818 d0df00a0 d0ff00a4 d11f00a8 d13f00ac 837f00cc 576b36be 396b0005 716b0047 408202bc 576b023e 7c9e5c2c
+[libretro INFO] [DYNAREC] DIAG host 8ceb15ea+01c0: 396b0004 7cbe5c2c 909f0088 90bf008c 3b7b0008 576b36be 396b0005 716b0047 408202b4 576b023e 7c9e5c2c 396b0004 7cbe5c2c 909f0080 90bf0084 3b7b0008
+[libretro INFO] [DYNAREC] DIAG host 8ceb15ea+0200: 937f00cc 807f0088 809f008c 907f0098 909f009c 807f0080 809f0084 907f0090 909f0094 c3ff0080 c3df00a0 effff02a d3ff0080 c3bf0084 c39f00a4 efbde02a
+[libretro INFO] [DYNAREC] DIAG host 8ceb15ea+0240: d3bf0084 c37f0088 c35f00a8 ef7bd02a d37f0088 835f0158 6f5a0010 833f00c0 d3e10060 80810060 572b36be 396b0005 716b0047 40820244 572b023e 7c9e5d2c
+[libretro INFO] [DYNAREC] DIAG host 8ceb15ea+0280: c33f008c c31f00ac ef39c02a d33f008c 831f00e4 7c78ca14 d3a10060 80810060 546b36be 396b0005 716b0047 40820234 546b023e 7c9e5d2c c2ff0090 eef7f028
+[libretro INFO] [DYNAREC] DIAG host 8ceb15ea+02c0: d2ff0090 82ff00ec 7c77ca14 d3610060 80810060 546b36be 396b0005 716b0047 40820224 546b023e 7c9e5d2c c2df0094 eed6e028 d2df0094 82df00f4 7c76ca14
+[libretro INFO] [DYNAREC] DIAG host 8ceb15ea+0300: d3210060 80810060 546b36be 396b0005 716b0047 40820214 546b023e 7c9e5d2c c2bf0098 eeb5d028 d2bf0098 82bf00f8 7c75ca14 d2e10060 80810060 546b36be
+[libretro INFO] [DYNAREC] DIAG host 8ceb15ea+0340: 396b0005 716b0047 40820204 546b023e 7c9e5d2c c29f009c ee94c028 d29f009c 829f00f0 7c74ca14 d2c10060 80810060 546b36be 396b0005 716b0047 408201f4
+[libretro INFO] [DYNAREC] DIAG host 8ceb15ea+0380: 546b023e 7c9e5d2c 827f00e8 7c73ca14 d2a10060 80810060 546b36be 396b0005 716b0047 408201f0 546b023e 7c9e5d2c 825f00c8 3a52ffff 925f00c8 7e4b0034
+[libretro INFO] [DYNAREC] DIAG host 8ceb15ea+03c0: 5571d97e 923f0154 821f00e0 7c70ca14 d2810060 80810060 546b36be 396b0005 716b0047 408201d4 546b023e 7c9e5d2c 6f5a0010 935f0158 81ff00c4 55eb36be
+[libretro INFO] [DYNAREC] DIAG host 8ceb15ea+0400: 396b0005 716b0047 408201d4 55eb023e 7c9e5c2c 396b0004 7cbe5c2c 909f00a0 90bf00a4 39ef0008 55eb36be 396b0005 716b0047 408201cc 55eb023e 7c9e5c2c
+[libretro INFO] [DYNAREC] DIAG host 8ceb15ea+0440: 396b0004 7cbe5c2c 909f00a8 90bf00ac 39ef0008 91ff00c4 7e2e8b78 7ddd7378 91df014c 3b390004 933f00c0 480001b8 7f63db78 90610060 4a969ce5 907f0088
+[libretro INFO] [DYNAREC] DIAG host 8ceb15ea+0480: 80610060 38630004 4a969cd5 907f008c 4bfffd40 7f63db78 90610060 4a969cc1 907f0080 80610060 38630004 4a969cb1 907f0084 4bfffd48 7f23cb78 546036be
+[libretro INFO] [DYNAREC] DIAG host 8ceb15ea+04c0: 28000038 40820014 399f0000 546b06be 7c8c5d2c 4bfffdac 4a969d95 4bfffda4 546036be 28000038 40820014 399f0000 546b06be 7c8c5d2c 4bfffdc0 4a969d71
+[libretro INFO] [DYNAREC] DIAG host 8ceb15ea+0500: 4bfffdb8 546036be 28000038 40820014 399f0000 546b06be 7c8c5d2c 4bfffdd0 4a969d4d 4bfffdc8 546036be 28000038 40820014 399f0000 546b06be 7c8c5d2c
+[libretro INFO] [DYNAREC] DIAG host 8ceb15ea+0540: 4bfffde0 4a969d29 4bfffdd8 546036be 28000038 40820014 399f0000 546b06be 7c8c5d2c 4bfffdf0 4a969d05 4bfffde8 546036be 28000038 40820014 399f0000
+[libretro INFO] [DYNAREC] DIAG host 8ceb15ea+0580: 546b06be 7c8c5d2c 4bfffe00 4a969ce1 4bfffdf8 546036be 28000038 40820014 399f0000 546b06be 7c8c5d2c 4bfffe04 4a969cbd 4bfffdfc 546036be 28000038
+[libretro INFO] [DYNAREC] DIAG host 8ceb15ea+05c0: 40820014 399f0000 546b06be 7c8c5d2c 4bfffe20 4a969c99 4bfffe18 7de37b78 90610060 4a969b79 907f00a0 80610060 38630004 4a969b69 907f00a4 4bfffe28
+[libretro INFO] [DYNAREC] DIAG host 8ceb15ea+0600: 7de37b78 90610060 4a969b55 907f00a8 80610060 38630004 4a969b45 907f00ac 4bfffe30 7fabeb78 2c0b0000 40820014 4bfff9d0 60000000 60000000 60000000
+[libretro INFO] [DYNAREC] DIAG host 8ceb15ea+0640: 48000054 60000000 60000000 60000000
+vulkan4xenon: profile, the last 10 s: 394 draws, 3346 commands, 297 submits, 103 presents; a present 3.8 draws, 128.6 us submitting; a submit 1.3 draws, 44.6 us; a lap 20.7 ns
+vulkan4xenon: profile, the last 10 s: dispatch 304 ns a draw, 273 less its 1.5 laps
+vulkan4xenon: profile, the last 10 s: push 169 ns a draw, 159 less its 0.5 laps
+vulkan4xenon: profile, the last 10 s: pipeline 3822 ns a draw, 3801 less its 1.0 laps
+vulkan4xenon: profile, the last 10 s: constants 526 ns a draw, 485 less its 2.0 laps
+vulkan4xenon: profile, the last 10 s: resources 2421 ns a draw, 2360 less its 3.0 laps
+vulkan4xenon: profile, the last 10 s: checks 1254 ns a draw, 1213 less its 2.0 laps
+vulkan4xenon: profile, the last 10 s: draws 200 ns a draw, 179 less its 1.0 laps
+vulkan4xenon: profile, the last 10 s: commands 21992 ns a draw, 21817 less its 8.5 laps
+vulkan4xenon: profile, the last 10 s: submit 2938 ns a draw, 2907 less its 1.5 laps
+vulkan4xenon: profile, the last 10 s: all 33626 ns a draw, 33193 less its 21.0 laps
+vulkan4xenon: profile, the last 10 s: command type 0 (src/objects.h), 26 us a present, 3 a present
+vulkan4xenon: profile, the last 10 s: command type 1 (src/objects.h), 21 us a present, 3 a present
+vulkan4xenon: profile, the last 10 s: command type 35 (src/objects.h), 33 us a present, 1 a present
+vulkan4xenon: profile, the last 10 s: the replay's waits for the GPU, 0 us a present, 0.0 a present
+vulkan4xenon: profile, the last 10 s: of them for draws before a copy into a buffer, 0 us a present, 0.0 a present
+vulkan4xenon: profile, the last 10 s: for what a submission used, 0 us a present, 0.0 a present
+vulkan4xenon: profile, the last 10 s: for room for a pass past eDRAM, 0 us a present, 0.0 a present
+vulkan4xenon: profile, the last 10 s: the app's waits for fences, outside the submit, 0 us a present, 0.0 a present
+vulkan4xenon: profile, the last 10 s: images drawn back, 0.5 a present
+vulkan4xenon: profile, the last 10 s: resolves made to clear, 0.0 a present
+vulkan4xenon: profile, the last 10 s: resolves put off, 0.0 a present
+vulkan4xenon: profile, the last 10 s: put-off resolves made later, 0.0 a present
+vulkan4xenon: profile, the last 10 s: xsdk's waits for room in its ring, 0.0 a present
+vulkan4xenon: profile, the last 10 s: microseconds of them, 0.0 a present
+vulkan4xenon: profile, the last 10 s: passes' begins placing targets and forgetting what they reach, 9 us a present, 3048 ns a pass
+vulkan4xenon: profile, the last 10 s: passes' begins setting targets, 5 us a present, 1875 ns a pass
+vulkan4xenon: profile, the last 10 s: passes' begins drawing back and clearing, 4 us a present, 1223 ns a pass
+vulkan4xenon: profile, the last 10 s: passes' begins keeping parts, 3 us a present, 1093 ns a pass
+vulkan4xenon: profile, the last 10 s: passes' ends deciding stores, 1 us a present, 304 ns a pass
+vulkan4xenon: profile, the last 10 s: passes' ends resolving, 15 us a present, 5110 ns a pass
+vulkan4xenon: profile, the last 10 s: passes' ends' rest, 4 us a present, 1429 ns a pass
+vulkan4xenon: profile, the last 10 s: submits, 129 us a present, 2.9 a present, the longest 106 us
+vulkan4xenon: profile, the last 10 s: fence waits, 0 us a present, 0.0 a present, the longest 0 us
+vulkan4xenon: profile, the last 10 s: acquires, 144 us a present, 1.0 a present, the longest 10924 us
+vulkan4xenon: profile, the last 10 s: presents, 13 us a present, 1.0 a present, the longest 18 us
+vulkan4xenon: profile, the last 10 s: idle waits, 0 us a present, 0.0 a present, the longest 0 us
+vulkan4xenon: profile, the last 10 s: xsdk's vblanks 600, flips 103, vblanks showing the last frame again 497, flips past vblank 0; the longest wait for a buffer since the start 0 us
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 0 us to 94 us, flips 739
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 132 us to 153 us, flips 739
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 212 us to 232 us, flips 739
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 234 us to 247 us, flips 739
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 250 us to 251 us, flips 739
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 97425 us to 97524 us, flips 740
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 97561 us to 97580 us, flips 740
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 97632 us to 97650 us, flips 740
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 97652 us to 97665 us, flips 740
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 97667 us to 97669 us, flips 740
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 194327 us to 194422 us, flips 741
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 194458 us to 194478 us, flips 741
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 194530 us to 194547 us, flips 741
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 194549 us to 194561 us, flips 741
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 194564 us to 194565 us, flips 741
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 292056 us to 292163 us, flips 742
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 292202 us to 292221 us, flips 742
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 292273 us to 292291 us, flips 742
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 292293 us to 292307 us, flips 742
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 292309 us to 292310 us, flips 742
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 388316 us to 388412 us, flips 743
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 388450 us to 388470 us, flips 743
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 388523 us to 388541 us, flips 743
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 388543 us to 388556 us, flips 743
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 388558 us to 388560 us, flips 743
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 483614 us to 483712 us, flips 744
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 483749 us to 483768 us, flips 744
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 483820 us to 483837 us, flips 744
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 483839 us to 483853 us, flips 744
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 483855 us to 483857 us, flips 744
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 582211 us to 582305 us, flips 745
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 582342 us to 582362 us, flips 745
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 582414 us to 582431 us, flips 745
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 582433 us to 582445 us, flips 745
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 582448 us to 582449 us, flips 745
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 678704 us to 678802 us, flips 746
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 678842 us to 678861 us, flips 746
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 678914 us to 678930 us, flips 746
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 678932 us to 678945 us, flips 746
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 678947 us to 678948 us, flips 746
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 774925 us to 775021 us, flips 747
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 775058 us to 775078 us, flips 747
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 775129 us to 775146 us, flips 747
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 775149 us to 775162 us, flips 747
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 775165 us to 775166 us, flips 747
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 868805 us to 868904 us, flips 748
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 868944 us to 868966 us, flips 748
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 869019 us to 869036 us, flips 748
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 869038 us to 869051 us, flips 748
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 869053 us to 869054 us, flips 748
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 966516 us to 966610 us, flips 749
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 966648 us to 966668 us, flips 749
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 966719 us to 966736 us, flips 749
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 966739 us to 966751 us, flips 749
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 966753 us to 966755 us, flips 749
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 1064578 us to 1064679 us, flips 750
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 1064721 us to 1064740 us, flips 750
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 1064792 us to 1064809 us, flips 750
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 1064811 us to 1064825 us, flips 750
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 1064828 us to 1064829 us, flips 750
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 1161500 us to 1161595 us, flips 751
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 1161631 us to 1161651 us, flips 751
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 1161703 us to 1161721 us, flips 751
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 1161723 us to 1161735 us, flips 751
+vulkan4xenon: profile, the last 10 s: uniform blocks the GPU loaded, 2.9 a present
+vulkan4xenon: profile, the last 10 s: uniform blocks the CPU read, 1.9 a present
+vulkan4xenon: profile, the last 10 s: quads the CPU read from uniform blocks, 11.3 a present
+vulkan4xenon: profile, the last 10 s: push constant quads written, 4.7 a present
+vulkan4xenon: profile, the last 10 s: pipelines applied whole, 3.8 a present
+vulkan4xenon: profile, the last 10 s: textures pointed, 2.9 a present
+vulkan4xenon: profile, the last 10 s: streams pointed, 2.9 a present
+vulkan4xenon: profile, the last 10 s: bytes copied into images, 0.0 a present
+vulkan4xenon: profile, the last 10 s: of them from write-combined memory, 0.0 a present
+vulkan4xenon: profile, the last 10 s: bytes drawn into images from buffers, 987493.9 a present
+vulkan4xenon: profile, the last 10 s: rows read back to copy part of a row, 0.0 a present
+vulkan4xenon: profile, the last 10 s: bytes copied out of images, 0.0 a present
+vulkan4xenon: profile, the last 10 s: bytes copied between images, 0.0 a present
+vulkan4xenon: profile, the last 10 s: bytes copied into buffers, 0.0 a present
+vulkan4xenon: profile, the last 10 s: literal registers written, 9.4 a present
+vulkan4xenon: profile, the last 10 s: pipelines applied whole again, 0.0 a present
+vulkan4xenon: profile, the last 10 s: the GPU's time on the submits, 1439 us a present, over 297 submits it finished
+[libretro INFO] [COMMON] DIAG 10.09 s: vblanks 196 renders 98 presents 98 runs 104 dupes 6; emu on hw 2 busy 99.1%, render on hw 0 busy 6.9%; mftb 14.3 ns
+[libretro INFO] [COMMON] DIAG emu ms: jit 7891.8(0) memreg 113.7(26369) memvram 0.3(4704) memp4 53.9(283704) sq 35.4(705024) ta 0.5(686) ifb 0.2(683) canon 16.2(0) compile 0.1(3) sched 135.9(145857) arm7 705.9(144195) mix 461.7(144195) dsp 9.7(144195) spg 403.3(980) pvr 1.4(98) gdrom 97.7(1055) audio 70.1(144195) waitrenderend 93.3(98) sum 10091.1
+[libretro INFO] [COMMON] DIAG render ms: frontend 25.9(0) run 8.1(104) wait 9391.3(609) parse 8.0(98) sort 0.1(98) texdecode 426.8(98) texupload 69.6(98) record 12.7(196) submit 9.9(98) submitpresent 2.0(98) gpuwait 0.3(196) video 99.9(104) audio 36.5(104) sum 10091.1
+[libretro INFO] [COMMON] DIAG jit: blocks 45892391 guest ops 754366357 (16.4 a block) check words 390373103 stores 112110061 loads 171310188 dynamic exits 6701916 conditional exits 32824090 compiled 1 check fails 0 resets 0
+[libretro INFO] [COMMON] DIAG ops: canon 236740: div32u 73898 div32p2 67695 div32s 61603 div1 28272 frswap 5272; ifb 681: 085b reios_trap 681
+[libretro INFO] [COMMON] DIAG samples 5069, in blocks 3959: jit 78.1% memreg 0.9% memp4 0.5% sq 0.2% canon 0.2% compile 0.0% sched 1.2% arm7 7.6% mix 4.5% dsp 0.1% spg 4.0% gdrom 1.0% audio 0.9% waitrenderend 0.9%
+[libretro INFO] [libretro INFO] [COMMON] DIAG hot: 8ceb1742 t9.6% g14.1% r1718948 o62 c31 s9 l7 h1920 e16; 8ceb1d00 t4.5% g10.3% r1343412 o58 c29 s8 l24 h1956 e16; 8ceb2354 t4.7% g10.1% r1105846 o69 c35 s8 l16 h1836 e16; 8ceb20e8 t1.7% g5.7% r438848 o98 c49 s8 l32 h2556 e16; 8ceb15ea t2.8% g2.7% r736687 o28 c14 s8 l4 h1616 e16; 8ceb1626 t3.3% g2.7% r736679 o28 c14 s8 l4 h1616 e16; 8ceb1b64 t1.0% g2.7% r1257228 o16 c8 s0 l3 h448 e17; 8ceb173c t1.6% g2.1% r245554 o65 c33 s9 l9 h2080 e16;
+[libretro INFO] [COMMON] DIAG vk per render (98): draw 1.0 drawIndexed 2.0 bindPipeline 5.0 bindDescriptorSets 3.0 pushConstants 2.0 setScissor 3.0 setViewport 2.0 bindVertexBuffers 2.0 bindIndexBuffer 1.0 descriptorWrites 6.0 copyBufferToImage 1.0 pipelineBarrier 2.0 beginRenderPass 2.0 queueSubmits 2.0 submittedBuffers 3.0
+[libretro INFO] [COMMON] DIAG textures: 140000 fmt3 512x512 vq0 mip0 scan1 stride1 new0 vram49 pal0 248.2ms; 1c0000 fmt3 512x512 vq0 mip0 scan1 stride1 new0 vram49 pal0 248.1ms; dropped 0
+[INFO] [XSDK] Audio: 3750 frames queued, 3746 played, 8227 silent; fewest queued 0, longest wait 931041 us.
+vulkan4xenon: profile, the last 10 s: 410 draws, 3484 commands, 308 submits, 104 presents; a present 3.9 draws, 131.6 us submitting; a submit 1.3 draws, 44.4 us; a lap 20.7 ns
+vulkan4xenon: profile, the last 10 s: dispatch 301 ns a draw, 270 less its 1.5 laps
+vulkan4xenon: profile, the last 10 s: push 164 ns a draw, 154 less its 0.5 laps
+vulkan4xenon: profile, the last 10 s: pipeline 3784 ns a draw, 3764 less its 1.0 laps
+vulkan4xenon: profile, the last 10 s: constants 542 ns a draw, 500 less its 2.0 laps
+vulkan4xenon: profile, the last 10 s: resources 2413 ns a draw, 2351 less its 3.0 laps
+vulkan4xenon: profile, the last 10 s: checks 1247 ns a draw, 1206 less its 2.0 laps
+vulkan4xenon: profile, the last 10 s: draws 203 ns a draw, 183 less its 1.0 laps
+vulkan4xenon: profile, the last 10 s: commands 21806 ns a draw, 21630 less its 8.5 laps
+vulkan4xenon: profile, the last 10 s: submit 2924 ns a draw, 2893 less its 1.5 laps
+vulkan4xenon: profile, the last 10 s: all 33384 ns a draw, 32950 less its 21.0 laps
+vulkan4xenon: profile, the last 10 s: command type 0 (src/objects.h), 27 us a present, 3 a present
+vulkan4xenon: profile, the last 10 s: command type 1 (src/objects.h), 21 us a present, 3 a present
+vulkan4xenon: profile, the last 10 s: command type 35 (src/objects.h), 35 us a present, 1 a present
+vulkan4xenon: profile, the last 10 s: the replay's waits for the GPU, 0 us a present, 0.0 a present
+vulkan4xenon: profile, the last 10 s: of them for draws before a copy into a buffer, 0 us a present, 0.0 a present
+vulkan4xenon: profile, the last 10 s: for what a submission used, 0 us a present, 0.0 a present
+vulkan4xenon: profile, the last 10 s: for room for a pass past eDRAM, 0 us a present, 0.0 a present
+vulkan4xenon: profile, the last 10 s: the app's waits for fences, outside the submit, 0 us a present, 0.0 a present
+vulkan4xenon: profile, the last 10 s: images drawn back, 0.5 a present
+vulkan4xenon: profile, the last 10 s: resolves made to clear, 0.0 a present
+vulkan4xenon: profile, the last 10 s: resolves put off, 0.0 a present
+vulkan4xenon: profile, the last 10 s: put-off resolves made later, 0.0 a present
+vulkan4xenon: profile, the last 10 s: xsdk's waits for room in its ring, 0.0 a present
+vulkan4xenon: profile, the last 10 s: microseconds of them, 0.0 a present
+vulkan4xenon: profile, the last 10 s: passes' begins placing targets and forgetting what they reach, 9 us a present, 2995 ns a pass
+vulkan4xenon: profile, the last 10 s: passes' begins setting targets, 5 us a present, 1821 ns a pass
+vulkan4xenon: profile, the last 10 s: passes' begins drawing back and clearing, 4 us a present, 1219 ns a pass
+vulkan4xenon: profile, the last 10 s: passes' begins keeping parts, 3 us a present, 1067 ns a pass
+vulkan4xenon: profile, the last 10 s: passes' ends deciding stores, 1 us a present, 316 ns a pass
+vulkan4xenon: profile, the last 10 s: passes' ends resolving, 15 us a present, 4959 ns a pass
+vulkan4xenon: profile, the last 10 s: passes' ends' rest, 4 us a present, 1410 ns a pass
+vulkan4xenon: profile, the last 10 s: submits, 132 us a present, 3.0 a present, the longest 105 us
+vulkan4xenon: profile, the last 10 s: fence waits, 0 us a present, 0.0 a present, the longest 0 us
+vulkan4xenon: profile, the last 10 s: acquires, 70 us a present, 1.0 a present, the longest 3595 us
+vulkan4xenon: profile, the last 10 s: presents, 13 us a present, 1.0 a present, the longest 13 us
+vulkan4xenon: profile, the last 10 s: idle waits, 0 us a present, 0.0 a present, the longest 0 us
+vulkan4xenon: profile, the last 10 s: xsdk's vblanks 595, flips 104, vblanks showing the last frame again 491, flips past vblank 0; the longest wait for a buffer since the start 0 us
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 0 us to 96 us, flips 843
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 135 us to 155 us, flips 843
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 210 us to 229 us, flips 843
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 231 us to 244 us, flips 843
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 247 us to 248 us, flips 843
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 91407 us to 91506 us, flips 844
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 91541 us to 91560 us, flips 844
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 91614 us to 91630 us, flips 844
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 91632 us to 91646 us, flips 844
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 91649 us to 91650 us, flips 844
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 189770 us to 189866 us, flips 845
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 189903 us to 189923 us, flips 845
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 189975 us to 189992 us, flips 845
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 189994 us to 190008 us, flips 845
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 190011 us to 190012 us, flips 845
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 280639 us to 280738 us, flips 846
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 280777 us to 280795 us, flips 846
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 280848 us to 280866 us, flips 846
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 280868 us to 280882 us, flips 846
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 280884 us to 280885 us, flips 846
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 378857 us to 378954 us, flips 847
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 378991 us to 379010 us, flips 847
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 379066 us to 379082 us, flips 847
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 379084 us to 379097 us, flips 847
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 379099 us to 379101 us, flips 847
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 470269 us to 470368 us, flips 848
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 470408 us to 470429 us, flips 848
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 470480 us to 470497 us, flips 848
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 470499 us to 470511 us, flips 848
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 470513 us to 470515 us, flips 848
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 568665 us to 568759 us, flips 849
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 568797 us to 568817 us, flips 849
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 568868 us to 568885 us, flips 849
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 568887 us to 568901 us, flips 849
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 568903 us to 568904 us, flips 849
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 661294 us to 661393 us, flips 850
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 661430 us to 661450 us, flips 850
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 661502 us to 661519 us, flips 850
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 661521 us to 661533 us, flips 850
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 661536 us to 661537 us, flips 850
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 758601 us to 758697 us, flips 851
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 758732 us to 758752 us, flips 851
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 758804 us to 758821 us, flips 851
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 758823 us to 758835 us, flips 851
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 758838 us to 758839 us, flips 851
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 852929 us to 853027 us, flips 852
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 853064 us to 853083 us, flips 852
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 853136 us to 853155 us, flips 852
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 853156 us to 853170 us, flips 852
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 853173 us to 853174 us, flips 852
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 951836 us to 951932 us, flips 853
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 951967 us to 951987 us, flips 853
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 952040 us to 952058 us, flips 853
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 952060 us to 952073 us, flips 853
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 952075 us to 952076 us, flips 853
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 1046832 us to 1046937 us, flips 854
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 1046979 us to 1046999 us, flips 854
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 1047050 us to 1047068 us, flips 854
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 1047070 us to 1047082 us, flips 854
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 1047084 us to 1047086 us, flips 854
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 1138945 us to 1139040 us, flips 855
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 1139077 us to 1139098 us, flips 855
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 1139153 us to 1139170 us, flips 855
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 1139172 us to 1139184 us, flips 855
+vulkan4xenon: profile, the last 10 s: uniform blocks the GPU loaded, 3.0 a present
+vulkan4xenon: profile, the last 10 s: uniform blocks the CPU read, 2.0 a present
+vulkan4xenon: profile, the last 10 s: quads the CPU read from uniform blocks, 11.8 a present
+vulkan4xenon: profile, the last 10 s: push constant quads written, 4.9 a present
+vulkan4xenon: profile, the last 10 s: pipelines applied whole, 3.9 a present
+vulkan4xenon: profile, the last 10 s: textures pointed, 3.0 a present
+vulkan4xenon: profile, the last 10 s: streams pointed, 3.0 a present
+vulkan4xenon: profile, the last 10 s: bytes copied into images, 0.0 a present
+vulkan4xenon: profile, the last 10 s: of them from write-combined memory, 0.0 a present
+vulkan4xenon: profile, the last 10 s: bytes drawn into images from buffers, 1028411.1 a present
+vulkan4xenon: profile, the last 10 s: rows read back to copy part of a row, 0.0 a present
+vulkan4xenon: profile, the last 10 s: bytes copied out of images, 0.0 a present
+vulkan4xenon: profile, the last 10 s: bytes copied between images, 0.0 a present
+vulkan4xenon: profile, the last 10 s: bytes copied into buffers, 0.0 a present
+vulkan4xenon: profile, the last 10 s: literal registers written, 9.8 a present
+vulkan4xenon: profile, the last 10 s: pipelines applied whole again, 0.0 a present
+vulkan4xenon: profile, the last 10 s: the GPU's time on the submits, 1479 us a present, over 308 submits it finished
+[libretro INFO] [COMMON] DIAG 10.01 s: vblanks 206 renders 103 presents 103 runs 105 dupes 2; emu on hw 2 busy 99.4%, render on hw 0 busy 7.3%; mftb 14.3 ns
+[libretro INFO] [COMMON] DIAG emu ms: jit 8094.0(0) memreg 125.6(27763) memvram 0.3(4944) memp4 56.4(314488) sq 35.1(742450) ta 0.6(721) ifb 0.2(715) canon 18.5(0) compile 0.0(1) sched 136.2(153314) arm7 742.2(151554) mix 498.1(151554) dsp 10.1(151554) spg 6.4(1030) pvr 1.5(103) gdrom 145.4(1103) audio 73.5(151554) waitrenderend 61.7(103) sum 10005.7
+[libretro INFO] [COMMON] DIAG render ms: frontend 25.5(0) run 8.3(105) wait 9274.0(620) parse 8.4(103) sort 0.1(103) texdecode 448.5(103) texupload 73.3(103) record 13.3(206) submit 10.4(103) submitpresent 2.1(103) gpuwait 0.3(206) video 66.3(105) audio 75.1(105) sum 10005.7
+[libretro INFO] [COMMON] DIAG jit: blocks 50151021 guest ops 784114291 (15.6 a block) check words 407384674 stores 110274873 loads 176984069 dynamic exits 7772785 conditional exits 35068561 compiled 0 check fails 0 resets 0
+[libretro INFO] [COMMON] DIAG ops: canon 291440: div32u 92706 div32p2 83684 div32s 74768 div1 34722 frswap 5560; ifb 717: 085b reios_trap 717
+[libretro INFO] [COMMON] DIAG samples 5027, in blocks 4046: jit 80.5% memreg 1.5% memp4 0.8% sq 0.3% ta 0.0% canon 0.1% sched 1.3% arm7 7.5% mix 5.4% dsp 0.1% spg 0.0% pvr 0.0% gdrom 1.1% audio 0.7% waitrenderend 0.6%
+[libretro INFO] [COMMON] DIAG slow: 8ceb1742 t7.4% g11.3% r1433454 o62 c31 s9 l7 h1920 e16; 8ceb2354 t6.4% g13.7% r1552798 o69 c35 s8 l16 h1836 e16; 8ceb1d00 t3.5% g7.8% r1060402 o58 c29 s8 l24 h1956 e16; 8ceb1626 t2.8% g2.2% r614303 o28 c14 s8 l4 h1616 e16; 8ceb15ea t2.5% g2.2% r614311 o28 c14 s8 l4 h1616 e16; 8ceb16a2 t2.0% g1.4% r204763 o54 c27 s16 l16 h5068 e16; 8ceb1552 t2.0% g1.4% r204765 o54 c27 s16 l16 h5068 e16; 8ceb20e8 t2.0% g5.3% r424008 o98 c49 s8 l32 h2556 e16;
+[libretro INFO] [COMMON] DIAG hot: 8ceb2354 t6.4% g13.7% r1552798 o69 c35 s8 l16 h1836 e16; 8ceb1742 t7.4% g11.3% r1433454 o62 c31 s9 l7 h1920 e16; 8ceb1d00 t3.5% g7.8% r1060402 o58 c29 s8 l24 h1956 e16; 8ceb20e8 t2.0% g5.3% r424008 o98 c49 s8 l32 h2556 e16; 8ceb2050 t1.0% g3.2% r343581 o74 c37 s8 l16 h1680 e16; 8ceb1b64 t1.4% g3.0% r1455471 o16 c8 s0 l3 h448 e17; 8ceb2340 t1.0% g2.2% r221819 o79 c40 s10 l22 h2256 e16; 8ceb15ea t2.5% g2.2% r614311 o28 c14 s8 l4 h1616 e16;
+[libretro INFO] [COMMON] DIAG vk per render (103): draw 1.0 drawIndexed 2.0 bindPipeline 5.0 bindDescriptorSets 3.0 pushConstants 2.0 setScissor 3.0 setViewport 2.0 bindVertexBuffers 2.0 bindIndexBuffer 1.0 descriptorWrites 6.0 copyBufferToImage 1.0 pipelineBarrier 2.0 beginRenderPass 2.0 queueSubmits 2.0 submittedBuffers 3.0
+[libretro INFO] [COMMON] DIAG textures: 140000 fmt3 512x512 vq0 mip0 scan1 stride1 new0 vram51 pal0 258.4ms; 1c0000 fmt3 512x512 vq0 mip0 scan1 stride1 new0 vram52 pal0 263.3ms; dropped 0
+vulkan4xenon: profile, the last 10 s: 420 draws, 3570 commands, 315 submits, 105 presents; a present 4.0 draws, 134.6 us submitting; a submit 1.3 draws, 44.9 us; a lap 20.7 ns
+vulkan4xenon: profile, the last 10 s: dispatch 305 ns a draw, 274 less its 1.5 laps
+vulkan4xenon: profile, the last 10 s: push 166 ns a draw, 155 less its 0.5 laps
+vulkan4xenon: profile, the last 10 s: pipeline 3803 ns a draw, 3782 less its 1.0 laps
+vulkan4xenon: profile, the last 10 s: constants 531 ns a draw, 490 less its 2.0 laps
+vulkan4xenon: profile, the last 10 s: resources 2449 ns a draw, 2387 less its 3.0 laps
+vulkan4xenon: profile, the last 10 s: checks 1229 ns a draw, 1187 less its 2.0 laps
+vulkan4xenon: profile, the last 10 s: draws 199 ns a draw, 178 less its 1.0 laps
+vulkan4xenon: profile, the last 10 s: commands 22008 ns a draw, 21832 less its 8.5 laps
+vulkan4xenon: profile, the last 10 s: submit 2963 ns a draw, 2932 less its 1.5 laps
+vulkan4xenon: profile, the last 10 s: all 33652 ns a draw, 33217 less its 21.0 laps
+vulkan4xenon: profile, the last 10 s: command type 0 (src/objects.h), 27 us a present, 3 a present
+vulkan4xenon: profile, the last 10 s: command type 1 (src/objects.h), 21 us a present, 3 a present
+vulkan4xenon: profile, the last 10 s: command type 35 (src/objects.h), 36 us a present, 1 a present
+vulkan4xenon: profile, the last 10 s: the replay's waits for the GPU, 0 us a present, 0.0 a present
+vulkan4xenon: profile, the last 10 s: of them for draws before a copy into a buffer, 0 us a present, 0.0 a present
+vulkan4xenon: profile, the last 10 s: for what a submission used, 0 us a present, 0.0 a present
+vulkan4xenon: profile, the last 10 s: for room for a pass past eDRAM, 0 us a present, 0.0 a present
+vulkan4xenon: profile, the last 10 s: the app's waits for fences, outside the submit, 0 us a present, 0.0 a present
+vulkan4xenon: profile, the last 10 s: images drawn back, 0.5 a present
+vulkan4xenon: profile, the last 10 s: resolves made to clear, 0.0 a present
+vulkan4xenon: profile, the last 10 s: resolves put off, 0.0 a present
+vulkan4xenon: profile, the last 10 s: put-off resolves made later, 0.0 a present
+vulkan4xenon: profile, the last 10 s: xsdk's waits for room in its ring, 0.0 a present
+vulkan4xenon: profile, the last 10 s: microseconds of them, 0.0 a present
+vulkan4xenon: profile, the last 10 s: passes' begins placing targets and forgetting what they reach, 9 us a present, 3032 ns a pass
+vulkan4xenon: profile, the last 10 s: passes' begins setting targets, 5 us a present, 1810 ns a pass
+vulkan4xenon: profile, the last 10 s: passes' begins drawing back and clearing, 4 us a present, 1235 ns a pass
+vulkan4xenon: profile, the last 10 s: passes' begins keeping parts, 3 us a present, 1063 ns a pass
+vulkan4xenon: profile, the last 10 s: passes' ends deciding stores, 1 us a present, 302 ns a pass
+vulkan4xenon: profile, the last 10 s: passes' ends resolving, 15 us a present, 4970 ns a pass
+vulkan4xenon: profile, the last 10 s: passes' ends' rest, 4 us a present, 1443 ns a pass
+vulkan4xenon: profile, the last 10 s: submits, 135 us a present, 3.0 a present, the longest 106 us
+vulkan4xenon: profile, the last 10 s: fence waits, 0 us a present, 0.0 a present, the longest 0 us
+vulkan4xenon: profile, the last 10 s: acquires, 1 us a present, 1.0 a present, the longest 1 us
+vulkan4xenon: profile, the last 10 s: presents, 13 us a present, 1.0 a present, the longest 18 us
+vulkan4xenon: profile, the last 10 s: idle waits, 0 us a present, 0.0 a present, the longest 0 us
+vulkan4xenon: profile, the last 10 s: xsdk's vblanks 604, flips 105, vblanks showing the last frame again 499, flips past vblank 0; the longest wait for a buffer since the start 0 us
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 0 us to 99 us, flips 948
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 136 us to 155 us, flips 948
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 208 us to 226 us, flips 948
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 229 us to 242 us, flips 948
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 245 us to 246 us, flips 948
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 95490 us to 95588 us, flips 949
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 95623 us to 95643 us, flips 949
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 95695 us to 95713 us, flips 949
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 95715 us to 95727 us, flips 949
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 95730 us to 95731 us, flips 949
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 185147 us to 185247 us, flips 950
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 185285 us to 185305 us, flips 950
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 185355 us to 185373 us, flips 950
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 185375 us to 185388 us, flips 950
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 185391 us to 185392 us, flips 950
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 281067 us to 281162 us, flips 951
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 281200 us to 281220 us, flips 951
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 281271 us to 281289 us, flips 951
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 281291 us to 281304 us, flips 951
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 281307 us to 281308 us, flips 951
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 370546 us to 370645 us, flips 952
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 370683 us to 370702 us, flips 952
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 370754 us to 370771 us, flips 952
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 370773 us to 370787 us, flips 952
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 370790 us to 370791 us, flips 952
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 466699 us to 466793 us, flips 953
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 466836 us to 466856 us, flips 953
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 466909 us to 466926 us, flips 953
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 466928 us to 466941 us, flips 953
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 466944 us to 466945 us, flips 953
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 559350 us to 559449 us, flips 954
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 559486 us to 559505 us, flips 954
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 559557 us to 559574 us, flips 954
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 559576 us to 559589 us, flips 954
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 559592 us to 559593 us, flips 954
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 654702 us to 654796 us, flips 955
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 654833 us to 654853 us, flips 955
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 654905 us to 654922 us, flips 955
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 654924 us to 654936 us, flips 955
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 654939 us to 654940 us, flips 955
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 746304 us to 746404 us, flips 956
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 746440 us to 746460 us, flips 956
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 746512 us to 746529 us, flips 956
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 746531 us to 746544 us, flips 956
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 746546 us to 746548 us, flips 956
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 842561 us to 842655 us, flips 957
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 842694 us to 842713 us, flips 957
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 842765 us to 842782 us, flips 957
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 842784 us to 842797 us, flips 957
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 842799 us to 842800 us, flips 957
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 932636 us to 932735 us, flips 958
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 932772 us to 932792 us, flips 958
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 932845 us to 932863 us, flips 958
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 932865 us to 932879 us, flips 958
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 932882 us to 932883 us, flips 958
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 1029468 us to 1029565 us, flips 959
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 1029606 us to 1029626 us, flips 959
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 1029679 us to 1029698 us, flips 959
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 1029700 us to 1029712 us, flips 959
+vulkan4xenon: profile, timeline: acquire by thread 000A0A30 on 801B0000 from 1029715 us to 1029716 us, flips 959
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 1119888 us to 1119985 us, flips 960
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 1120022 us to 1120041 us, flips 960
+vulkan4xenon: profile, timeline: submit by thread 000A0A30 on 801B0000 from 1120094 us to 1120112 us, flips 960
+vulkan4xenon: profile, timeline: present by thread 000A0A30 on 801B0000 from 1120114 us to 1120128 us, flips 960
+vulkan4xenon: profile, the last 10 s: uniform blocks the GPU loaded, 3.0 a present
+vulkan4xenon: profile, the last 10 s: uniform blocks the CPU read, 2.0 a present
+vulkan4xenon: profile, the last 10 s: quads the CPU read from uniform blocks, 12.0 a present
+vulkan4xenon: profile, the last 10 s: push constant quads written, 5.0 a present
+vulkan4xenon: profile, the last 10 s: pipelines applied whole, 4.0 a present
+vulkan4xenon: profile, the last 10 s: textures pointed, 3.0 a present
+vulkan4xenon: profile, the last 10 s: streams pointed, 3.0 a present
+vulkan4xenon: profile, the last 10 s: bytes copied into images, 0.0 a present
+vulkan4xenon: profile, the last 10 s: of them from write-combined memory, 0.0 a present
+vulkan4xenon: profile, the last 10 s: bytes drawn into images from buffers, 1048576.0 a present
+vulkan4xenon: profile, the last 10 s: rows read back to copy part of a row, 0.0 a present
+vulkan4xenon: profile, the last 10 s: bytes copied out of images, 0.0 a present
+vulkan4xenon: profile, the last 10 s: bytes copied between images, 0.0 a present
+vulkan4xenon: profile, the last 10 s: bytes copied into buffers, 0.0 a present
+vulkan4xenon: profile, the last 10 s: literal registers written, 10.0 a present
+vulkan4xenon: profile, the last 10 s: pipelines applied whole again, 0.0 a present
+vulkan4xenon: profile, the last 10 s: the GPU's time on the submits, 1497 us a present, over 315 submits it finished
+[libretro INFO] [COMMON] DIAG 10.06 s: vblanks 210 renders 105 presents 105 runs 105 dupes 0; emu on hw 2 busy 99.4%, render on hw 0 busy 7.4%; mftb 14.3 ns
+[libretro INFO] [COMMON] DIAG emu ms: jit 8114.1(0) memreg 127.0(28320) memvram 0.4(5040) memp4 56.3(324319) sq 37.0(756054) ta 0.6(735) ifb 0.2(741) canon 20.7(0) sched 143.6(156287) arm7 782.1(154493) mix 513.4(154493) dsp 9.2(154493) spg 6.5(1050) pvr 1.5(105) gdrom 118.1(1137) audio 74.0(154493) waitrenderend 59.8(105) sum 10064.5
+[libretro INFO] [COMMON] DIAG render ms: frontend 25.6(0) run 8.4(105) wait 9320.0(630) parse 8.5(105) sort 0.1(105) texdecode 457.2(105) texupload 99.5(105) record 13.5(210) submit 10.8(105) submitpresent 2.2(105) gpuwait 0.3(210) video 79.7(105) audio 38.8(105) sum 10064.5
+[libretro INFO] [COMMON] DIAG jit: blocks 51493986 guest ops 788228783 (15.3 a block) check words 409821439 stores 110847099 loads 176710903 dynamic exits 8282804 conditional exits 35587963 compiled 0 check fails 0 resets 0
+[libretro INFO] [COMMON] DIAG ops: canon 310470: div32u 99202 div32p2 89221 div32s 79367 div1 36956 frswap 5724; ifb 741: 085b reios_trap 741
+[libretro INFO] [COMMON] DIAG samples 5056, in blocks 4004: jit 79.2% memreg 1.2% memp4 0.5% sq 0.5% ta 0.0% canon 0.2% sched 1.3% arm7 8.4% mix 5.9% dsp 0.1% spg 0.0% gdrom 1.2% audio 0.9% waitrenderend 0.6%
+[libretro INFO] [COMMON] DIAG slow: 8ceb1742 t7.7% g10.6% r1347698 o62 c31 s9 l7 h1920 e16; 8ceb2354 t4.9% g9.4% r1069174 o69 c35 s8 l16 h1836 e16; 8ceb1d00 t3.2% g6.6% r895027 o58 c29 s8 l24 h1956 e16; 8ceb1626 t2.3% g2.1% r577570 o28 c14 s8 l4 h1616 e16; 8ceb20e8 t2.2% g6.0% r486392 o98 c49 s8 l32 h2556 e16; 8ceb15ea t2.0% g2.1% r577572 o28 c14 s8 l4 h1616 e16; 8ceb16a2 t1.5% g1.3% r192519 o54 c27 s16 l16 h5068 e16; 8ceb2050 t1.5% g5.3% r562625 o74 c37 s8 l16 h1680 e16;
+[libretro INFO] [COMMON] DIAG hot: 8ceb1742 t7.7% g10.6% r1347698 o62 c31 s9 l7 h1920 e16; 8ceb2354 t4.9% g9.4% r1069174 o69 c35 s8 l16 h1836 e16; 8ceb1d00 t3.2% g6.6% r895027 o58 c29 s8 l24 h1956 e16; 8ceb20e8 t2.2% g6.0% r486392 o98 c49 s8 l32 h2556 e16; 8ceb2050 t1.5% g5.3% r562625 o74 c37 s8 l16 h1680 e16; 8ceb1b64 t1.3% g3.0% r1494430 o16 c8 s0 l3 h448 e17; 8ceb240c t1.1% g2.9% r420409 o54 c27 s8 l9 h1384 e16; 8ceb15ea t2.0% g2.1% r577572 o28 c14 s8 l4 h1616 e16;
+[libretro INFO] [COMMON] DIAG vk per render (105): draw 1.0 drawIndexed 2.0 bindPipeline 5.0 bindDescriptorSets 3.0 pushConstants 2.0 setScissor 3.0 setViewport 2.0 bindVertexBuffers 2.0 bindIndexBuffer 1.0 descriptorWrites 6.0 copyBufferToImage 1.0 pipelineBarrier 2.0 beginRenderPass 2.0 queueSubmits 2.0 submittedBuffers 3.0
+[libretro INFO] [COMMON] DIAG textures: 140000 fmt3 512x512 vq0 mip0 scan1 stride1 new0 vram53 pal0 281.2ms; 1c0000 fmt3 512x512 vq0 mip0 scan1 stride1 new0 vram52 pal0 275.5ms; dropped 0

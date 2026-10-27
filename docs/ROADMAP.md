@@ -4569,3 +4569,12 @@ An outline, made precise one milestone at a time. Each starts only when agreed.
   - apps writing mapped memory with `memcpy` ran at 185 MB/s there. Since xsdk milestone 20, `memcpy` is xsdk's own
     and copies 5.6 GB/s from the cache and 1.5 GB/s from memory into write-combined memory (xsdk:docs/HARDWARE.md),
     so this one is done.
+- **Where the code lands moves vkbench as much as a change does** (2026-10-27, `results/2026-10-27-milestone-67/`).
+  Milestone 67's drawn copies grew `vkCmdCopyBufferToImage` by 752 bytes, which moved everything after it 768, and
+  `uniforms_1000` went from 663 to 714 us and `states_1000` from 1242 to 1259 with no function a draw runs through
+  changed. `9125a52` with 768 bytes that never run at that place gave the same 714 and 1259, and another layout of the
+  same code, `draw_blit` inlined, ran the draw scenes 2% under `9125a52`: placement alone moves scenes by -2% to +8%.
+  In `uniforms_1000` it's the recording: vkbench's uniform loop, `record`'s first line and `vkCmdDrawIndexed`'s entry
+  share one set of the CPU's two-way instruction cache. Until the draw path's functions sit together in a fixed order,
+  which is xsdk's linker script and a scope of its own, compare vkbench only between builds whose code lands alike, or
+  try a swing against a padded build before chasing it.
