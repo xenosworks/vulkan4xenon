@@ -2096,6 +2096,9 @@ static void replay_command(VkQueue queue, VkCommandBuffer buffer, Replay *replay
 	}
 	case COMMAND_DRAW_UPLOAD: {
 		const DrawnUpload *const upload = (const DrawnUpload *)(buffer->data + command->state_at);
+		// The submit's invalidate of all memory left a texture fetch the rows drawn in from there before
+		// (upload_check).
+		xsdk_gpu_invalidate(upload->texture.address, upload->texture.size_bytes);
 		draw_blit(queue, replay, &upload->blit, &upload->texture);
 		// Of 4-byte texels, as an 8_8_8_8 target's formats are.
 		v4x_profile_count(
