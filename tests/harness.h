@@ -13,7 +13,7 @@
 enum {
 	HARNESS_WIDTH = 1280,
 	HARNESS_HEIGHT = 720,
-	HARNESS_MAX_IMAGES = 3,
+	HARNESS_MAX_IMAGES = 4,
 	// Two frames' worth of vblanks, for a present to reach the screen.
 	HARNESS_SETTLE_MS = 50,
 	// Vulkan 1.0's dynamic states.

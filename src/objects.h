@@ -10,6 +10,7 @@
 #include "format.h"
 #include "vulkan4xenon.h"
 #include "xsdk/gpu.h"
+#include "xsdk/present.h"
 #include "xsdk/shader.h"
 #include "xsdk/texture.h"
 
@@ -17,8 +18,7 @@
 
 enum {
 	V4X_MIN_SWAPCHAIN_IMAGES = 2,
-	// xsdk_present's limit (xsdk:include/xsdk/present.h).
-	V4X_MAX_SWAPCHAIN_IMAGES = 3,
+	V4X_MAX_SWAPCHAIN_IMAGES = XSDK_PRESENT_MAX_BUFFERS,
 	V4X_DISPLAY_WIDTH = 1280,
 	V4X_DISPLAY_HEIGHT = 720,
 	// Each binding takes one of xsdk's vertex streams.

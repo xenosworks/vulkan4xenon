@@ -801,12 +801,12 @@ Some are there to refuse, as the features they need aren't reported. Each logs w
 - Surfaces must be full-screen, opaque and untransformed.
 - Surface formats: `VK_FORMAT_B8G8R8A8_UNORM` in `VK_COLOR_SPACE_SRGB_NONLINEAR_KHR`; a resolve stores B, G, R, A in
   byte order, as the display reads them (xsdk:docs/HARDWARE.md). Present mode: FIFO.
-- One swapchain at a time, of 2 or 3 images: `xsdk_present`'s front buffers, colour attachments only. A second, or
+- One swapchain at a time, of 2 to 4 images: `xsdk_present`'s front buffers, colour attachments only. A second, or
   `oldSwapchain`, returns `VK_ERROR_NATIVE_WINDOW_IN_USE_KHR`.
 - `vkAcquireNextImageKHR` waits on the CPU for the next buffer to leave the screen, so its semaphore and fence are
   signalled when it returns.
 - **Deviation:** one image can be acquired at a time. A second acquire before presenting returns `VK_NOT_READY` with
-  a zero timeout and `VK_TIMEOUT` otherwise, though with 3 images Vulkan allows holding 2.
+  a zero timeout and `VK_TIMEOUT` otherwise, though with 3 or 4 images Vulkan allows holding 2 or 3.
 - `vkQueuePresentKHR` queues the acquired image; the vblank callback shows it once the GPU has finished it. Presenting
   any other image returns `VK_ERROR_OUT_OF_DATE_KHR`.
 - Without a display controller, as in Xenia, `vkCreateSwapchainKHR` returns `VK_ERROR_INITIALIZATION_FAILED`.

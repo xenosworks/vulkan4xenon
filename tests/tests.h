@@ -51,6 +51,8 @@ void test_events(const Harness *harness);
 void test_triangle(const Harness *harness);
 // The triangle again, its shaders read back from the layer's cache by a second device (milestone 13).
 void test_triangle_from_cache(const Harness *harness);
+// A device of its own with four swapchain images, where a frame two refreshes late costs no vblank.
+void test_late_frame(void);
 // The triangle with 8-bit colours packed in a word, as Aurora decodes vertex colours (milestone 10).
 void test_packed_colour(const Harness *harness);
 // Colours and positions from vertex attributes of half floats, bytes and shorts, normalized or scaled (milestone 20).

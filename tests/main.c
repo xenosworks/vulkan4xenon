@@ -84,6 +84,7 @@ int main(void)
 	harness_destroy(&harness);
 	if (made)
 		test_shader_cache_finish();
+	test_late_frame();
 	xsdk_log_write("tests: %d passed, %d failed", passed_count, failed_count);
 	return failed_count;
 }
