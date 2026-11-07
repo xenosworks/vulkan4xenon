@@ -4464,22 +4464,17 @@ title's `XsdkPackets` from state passed in, and the hierarchical buffer's state 
 scissor builder off by one, failed the builders' check alone, 683 of 686. vkbench relinked against it ran xsdk's own
 scenes 2.4 to 3.8% slower than percall's run (`draws_4000` 1,162 to 1,201 us, `states_1000` 478 to 493,
 `uniforms_1000` 296 to 306), at the 3% bar and inside milestone 67's band for code placement, and accepted so; the
-layer's scenes were within noise. One leftover was found: `set_floats` saved LR and r29 as it started, which 3960a1d's
-left to its slow path. `74ffae9` works the float groups out before reserving, and `set_floats` compiles to 3960a1d's
-fast path again; the host packets check still matches.
+layer's scenes were within noise. One leftover is known: `set_floats` now saves LR and r29 as it starts, which 3960a1d's
+left to its slow path, its fast path otherwise the same.
 
 **Step 1, the recorder** (src/record.c): the replay's draw code moved to recording, on xsdk's builders. Binds, pushes and
 dynamic state go into the command buffer's bound state, and draws into packets; the commands that depend on the submit
 stay a list, a run of packets between two of them a command, `COMMAND_RUN`. The submit copies each run into xsdk's
-stream in pieces, cut at the first draw past 1,024 dwords and at most 8,189, at their 16-byte phase, writes each `RB_HIZCONTROL` from xsdk's hierarchical
+stream in pieces of up to 8,189 dwords at their 16-byte phase, writes each `RB_HIZCONTROL` from xsdk's hierarchical
 buffer state then, reads the uniform buffers the GPU can't load into the packets, and hands xsdk the state the run
 left. Indirect draws and indexed draws of repeated indices keep the state bound and are recorded at the submit by the
 queue's own recorder. vulkan4xenon_test's uniform buffers check gains a quad whose block the GPU can't load, written
-after the command buffers are recorded. In Xenia (smoke only), vkbench passed 17 of 17, every picture the same through
-both backends, `draws_4000` writing 26.6 dwords a draw to xsdk's 45.1; pieces of 4,096 had taken 32.6, as a
-reservation that doesn't fit a 64 KB block pads the rest of it. vulkan4xenon_test failed the same checks as before the
-step, but for two timings that passed this time, up to its time stamps, where Xenia stops (its GPU clock doesn't run). The gate, `draws_4000` at 1.5 times xsdk's
-cost or less, is the console's.
+after the command buffers are recorded.
 
 ## 5. The Dusklight track
 
