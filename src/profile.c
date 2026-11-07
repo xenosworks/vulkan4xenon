@@ -77,13 +77,6 @@ static const char *const stage_names[V4X_PROFILE_STAGES] = {
 	"runs",
 	"commands",
 	"submit",
-	"recording: pushes",
-	"recording: checks",
-	"recording: state",
-	"recording: push constants",
-	"recording: resources",
-	"recording: streams",
-	"recording: draws",
 };
 
 static V4xProfile totals;
@@ -237,11 +230,6 @@ static void calibrate(void)
 	totals = (V4xProfile){ 0 };
 	logged_at = seconds();
 	calibrated = true;
-}
-
-void v4x_profile_record_mark(void)
-{
-	last_lap = time_base();
 }
 
 void v4x_profile_submit(void)
@@ -586,15 +574,9 @@ void v4x_profile_log(const char *what, const V4xProfile *from, const V4xProfile 
 	const uint32_t presents = to->presents - from->presents;
 	uint64_t ticks = 0;
 	uint32_t laps = 0;
-	for (uint32_t s = 0; s < V4X_PROFILE_SUBMIT_STAGES; s++) {
+	for (uint32_t s = 0; s < V4X_PROFILE_STAGES; s++) {
 		ticks += to->ticks[s] - from->ticks[s];
 		laps += to->laps[s] - from->laps[s];
-	}
-	uint64_t recording_ticks = 0;
-	uint32_t recording_laps = 0;
-	for (uint32_t s = V4X_PROFILE_SUBMIT_STAGES; s < V4X_PROFILE_STAGES; s++) {
-		recording_ticks += to->ticks[s] - from->ticks[s];
-		recording_laps += to->laps[s] - from->laps[s];
 	}
 	// Tenths, so the log needs no floats.
 	const uint32_t present_draws = each((uint64_t)draws * 10, presents);
@@ -612,7 +594,6 @@ void v4x_profile_log(const char *what, const V4xProfile *from, const V4xProfile 
 	for (uint32_t s = 0; s < V4X_PROFILE_STAGES; s++)
 		log_stage(what, stage_names[s], to->ticks[s] - from->ticks[s], to->laps[s] - from->laps[s], draws);
 	log_stage(what, "all", ticks, laps, draws);
-	log_stage(what, "recording, all", recording_ticks, recording_laps, draws);
 	log_tiles(what, from, to, presents);
 }
 
@@ -620,7 +601,7 @@ void v4x_profile_log(const char *what, const V4xProfile *from, const V4xProfile 
 static void log_commands(void)
 {
 	uint64_t ticks = 0;
-	for (uint32_t s = 0; s < V4X_PROFILE_SUBMIT_STAGES; s++)
+	for (uint32_t s = 0; s < V4X_PROFILE_STAGES; s++)
 		ticks += totals.ticks[s] - logged.ticks[s];
 	const uint32_t presents = totals.presents - logged.presents;
 	for (uint32_t type = 0; type < COMMAND_TYPES; type++) {
