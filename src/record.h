@@ -20,6 +20,8 @@ void v4x_record_reset(Recorder *recorder);
 // Ends the run being recorded, giving its index when it holds packets, and begins the next, knowing nothing of what
 // the GPU holds, as the command after it may change anything.
 bool v4x_record_close(Recorder *recorder, uint32_t *run);
+// vkCmdPushConstants: values into the bound push constants, the quads that change written by the next draw.
+void v4x_record_push(Recorder *recorder, float *push, uint32_t offset_bytes, uint32_t size_bytes, const void *values);
 // A draw with what's bound, which must be a pipeline in a render pass. A queue is given at the submit alone, where an
 // indexed draw of instances may repeat its indices (VkQueue_T, scratch); while recording, the command buffer keeps
 // such draws as snapshots instead.

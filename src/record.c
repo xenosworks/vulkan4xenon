@@ -29,7 +29,7 @@ enum {
 	// The most a piece holds: xsdk_gpu_reserve's most at once (xsdk:src/gpu.c, OVERFLOW_SCRATCH_DWORDS), less the
 	// padding that keeps its 16-byte phase (copy_piece).
 	PIECE_MOST_DWORDS = 8192 - 3,
-	// A piece is cut at the first draw past this. A reservation that doesn't fit what's left of the stream's 64 KB
+	// A piece is cut where a draw starts past this. A reservation that doesn't fit what's left of the stream's 64 KB
 	// block pads the rest of it (xsdk:src/gpu.c, next_block), so smaller pieces waste less: vkbench's draws_4000 took
 	// 32.6 dwords a draw at 4,096 and 26.6 at 1,024, for the 25.1 its draws write (in Xenia, smoke only).
 	PIECE_DWORDS = 1024,
@@ -93,18 +93,15 @@ static void cut(Recorder *r)
 	r->piece_first = r->packets.count;
 }
 
-// Room for dwords of packets, in the piece being recorded, else in a piece of their own.
+// Room for dwords of packets, in the piece being recorded, else in a piece of their own, as from the piece's first
+// draw past PIECE_DWORDS. Cut here rather than after a draw, the count isn't read back just after its builder stored
+// it, which would stall on the store.
 static inline bool make_room(Recorder *r, uint32_t dwords)
 {
-	if (r->packets.count - r->piece_first + dwords > PIECE_MOST_DWORDS)
+	const uint32_t taken = r->packets.count - r->piece_first;
+	if (taken + dwords > PIECE_MOST_DWORDS || taken >= PIECE_DWORDS)
 		cut(r);
 	return r->packets.capacity - r->packets.count >= dwords || grow_packets(r, dwords);
-}
-
-static inline void draw_done(Recorder *r)
-{
-	if (r->packets.count - r->piece_first >= PIECE_DWORDS)
-		cut(r);
 }
 
 static void add_site(Recorder *r, volatile uint32_t *at, bool depth, uint32_t depth_control, bool pixel_writes_depth)
@@ -159,6 +156,9 @@ static void forget(Recorder *r)
 	r->pipeline_dirty = true;
 	r->viewport_dirty = false;
 	r->dynamic_dirty = false;
+	r->sets_dirty = false;
+	r->streams_dirty = true;
+	r->push_dirty = 0;
 	memset(r->known, 0, sizeof r->known);
 	memset(r->loaded, 0, sizeof r->loaded);
 	memset(r->read_groups, 0, sizeof r->read_groups);
@@ -244,17 +244,70 @@ static inline vector unsigned int register_bits(const float *values)
 	return (vector unsigned int)vec_perm(vec_ld(0, values), vec_ld(15, values), vec_lvsl(0, values));
 }
 
+// The bits of group g's registers that first to end take in, a bit a register as Recorder's known and read_groups.
+static inline uint32_t group_bits(uint32_t g, uint32_t first, uint32_t end)
+{
+	const uint32_t low = first > g * GROUP ? first : g * GROUP;
+	const uint32_t high = end < (g + 1) * GROUP ? end : (g + 1) * GROUP;
+	return ((1u << (high - low)) - 1) << (low % GROUP);
+}
+
+// A word of push constants, which hold floats and anything else.
+typedef uint32_t __attribute__((may_alias)) Word;
+
+// Vulkan's push offsets and sizes are multiples of 4. A quad whose values change marks its bit for the next draw to
+// write (apply_changed): whole quads compared as registers, wherever the app's values and the push constants lie, else
+// a word at a time.
+void v4x_record_push(Recorder *r, float *push, uint32_t offset_bytes, uint32_t size_bytes, const void *values)
+{
+	v4x_profile_record_mark();
+	const uint32_t first = offset_bytes / 4;
+	const uint32_t end = first + size_bytes / 4;
+	const Word *const in = values;
+	Word *const out = (Word *)push;
+	// Kept in a register till the end: a store and a load of the recorder's byte each quad would stall on each other.
+	uint32_t dirty = 0;
+	if (((offset_bytes | size_bytes) & 15) == 0) {
+		const float *const from = values;
+		const vector unsigned char from_shift = vec_lvsl(0, from);
+		const vector unsigned char push_shift = vec_lvsl(0, push);
+		for (uint32_t w = first; w < end; w += 4) {
+			const float *const quad = &from[w - first];
+			const vector unsigned int a = (vector unsigned int)vec_perm(vec_ld(0, quad), vec_ld(15, quad), from_shift);
+			const vector unsigned int b =
+				(vector unsigned int)vec_perm(vec_ld(0, &push[w]), vec_ld(15, &push[w]), push_shift);
+			if (vec_all_eq(a, b))
+				continue;
+			out[w] = in[w - first];
+			out[w + 1] = in[w - first + 1];
+			out[w + 2] = in[w - first + 2];
+			out[w + 3] = in[w - first + 3];
+			dirty |= 1u << w / 4;
+		}
+	} else {
+		for (uint32_t w = first; w < end; w++) {
+			if (out[w] != in[w - first]) {
+				out[w] = in[w - first];
+				dirty |= 1u << w / 4;
+			}
+		}
+	}
+	r->push_dirty |= (uint8_t)dirty;
+	v4x_profile_lap(V4X_PROFILE_RECORD_PUSH);
+}
+
 // Whether count registers from first each hold their value already.
 static inline bool holds(const Recorder *r, uint32_t stage, uint32_t first, const float *values, uint32_t count)
 {
-	for (uint32_t g = first / GROUP; g <= (first + count - 1) / GROUP; g++) {
-		if (r->loaded[stage][g])
+	const uint32_t end = first + count;
+	for (uint32_t g = first / GROUP; g <= (end - 1) / GROUP; g++) {
+		const uint32_t bits = group_bits(g, first, end);
+		if (r->loaded[stage][g] || (r->known[stage][g] & bits) != bits)
 			return false;
 	}
-	const uint8_t *const known = &r->known[stage][first];
 	const float *const kept = &r->kept[stage][4 * first];
 	for (uint32_t i = 0; i < count; i++) {
-		if (!known[i] || !vec_all_eq(register_bits(&values[4 * i]), (vector unsigned int)vec_ld(0, &kept[4 * i])))
+		if (!vec_all_eq(register_bits(&values[4 * i]), (vector unsigned int)vec_ld(0, &kept[4 * i])))
 			return false;
 	}
 	return true;
@@ -274,6 +327,8 @@ static __attribute__((noinline)) void put_floats(Recorder *r, uint32_t stage, ui
 	const uint32_t end = first + count;
 	for (uint32_t g = first / GROUP; g <= (end - 1) / GROUP; g++) {
 		r->loaded[stage][g] = 0;
+		const uint32_t taken = group_bits(g, first, end);
+		r->known[stage][g] = (uint8_t)(read ? r->known[stage][g] & ~taken : r->known[stage][g] | taken);
 		uint32_t bits = r->read_groups[stage][g];
 		if (!bits && !read)
 			continue;
@@ -306,7 +361,6 @@ static __attribute__((noinline)) void put_floats(Recorder *r, uint32_t stage, ui
 		}
 		r->read_groups[stage][g] = (uint8_t)bits;
 	}
-	memset(&r->known[stage][first], read ? 0 : 1, count);
 }
 
 // Sets count registers from first unless each holds its value already.
@@ -346,7 +400,7 @@ static void load_constants(Recorder *r, bool vertex, uint32_t first, uint32_t ad
 // group past the blocks (xost:docs/xsc.md, "Interface conventions"), so no block read at the submit shares it.
 static void lose_constant(Recorder *r, uint32_t reg)
 {
-	r->known[0][reg] = 0;
+	r->known[0][reg / GROUP] &= (uint8_t)~(1u << reg % GROUP);
 	r->loaded[0][reg / GROUP] = 0;
 	if (r->read_groups[0][reg / GROUP]) {
 		static bool logged;
@@ -597,18 +651,12 @@ static __attribute__((noinline)) void apply_loops(Recorder *r, const Bound *b, c
 	r->loops_known = !read_count;
 }
 
-// The draw plan's groups in turn (Pipeline, plan); what a set that isn't bound holds is left as it was.
-static void apply_resources(Recorder *r, const Bound *b, const Pipeline *pipeline)
+// The descriptor sets' groups of the draw plan in turn (Pipeline, plan); what a set that isn't bound holds is left as
+// it was.
+static void apply_sets(Recorder *r, const Bound *b, const Pipeline *pipeline)
 {
 	const StageResource *const resources = pipeline->resources;
 	const uint16_t *const plan = pipeline->plan;
-	if (plan[PLAN_LOOP] < plan[PLAN_LOOP + 1])
-		apply_loops(r, b, pipeline);
-	for (uint32_t i = plan[PLAN_PUSH]; i < plan[PLAN_PUSH + 1]; i++) {
-		const StageResource *const s = &resources[i];
-		v4x_profile_count(V4X_PROFILE_QUADS_PUSHED, s->push_count);
-		write_constants(r, s->vertex, s->resource.first + s->push_first, &b->push[4 * s->push_first], s->push_count);
-	}
 	for (uint32_t i = plan[PLAN_LOAD]; i < plan[PLAN_LOAD + 1]; i++)
 		block_from_buffer(r, b, &resources[i]);
 	for (uint32_t i = plan[PLAN_READ]; i < plan[PLAN_READ + 1]; i++) {
@@ -671,26 +719,85 @@ static void apply_clip_planes(Recorder *r, const Bound *b, const Pipeline *pipel
 	r->clip_planes_on = pipeline->clip_plane_count != 0;
 }
 
-// Whether the draw can be written: room for its state, a pipeline bound in a render pass.
-static bool prepare_draw(Recorder *r, const Bound *b)
+// Every resource of the draw plan in turn (Pipeline, plan), each written unless it holds its values already, as for
+// another pipeline or where the run knows nothing.
+static void apply_resources(Recorder *r, const Bound *b, const Pipeline *pipeline)
 {
-	const Pipeline *const pipeline = b->pipeline;
-	if (!make_room(r, pipeline->draw_dwords))
-		return false;
-	r->run.draws++;
+	const StageResource *const resources = pipeline->resources;
+	const uint16_t *const plan = pipeline->plan;
+	if (plan[PLAN_LOOP] < plan[PLAN_LOOP + 1])
+		apply_loops(r, b, pipeline);
+	for (uint32_t i = plan[PLAN_PUSH]; i < plan[PLAN_PUSH + 1]; i++) {
+		const StageResource *const s = &resources[i];
+		v4x_profile_count(V4X_PROFILE_QUADS_PUSHED, s->push_count);
+		write_constants(r, s->vertex, s->resource.first + s->push_first, &b->push[4 * s->push_first], s->push_count);
+	}
+	apply_sets(r, b, pipeline);
+	apply_clip_planes(r, b, pipeline);
+}
+
+// What the commands since the last draw changed under the same pipeline: the push blocks whose quads they pushed new
+// values into (v4x_record_push), written without comparing, the sets' resources, and the loops and clip planes, which
+// read either. The rest holds what the run's draws wrote: no command between them writes the GPU's registers.
+static void apply_changed(Recorder *r, const Bound *b, const Pipeline *pipeline)
+{
+	const uint16_t *const plan = pipeline->plan;
+	for (uint32_t i = plan[PLAN_PUSH]; i < plan[PLAN_PUSH + 1]; i++) {
+		const StageResource *const s = &pipeline->resources[i];
+		if (!(r->push_dirty >> s->push_first & ((1u << s->push_count) - 1)))
+			continue;
+		v4x_profile_count(V4X_PROFILE_QUADS_PUSHED, s->push_count);
+		put_floats(r, s->vertex ? 0 : 1, s->resource.first + s->push_first, &b->push[4 * s->push_first], s->push_count,
+			NULL, 0);
+	}
+	v4x_profile_lap(V4X_PROFILE_RECORD_CONSTANTS);
+	if (r->sets_dirty)
+		apply_sets(r, b, pipeline);
+	if (plan[PLAN_LOOP] < plan[PLAN_LOOP + 1])
+		apply_loops(r, b, pipeline);
+	if (pipeline->clip_plane_count)
+		apply_clip_planes(r, b, pipeline);
+	// A block loaded or read may share a group with the vertex base (point_streams).
+	r->streams_dirty |= r->sets_dirty;
+}
+
+// The pipeline state and resources: all of them for another pipeline or where the run knows nothing, else what the
+// commands since the last draw changed.
+static __attribute__((noinline)) void apply_changes(Recorder *r, const Bound *b, const Pipeline *pipeline)
+{
 	if (r->pipeline_dirty || pipeline != r->applied.pipeline) {
 		apply_pipeline(r, b, pipeline);
+		v4x_profile_lap(V4X_PROFILE_RECORD_STATE);
+		apply_resources(r, b, pipeline);
+		r->streams_dirty = true;
 	} else {
 		if (r->viewport_dirty)
 			apply_viewport(r, b, pipeline);
 		if (r->dynamic_dirty)
 			apply_dynamic(r, b, pipeline);
+		v4x_profile_lap(V4X_PROFILE_RECORD_STATE);
+		if (r->push_dirty || r->sets_dirty)
+			apply_changed(r, b, pipeline);
 	}
+	v4x_profile_lap(V4X_PROFILE_RECORD_RESOURCES);
 	r->pipeline_dirty = false;
 	r->viewport_dirty = false;
 	r->dynamic_dirty = false;
-	apply_resources(r, b, pipeline);
-	apply_clip_planes(r, b, pipeline);
+	r->sets_dirty = false;
+	r->push_dirty = 0;
+}
+
+// Whether the draw can be written: room for its state, and the state the commands since the last draw changed.
+static inline bool prepare_draw(Recorder *r, const Bound *b)
+{
+	const Pipeline *const pipeline = b->pipeline;
+	if (!make_room(r, pipeline->draw_dwords))
+		return false;
+	r->run.draws++;
+	v4x_profile_lap(V4X_PROFILE_RECORD_CHECK);
+	if (r->pipeline_dirty | r->viewport_dirty | r->dynamic_dirty | r->sets_dirty | (r->push_dirty != 0) |
+		(pipeline != r->applied.pipeline))
+		apply_changes(r, b, pipeline);
 	return true;
 }
 
@@ -698,7 +805,7 @@ static bool prepare_draw(Recorder *r, const Bound *b)
 // before the binding's; one at the instance's rate stays at the binding's start, the shader fetching each instance's
 // element (pipeline.c). A vertex shader reading gl_VertexIndex adds the first vertex back to the GPU's index as its
 // vertex base (xost:docs/xsc.md, "Interface conventions"); a float holds it exactly up to 2^24.
-static void point_streams(Recorder *r, const Bound *b, int32_t first_vertex)
+static __attribute__((noinline)) void point_streams_now(Recorder *r, const Bound *b, int32_t first_vertex)
 {
 	const Pipeline *const pipeline = b->pipeline;
 	if (pipeline->reads_vertex_index) {
@@ -717,6 +824,16 @@ static void point_streams(Recorder *r, const Bound *b, int32_t first_vertex)
 		xsdk_gpu_put_vertices(&r->packets, r->groups, s, stream.address, stream.size_bytes);
 		r->pointed_streams[s] = stream;
 	}
+	r->streams_first = first_vertex;
+	r->streams_dirty = false;
+}
+
+// The streams and vertex base again where the vertex buffers, the pipeline, a set or the first vertex changed.
+static inline void point_streams(Recorder *r, const Bound *b, int32_t first_vertex)
+{
+	if (r->streams_dirty || first_vertex != r->streams_first)
+		point_streams_now(r, b, first_vertex);
+	v4x_profile_lap(V4X_PROFILE_RECORD_STREAMS);
 }
 
 // An instanced vertex shader's group for a draw of one instance: 1/S, 0.5/S and S 0, so its prologue keeps the vertex's
@@ -833,6 +950,7 @@ static __attribute__((noinline)) void draw_instances(Recorder *r, const Bound *b
 void v4x_record_draw(Recorder *r, const Bound *b, uint32_t vertex_count, uint32_t first_vertex, uint32_t instance_count,
 	uint32_t first_instance)
 {
+	v4x_profile_record_mark();
 	if (!drawable(b, vertex_count, instance_count))
 		return;
 	const Pipeline *const pipeline = b->pipeline;
@@ -842,7 +960,7 @@ void v4x_record_draw(Recorder *r, const Bound *b, uint32_t vertex_count, uint32_
 		point_streams(r, b, (int32_t)first_vertex);
 		xsdk_gpu_put_draw(&r->packets, pipeline->primitive, vertex_count);
 	}
-	draw_done(r);
+	v4x_profile_lap(V4X_PROFILE_RECORD_DRAW);
 }
 
 bool v4x_record_repeats_indices(const Bound *b, uint32_t index_count, uint32_t instance_count)
@@ -882,6 +1000,7 @@ static __attribute__((noinline)) void draw_indexed_instances(Recorder *r, const 
 void v4x_record_draw_indexed(Recorder *r, const Bound *b, VkQueue queue, uint32_t count, uint32_t first_index,
 	int32_t vertex_offset, uint32_t instance_count, uint32_t first_instance)
 {
+	v4x_profile_record_mark();
 	if (!drawable(b, count, instance_count))
 		return;
 	const Pipeline *const pipeline = b->pipeline;
@@ -892,7 +1011,7 @@ void v4x_record_draw_indexed(Recorder *r, const Bound *b, VkQueue queue, uint32_
 		const uint32_t address = b->index_address + first_index * (b->index_32_bit ? 4 : 2);
 		xsdk_gpu_put_draw_indexed(&r->packets, pipeline->primitive, address, count, b->index_32_bit);
 	}
-	draw_done(r);
+	v4x_profile_lap(V4X_PROFILE_RECORD_DRAW);
 }
 
 // The most each part of a draw writes: every state a draw puts when the run knows nothing, each literal and resource as

@@ -735,17 +735,23 @@ typedef struct Recorder {
 	// The run being recorded, from its firsts, and where its piece began.
 	Run run;
 	uint32_t piece_first;
-	// What the GPU holds since the run began. The pipeline state to write again, all of it, or the viewport and
-	// scissor, or the state dynamic state changes, and what was written.
+	// What the GPU holds since the run began. The pipeline state to write again, all of it, or what the commands since
+	// the last draw changed: the viewport and scissor, the state dynamic state changes, the descriptor sets, the
+	// vertex buffers, and the quads of push constants, a bit each; and what was written.
 	bool pipeline_dirty;
 	bool viewport_dirty;
 	bool dynamic_dirty;
+	bool sets_dirty;
+	bool streams_dirty;
+	uint8_t push_dirty;
+	// The first vertex the streams were last pointed from.
+	int32_t streams_first;
 	AppliedState applied;
-	// Each stage's float constants: the values written, the registers known to hold them, each group's memory loaded
-	// into it, its address with bit 0 set, and the registers holding a uniform buffer's words that the submit reads, a
-	// bit each in their group's, with where from and how many of their 4 words are there.
+	// Each stage's float constants: the values written, the registers known to hold them and those holding a uniform
+	// buffer's words that the submit reads, a bit each in their group's, each group's memory loaded into it, its
+	// address with bit 0 set, and where the words read come from and how many of their 4 words are there.
 	float kept[2][V4X_FLOAT_CONSTANTS * 4] __attribute__((aligned(16)));
-	uint8_t known[2][V4X_FLOAT_CONSTANTS];
+	uint8_t known[2][V4X_FLOAT_CONSTANTS / V4X_CONSTANT_GROUP];
 	uint32_t loaded[2][V4X_FLOAT_CONSTANTS / V4X_CONSTANT_GROUP];
 	uint8_t read_groups[2][V4X_FLOAT_CONSTANTS / V4X_CONSTANT_GROUP];
 	volatile const uint32_t *read_words[2][V4X_FLOAT_CONSTANTS];

@@ -115,8 +115,9 @@ typedef struct {
 
 V4xEdramCounts v4x_edram_counts(void);
 
-// The parts of vkQueueSubmit a profile build times, made with make V4X_PROFILE=1 (docs/ROADMAP.md, milestone 29). The
-// draws' own work is done as they're recorded since milestone 35 (docs/COMMAND_BUFFERS.md).
+// The parts of vkQueueSubmit a profile build times, made with make V4X_PROFILE=1 (docs/ROADMAP.md, milestone 29), then
+// the parts of recording the draws, which do their own work as they're recorded since milestone 35
+// (docs/COMMAND_BUFFERS.md, src/record.c).
 typedef enum {
 	// The runs of recorded packets copied into the ring, with their hierarchical depth and uniform buffers' reads, and
 	// the draws recorded at the submit.
@@ -125,7 +126,24 @@ typedef enum {
 	V4X_PROFILE_COMMANDS,
 	// The submit's own: draining the CPU's writes, the invalidate, and the fence that kicks the ring.
 	V4X_PROFILE_SUBMIT,
+	// vkCmdPushConstants: the values compared and kept.
+	V4X_PROFILE_RECORD_PUSH,
+	// A draw's checks and the room for its packets, a piece cut and the packets grown among it.
+	V4X_PROFILE_RECORD_CHECK,
+	// The pipeline state, viewport and dynamic state: shaders, literals, and the hierarchical depth's sites.
+	V4X_PROFILE_RECORD_STATE,
+	// Push constants written where they changed under the same pipeline.
+	V4X_PROFILE_RECORD_CONSTANTS,
+	// The descriptor sets' blocks loaded or read, textures pointed, loops and clip planes; for another pipeline, every
+	// resource, its push constants among them.
+	V4X_PROFILE_RECORD_RESOURCES,
+	// The vertex streams pointed and the vertex base.
+	V4X_PROFILE_RECORD_STREAMS,
+	// The draw packets, instances among them, and the piece cut after.
+	V4X_PROFILE_RECORD_DRAW,
 	V4X_PROFILE_STAGES,
+	// The stages before this are the submit's.
+	V4X_PROFILE_SUBMIT_STAGES = V4X_PROFILE_RECORD_PUSH,
 } V4xProfileStage;
 
 // From the first submit: each stage's CPU time base ticks, at 49.875 MHz, and how many laps timed it, each lap adding

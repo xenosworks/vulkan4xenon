@@ -480,6 +480,7 @@ VKAPI_ATTR void VKAPI_CALL vkCmdBindVertexBuffers(VkCommandBuffer commandBuffer,
 			(VertexBinding){ .address = buffer->memory->address + buffer->offset_bytes + (uint32_t)pOffsets[i],
 				.size_bytes = (uint32_t)(buffer->size - pOffsets[i]) };
 	}
+	commandBuffer->recorder->streams_dirty = true;
 }
 
 // An instanced list's instances are drawn together, others' each as a draw of its own (record.c).
@@ -509,6 +510,7 @@ VKAPI_ATTR void VKAPI_CALL vkCmdBindDescriptorSets(VkCommandBuffer commandBuffer
 		memcpy(bound->dynamic_offsets[firstSet + i], pDynamicOffsets + used, count * sizeof(uint32_t));
 		used += count;
 	}
+	commandBuffer->recorder->sets_dirty = true;
 }
 
 VKAPI_ATTR void VKAPI_CALL vkCmdPushConstants(VkCommandBuffer commandBuffer, VkPipelineLayout layout,
@@ -516,7 +518,7 @@ VKAPI_ATTR void VKAPI_CALL vkCmdPushConstants(VkCommandBuffer commandBuffer, VkP
 {
 	(void)layout;
 	(void)stageFlags;
-	memcpy((uint8_t *)commandBuffer->bound.push + offset, pValues, size);
+	v4x_record_push(commandBuffer->recorder, commandBuffer->bound.push, offset, size, pValues);
 }
 
 static uint32_t level_size(uint32_t size, uint32_t level)

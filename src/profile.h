@@ -89,6 +89,9 @@ typedef enum {
 // Counts a submit and starts its laps; the first also learns what a lap costs.
 void v4x_profile_submit(void);
 void v4x_profile_lap(V4xProfileStage stage);
+// Starts a recording command's laps (V4X_PROFILE_RECORD_PUSH and after); a draw recorded at the submit, an indirect
+// one, charges its recording to them rather than to the runs.
+void v4x_profile_record_mark(void);
 void v4x_profile_commands(uint32_t count);
 // Laps V4X_PROFILE_COMMANDS at a command's end, charging the time to its CommandType as well (src/objects.h).
 void v4x_profile_command(uint32_t type);
@@ -134,6 +137,10 @@ static inline void v4x_profile_submit(void)
 static inline void v4x_profile_lap(V4xProfileStage stage)
 {
 	(void)stage;
+}
+
+static inline void v4x_profile_record_mark(void)
+{
 }
 
 static inline void v4x_profile_commands(uint32_t count)
