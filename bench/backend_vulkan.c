@@ -25,6 +25,31 @@ enum {
 	INSTANCE_BYTES = MAX_DRAW_ITEMS * sizeof(DrawItem),
 	QUAD_INDEX_BYTES = MAX_SPRITES * QUAD_INDICES * 2,
 	UPLOAD_TIMEOUT_NS = 1000000000,
+	// The recording probe's calls a round, draws_4000's draws, within MAX_DRAW_ITEMS's offsets, and its rounds, of
+	// which the fastest counts.
+	PROBE_CALLS = 4000,
+	PROBE_ROUNDS = 8,
+};
+
+// What the recording probe times, a call at a time: a draw as draws_4000 records it, its parts, and the binds other
+// scenes' draws make.
+typedef enum {
+	PROBE_DRAW,
+	PROBE_VERTEX_PUSH,
+	PROBE_FRAGMENT_PUSH,
+	PROBE_DRAW_INDEXED,
+	PROBE_DYNAMIC_SET,
+	PROBE_PIPELINE,
+	PROBE_KINDS,
+} ProbeKind;
+
+static const char *const probe_names[PROBE_KINDS] = {
+	"a draws_4000 draw: two pushes and an indexed draw",
+	"vkCmdPushConstants of 64 bytes",
+	"vkCmdPushConstants of 16 bytes",
+	"vkCmdDrawIndexed",
+	"vkCmdBindDescriptorSets with 2 dynamic offsets",
+	"vkCmdBindPipeline, two pipelines in turn",
 };
 
 static const char *const instance_extensions[] = { VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_DISPLAY_EXTENSION_NAME };
@@ -738,6 +763,87 @@ static bool acquire(void)
 				state.device, state.swapchain, UINT64_MAX, VK_NULL_HANDLE, VK_NULL_HANDLE, &state.image_index));
 }
 
+// PROBE_CALLS of one kind into a pass of a command buffer never submitted.
+static void probe_calls(VkCommandBuffer cmd, ProbeKind kind)
+{
+	static const DrawItem item = { .mvp = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 }, .tint = { 1, 1, 1, 1 } };
+	const VkPipelineLayout layout = state.push_layout;
+	for (uint32_t i = 0; i < PROBE_CALLS; i++) {
+		switch (kind) {
+		case PROBE_DRAW:
+			vkCmdPushConstants(cmd, layout, VK_SHADER_STAGE_VERTEX_BIT, 0, MVP_BYTES, item.mvp);
+			vkCmdPushConstants(cmd, layout, VK_SHADER_STAGE_FRAGMENT_BIT, MVP_BYTES, TINT_BYTES, item.tint);
+			vkCmdDrawIndexed(cmd, CUBE_INDEX_COUNT, 1, 0, 0, 0);
+			break;
+		case PROBE_VERTEX_PUSH:
+			vkCmdPushConstants(cmd, layout, VK_SHADER_STAGE_VERTEX_BIT, 0, MVP_BYTES, item.mvp);
+			break;
+		case PROBE_FRAGMENT_PUSH:
+			vkCmdPushConstants(cmd, layout, VK_SHADER_STAGE_FRAGMENT_BIT, MVP_BYTES, TINT_BYTES, item.tint);
+			break;
+		case PROBE_DRAW_INDEXED:
+			vkCmdDrawIndexed(cmd, CUBE_INDEX_COUNT, 1, 0, 0, 0);
+			break;
+		case PROBE_DYNAMIC_SET: {
+			const uint32_t offsets[2] = { i * UNIFORM_STRIDE, TINT_REGION + i * UNIFORM_STRIDE };
+			vkCmdBindDescriptorSets(
+				cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, state.uniform_layout, 1, 1, &state.uniform_set, 2, offsets);
+			break;
+		}
+		case PROBE_PIPELINE:
+			vkCmdBindPipeline(
+				cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, state.pipelines[i & 1 ? PIPELINE_GRAY : PIPELINE_MESH]);
+			break;
+		case PROBE_KINDS:
+			break;
+		}
+	}
+}
+
+// What each call a draw records costs the CPU, the recording half of a draw's cost; the profile build splits the
+// submit's.
+static void probe_recording(void)
+{
+	const VkCommandBufferAllocateInfo allocate_info = {
+		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+		.commandPool = state.command_pool,
+		.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+		.commandBufferCount = 1,
+	};
+	VkCommandBuffer cmd;
+	if (!ok("vkAllocateCommandBuffers", vkAllocateCommandBuffers(state.device, &allocate_info, &cmd)))
+		return;
+	const VkCommandBufferBeginInfo begin = { .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
+	const VkRenderPassBeginInfo pass = {
+		.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+		.renderPass = state.render_pass,
+		.framebuffer = state.framebuffers[0],
+		.renderArea = { { 0, 0 }, { SCREEN_WIDTH, SCREEN_HEIGHT } },
+		.clearValueCount = 2,
+		.pClearValues = clears,
+	};
+	for (uint32_t kind = 0; kind < PROBE_KINDS; kind++) {
+		uint64_t fastest_ns = UINT64_MAX;
+		// One round more, unmeasured, so the command buffer has grown to its size first.
+		for (uint32_t round = 0; round <= PROBE_ROUNDS; round++) {
+			(void)ok("vkResetCommandBuffer", vkResetCommandBuffer(cmd, 0));
+			(void)ok("vkBeginCommandBuffer", vkBeginCommandBuffer(cmd, &begin));
+			vkCmdBeginRenderPass(cmd, &pass, VK_SUBPASS_CONTENTS_INLINE);
+			vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, state.pipelines[PIPELINE_MESH]);
+			const uint64_t start = bench_now_ns();
+			probe_calls(cmd, (ProbeKind)kind);
+			const uint64_t took_ns = bench_now_ns() - start;
+			vkCmdEndRenderPass(cmd);
+			(void)ok("vkEndCommandBuffer", vkEndCommandBuffer(cmd));
+			if (round && took_ns < fastest_ns)
+				fastest_ns = took_ns;
+		}
+		xsdk_log_write("vkbench: vulkan4xenon recording, fastest of %d rounds of %d: %s, %u ns each", PROBE_ROUNDS,
+			PROBE_CALLS, probe_names[kind], (unsigned)(fastest_ns / PROBE_CALLS));
+	}
+	vkFreeCommandBuffers(state.device, state.command_pool, 1, &cmd);
+}
+
 static bool vulkan_init(void)
 {
 	state = (State){ .instance = VK_NULL_HANDLE };
@@ -748,8 +854,11 @@ static bool vulkan_init(void)
 		if (!create_offscreen())
 			return false;
 	}
-	return create_targets() && create_render_pass() && create_layouts() && create_pipelines() && create_buffers() &&
-		create_commands() && create_textures() && upload_textures() && create_descriptors() && acquire();
+	if (!(create_targets() && create_render_pass() && create_layouts() && create_pipelines() && create_buffers() &&
+			create_commands() && create_textures() && upload_textures() && create_descriptors() && acquire()))
+		return false;
+	probe_recording();
+	return true;
 }
 
 static void vulkan_begin_frame(void)
