@@ -119,15 +119,23 @@ static V4xEdramCounts edram_counts;
 // A block's registers on their way into the constants; the queue is externally synchronized, so one copy will do.
 static float block[V4X_FLOAT_CONSTANTS * 4] __attribute__((aligned(16)));
 
+// A shader's literals, each run of them in registers one after another set as one, as xsdk writes whole groups.
 static void write_literals(const V4xShader *shader, bool vertex)
 {
 	v4x_profile_count(V4X_PROFILE_LITERALS, shader->literal_count);
-	for (uint32_t i = 0; i < shader->literal_count; i++) {
-		const V4xShaderLiteral *const literal = &shader->literals[i];
+	uint32_t i = 0;
+	while (i < shader->literal_count) {
+		const uint32_t first = shader->literals[i].reg;
+		uint32_t count = 0;
+		do {
+			memcpy(&block[4 * count], shader->literals[i].values, sizeof shader->literals[i].values);
+			count++;
+			i++;
+		} while (i < shader->literal_count && shader->literals[i].reg == first + count);
 		if (vertex)
-			xsdk_gpu_set_vertex_constants(literal->reg, literal->values, 1);
+			xsdk_gpu_set_vertex_constants(first, block, count);
 		else
-			xsdk_gpu_set_pixel_constants(literal->reg, literal->values, 1);
+			xsdk_gpu_set_pixel_constants(first, block, count);
 	}
 }
 
