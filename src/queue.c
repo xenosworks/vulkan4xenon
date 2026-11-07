@@ -197,7 +197,7 @@ static void apply_dynamic(const Pipeline *pipeline, Replay *replay)
 
 // Each pipeline has shaders of its own. A shader's literals stay in their registers while the pipelines drawing share
 // that shader, as its blocks never reach them; another shader's may.
-static void apply_pipeline(const Pipeline *pipeline, Replay *replay)
+static __attribute__((noinline)) void apply_pipeline(const Pipeline *pipeline, Replay *replay)
 {
 	AppliedState *const applied = &replay->applied;
 	v4x_profile_count(V4X_PROFILE_PIPELINES, 1);
@@ -411,7 +411,7 @@ static void write_loops(VkQueue queue, const uint32_t *values)
 
 // The loop constants a pipeline's hardware loops read, each from its count, or its fixed passes for loops whose count
 // is data.
-static void apply_loops(const Pipeline *pipeline, const Replay *replay)
+static __attribute__((noinline)) void apply_loops(const Pipeline *pipeline, const Replay *replay)
 {
 	uint32_t values[XSDK_LOOP_CONSTANTS];
 	memcpy(values, replay->queue->loop_constants, sizeof values);
@@ -1806,19 +1806,11 @@ static bool plain(const Pipeline *pipeline, uint32_t count, uint32_t instances)
 	return instances == 1 && count && count <= pipeline->piece_vertices && !pipeline->vertex.instanced;
 }
 
-static void draw(
+// Instances or pieces, kept out of draw so a plain draw saves no more registers than it uses.
+static __attribute__((noinline)) void draw_instances(
 	Replay *replay, uint32_t vertex_count, uint32_t first_vertex, uint32_t instance_count, uint32_t first_instance)
 {
-	v4x_profile_lap(V4X_PROFILE_DISPATCH);
 	const Pipeline *const pipeline = replay->pipeline;
-	if (plain(pipeline, vertex_count, instance_count)) {
-		prepare_draw(replay);
-		point_streams(replay, (int32_t)first_vertex);
-		v4x_profile_lap(V4X_PROFILE_CHECKS);
-		xsdk_gpu_draw(pipeline->primitive, vertex_count);
-		v4x_profile_lap(V4X_PROFILE_DRAWS);
-		return;
-	}
 	if (!drawable(replay, vertex_count, instance_count))
 		return;
 	prepare_draw(replay);
@@ -1834,24 +1826,30 @@ static void draw(
 		draw_instance(replay, vertex_count, first_vertex, first_instance + i);
 }
 
-// A list's indices are repeated, a copy an instance, unless the copies' memory is full (transfer.c); one instance draws
-// from the app's own, which a copy would only read back first, from write-combined memory at 80 MB/s
-// (xsdk:docs/HARDWARE.md, "Instancing on the console, milestone 47 step 1").
-static void draw_indexed(Replay *replay, uint32_t count, uint32_t first_index, int32_t vertex_offset,
-	uint32_t instance_count, uint32_t first_instance)
+static void draw(
+	Replay *replay, uint32_t vertex_count, uint32_t first_vertex, uint32_t instance_count, uint32_t first_instance)
 {
 	v4x_profile_lap(V4X_PROFILE_DISPATCH);
 	const Pipeline *const pipeline = replay->pipeline;
-	const uint32_t index_bytes = replay->index_32_bit ? 4 : 2;
-	if (plain(pipeline, count, instance_count)) {
-		prepare_draw(replay);
-		point_streams(replay, vertex_offset);
-		const uint32_t address = replay->index_address + first_index * index_bytes;
-		v4x_profile_lap(V4X_PROFILE_CHECKS);
-		xsdk_gpu_draw_indexed(pipeline->primitive, address, count, replay->index_32_bit);
-		v4x_profile_lap(V4X_PROFILE_DRAWS);
+	if (!plain(pipeline, vertex_count, instance_count)) {
+		draw_instances(replay, vertex_count, first_vertex, instance_count, first_instance);
 		return;
 	}
+	prepare_draw(replay);
+	point_streams(replay, (int32_t)first_vertex);
+	v4x_profile_lap(V4X_PROFILE_CHECKS);
+	xsdk_gpu_draw(pipeline->primitive, vertex_count);
+	v4x_profile_lap(V4X_PROFILE_DRAWS);
+}
+
+// A list's indices are repeated, a copy an instance, unless the copies' memory is full (transfer.c); one instance draws
+// from the app's own, which a copy would only read back first, from write-combined memory at 80 MB/s
+// (xsdk:docs/HARDWARE.md, "Instancing on the console, milestone 47 step 1").
+static __attribute__((noinline)) void draw_indexed_instances(Replay *replay, uint32_t count, uint32_t first_index,
+	int32_t vertex_offset, uint32_t instance_count, uint32_t first_instance)
+{
+	const Pipeline *const pipeline = replay->pipeline;
+	const uint32_t index_bytes = replay->index_32_bit ? 4 : 2;
 	if (!drawable(replay, count, instance_count))
 		return;
 	prepare_draw(replay);
@@ -1868,6 +1866,23 @@ static void draw_indexed(Replay *replay, uint32_t count, uint32_t first_index, i
 	}
 	for (uint32_t i = 0; i < instance_count; i++)
 		draw_indexed_instance(replay, count, first_index, vertex_offset, first_instance + i);
+}
+
+static void draw_indexed(Replay *replay, uint32_t count, uint32_t first_index, int32_t vertex_offset,
+	uint32_t instance_count, uint32_t first_instance)
+{
+	v4x_profile_lap(V4X_PROFILE_DISPATCH);
+	const Pipeline *const pipeline = replay->pipeline;
+	if (!plain(pipeline, count, instance_count)) {
+		draw_indexed_instances(replay, count, first_index, vertex_offset, instance_count, first_instance);
+		return;
+	}
+	prepare_draw(replay);
+	point_streams(replay, vertex_offset);
+	const uint32_t address = replay->index_address + first_index * (replay->index_32_bit ? 4 : 2);
+	v4x_profile_lap(V4X_PROFILE_CHECKS);
+	xsdk_gpu_draw_indexed(pipeline->primitive, address, count, replay->index_32_bit);
+	v4x_profile_lap(V4X_PROFILE_DRAWS);
 }
 
 // Its parameters are read now, in order with the replay: the host wrote them before the submit, or a copy in it did.
@@ -2036,6 +2051,8 @@ static const Command *next_command(VkCommandBuffer buffer, uint32_t index)
 	return index + 1 < buffer->count ? &buffer->commands[index + 1] : NULL;
 }
 
+static void replay_commands(VkQueue queue, VkCommandBuffer buffer, Replay *replay);
+
 static void replay_command(VkQueue queue, VkCommandBuffer buffer, Replay *replay, uint32_t index)
 {
 	const Command *const command = &buffer->commands[index];
@@ -2143,9 +2160,7 @@ static void replay_command(VkQueue queue, VkCommandBuffer buffer, Replay *replay
 		break;
 	// In place, with the state the replay has bound; a secondary command buffer begins and ends no render pass.
 	case COMMAND_EXECUTE_COMMANDS:
-		v4x_profile_commands(command->secondary->count);
-		for (uint32_t c = 0; c < command->secondary->count; c++)
-			replay_command(queue, command->secondary, replay, c);
+		replay_commands(queue, command->secondary, replay);
 		break;
 	case COMMAND_BIND_INDEX_BUFFER:
 		replay->index_bytes = command->index_buffer.bytes;
@@ -2189,6 +2204,15 @@ static void replay_command(VkQueue queue, VkCommandBuffer buffer, Replay *replay
 	v4x_profile_command(command->type);
 }
 
+// A command buffer's commands in order; kept out of line, so replay_command is inlined into it and a command costs no
+// call.
+static __attribute__((noinline)) void replay_commands(VkQueue queue, VkCommandBuffer buffer, Replay *replay)
+{
+	v4x_profile_commands(buffer->count);
+	for (uint32_t c = 0; c < buffer->count; c++)
+		replay_command(queue, buffer, replay, c);
+}
+
 V4xEdramCounts v4x_edram_counts(void)
 {
 	return edram_counts;
@@ -2213,9 +2237,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit(
 			Replay replay = { .queue = queue, .serial = queue->serial, .pipeline_dirty = true };
 			for (uint32_t q = 0; q < PUSH_QUADS; q++)
 				replay.push_quads[q] = &replay.push[4 * q];
-			v4x_profile_commands(buffer->count);
-			for (uint32_t c = 0; c < buffer->count; c++)
-				replay_command(queue, buffer, &replay, c);
+			replay_commands(queue, buffer, &replay);
 			// Whatever comes after may read what's left unresolved (resolve_can_wait).
 			for (uint32_t c = 0; c < V4X_EDRAM_COLORS; c++) {
 				if (queue->colors[c].unresolved)
