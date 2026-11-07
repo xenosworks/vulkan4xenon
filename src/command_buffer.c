@@ -500,6 +500,15 @@ VKAPI_ATTR void VKAPI_CALL vkCmdPushConstants(VkCommandBuffer commandBuffer, VkP
 	// which costs time alone.
 	if (!record_aligned(commandBuffer, pValues, size, 16, &at))
 		return;
+	// A push carrying on from the push just recorded, its bytes right after that one's, joins it: one command to
+	// replay, and the same push constants after it.
+	Command *const last = commandBuffer->count ? &commandBuffer->commands[commandBuffer->count - 1] : NULL;
+	if (last && last->type == COMMAND_PUSH_CONSTANTS &&
+		last->push_constants.offset_bytes + last->push_constants.size_bytes == offset &&
+		last->push_constants.data_at + last->push_constants.size_bytes == at) {
+		last->push_constants.size_bytes += size;
+		return;
+	}
 	Command *const command = record(commandBuffer, COMMAND_PUSH_CONSTANTS);
 	if (!command)
 		return;
