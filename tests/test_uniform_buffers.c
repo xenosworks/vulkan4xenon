@@ -8,7 +8,9 @@
 
 enum {
 	FRAMES = 60,
-	QUADS = 3,
+	QUADS = 4,
+	// The quads, the clear colour and the cleared corner.
+	PROBES = QUADS + 2,
 	QUAD_VERTICES = 6,
 	STRIDE_BYTES = 16,
 	// Each draw's block sits 256 bytes on, minUniformBufferOffsetAlignment.
@@ -46,6 +48,8 @@ static const Draw draws[QUADS] = {
 	{ 0.3f, 0.4f, -0.8f, -0.7f, { 200, 100, 40 }, { 200, 50, 40 } },
 	{ 0.5f, 0.3f, -0.2f, 0.0f, { 40, 200, 160 }, { 40, 100, 160 } },
 	{ 0.25f, 0.5f, 0.45f, -0.3f, { 120, 80, 220 }, { 120, 40, 220 } },
+	// After the clear.
+	{ 0.3f, 0.3f, 0.4f, 0.4f, { 200, 160, 40 }, { 200, 80, 40 } },
 };
 
 static const float tint[4] = { 1.0f, 0.5f, 1.0f, 1.0f };
@@ -53,6 +57,14 @@ static const float tint[4] = { 1.0f, 0.5f, 1.0f, 1.0f };
 // A dark purple: 40, 16, 40.
 static const VkClearValue clear = { .color = { .float32 = { 40.0f / 255, 16.0f / 255, 40.0f / 255, 1.0f } } };
 static const Rgb clear_rgb = { 40, 16, 40 };
+
+// vkCmdClearAttachments' blue corner, its colour set in the pixel shader's register 0 (src/blit.c), where uniform.frag
+// loads its tint: the last quad, tinted by that register again, would show 0, 0, 40 had its tint not been loaded again.
+static const VkClearAttachment corner = { .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+	.colorAttachment = 0,
+	.clearValue = { .color = { .float32 = { 0.0f, 0.0f, 1.0f, 1.0f } } } };
+static const VkClearRect corner_rect = { { { 1152, 24 }, { 96, 64 } }, 0, 1 };
+static const Rgb corner_rgb = { 0, 0, 255 };
 
 typedef struct {
 	VkRenderPass render_pass;
@@ -67,7 +79,7 @@ typedef struct {
 	VkDescriptorPool pool;
 	VkDescriptorSet sets[2];
 	VkCommandBuffer commands[HARNESS_MAX_IMAGES];
-	HarnessProbe probes[QUADS + 1];
+	HarnessProbe probes[PROBES];
 	HarnessProbes check;
 } Scene;
 
@@ -88,8 +100,10 @@ static void make_probes(Scene *scene)
 		scene->probes[i] = (HarnessProbe){ "a quad's centre", pixel_x(d->move_x + d->scale_x / 2),
 			pixel_y(d->move_y + d->scale_y / 2), d->shown, 0 };
 	}
+	scene->probes[QUADS - 1].name = "the quad after vkCmdClearAttachments' centre";
 	scene->probes[QUADS] = (HarnessProbe){ "the clear colour", 20, 20, clear_rgb, 0 };
-	scene->check = (HarnessProbes){ "uniform buffers", scene->probes, QUADS + 1, TOLERANCE, 0 };
+	scene->probes[QUADS + 1] = (HarnessProbe){ "the cleared corner", 1200, 56, corner_rgb, 0 };
+	scene->check = (HarnessProbes){ "uniform buffers", scene->probes, PROBES, TOLERANCE, 0 };
 }
 
 // Each draw's block, a column-major matrix then a colour, 256 bytes apart; the tint after them.
@@ -222,7 +236,7 @@ static bool build(const Harness *harness, Scene *scene)
 	return ok && harness_ok("descriptor sets", create_sets(harness, scene));
 }
 
-// Set 1 once; set 0 again for each draw, at that draw's dynamic offset.
+// Set 1 once; set 0 again for each draw, at that draw's dynamic offset; the corner cleared before the last.
 static VkResult record(const Harness *harness, Scene *scene)
 {
 	VkResult result = harness_command_buffers(harness, scene->commands);
@@ -243,6 +257,8 @@ static VkResult record(const Harness *harness, Scene *scene)
 		vkCmdBindDescriptorSets(
 			commands, VK_PIPELINE_BIND_POINT_GRAPHICS, scene->layout, 1, 1, &scene->sets[1], 0, NULL);
 		for (uint32_t q = 0; q < QUADS; q++) {
+			if (q == QUADS - 1)
+				vkCmdClearAttachments(commands, 1, &corner, 1, &corner_rect);
 			const uint32_t dynamic_offset = q * DRAW_STRIDE_BYTES;
 			vkCmdBindDescriptorSets(
 				commands, VK_PIPELINE_BIND_POINT_GRAPHICS, scene->layout, 0, 1, &scene->sets[0], 1, &dynamic_offset);
@@ -281,7 +297,7 @@ void test_uniform_buffers(const Harness *harness)
 	const uint32_t frames =
 		recorded ? harness_frames(harness, scene.commands, FRAMES, harness_probes_hold, &scene.check, &misses) : 0;
 	check("uniform buffers: 60 frames drawn and presented", frames == FRAMES);
-	check("uniform buffers: every frame places each quad by its matrix, coloured and tinted",
+	check("uniform buffers: every frame places each quad by its matrix, coloured and tinted, the last after a clear",
 		frames == FRAMES && misses == 0);
 	check("uniform buffers: the image on screen shows them too",
 		harness_screen(harness, harness_probes_hold, &scene.check));

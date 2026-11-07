@@ -55,6 +55,16 @@ typedef struct {
 	XsdkDepthStencilState depth_stencil;
 } AppliedState;
 
+// What a replay has written into each stage's float constants, stage 0 the vertex shader's and 1 the pixel shader's, so
+// a write of what registers already hold, or a load of memory a group already holds, is left out. A group loaded from
+// memory holds its address, bit 0 set, in loaded, and 0 stands for none, as a load's address is 64-byte aligned. A
+// register in a group holding no load holds its value in held_values while known is set: setting any register of a
+// group rewrites the rest from xsdk's own copy of what was set (xsdk:include/xsdk/gpu.h), which holds the same.
+typedef struct {
+	uint8_t known[2][V4X_FLOAT_CONSTANTS];
+	uint32_t loaded[2][V4X_FLOAT_CONSTANTS / V4X_CONSTANT_GROUP];
+} HeldConstants;
+
 // What one replay has bound so far.
 typedef struct {
 	VkQueue queue;
@@ -111,6 +121,7 @@ typedef struct {
 	uint32_t visibility_id;
 	// In a tiled pass, whose commands go into its recording (begin_tiled_pass).
 	bool tiling;
+	HeldConstants held;
 } Replay;
 
 // What render passes' begins did to eDRAM, for the tests; the queue's external synchronization guards it.
@@ -118,9 +129,100 @@ static V4xEdramCounts edram_counts;
 
 // A block's registers on their way into the constants; the queue is externally synchronized, so one copy will do.
 static float block[V4X_FLOAT_CONSTANTS * 4] __attribute__((aligned(16)));
+// The values HeldConstants knows, by the same synchronization.
+static float held_values[2][V4X_FLOAT_CONSTANTS * 4] __attribute__((aligned(16)));
+
+// A register's four floats from anywhere 4-byte aligned, as bits, so values compare equal only when they're the same.
+static inline vector unsigned int register_bits(const float *values)
+{
+	return (vector unsigned int)vec_perm(vec_ld(0, values), vec_ld(15, values), vec_lvsl(0, values));
+}
+
+// Whether count registers from first each hold their value already.
+static inline bool holds(const Replay *replay, uint32_t stage, uint32_t first, const float *values, uint32_t count)
+{
+	for (uint32_t g = first / V4X_CONSTANT_GROUP; g <= (first + count - 1) / V4X_CONSTANT_GROUP; g++) {
+		if (replay->held.loaded[stage][g])
+			return false;
+	}
+	const uint8_t *const known = &replay->held.known[stage][first];
+	const float *const held = &held_values[stage][4 * first];
+	for (uint32_t r = 0; r < count; r++) {
+		if (!known[r] || !vec_all_eq(register_bits(&values[4 * r]), (vector unsigned int)vec_ld(0, &held[4 * r])))
+			return false;
+	}
+	return true;
+}
+
+// No group it touches holds what it loaded any more.
+static __attribute__((noinline)) void set_constants(
+	Replay *replay, uint32_t stage, uint32_t first, const float *values, uint32_t count)
+{
+	v4x_profile_lap(V4X_PROFILE_RESOURCES);
+	if (stage == 0)
+		xsdk_gpu_set_vertex_constants(first, values, count);
+	else
+		xsdk_gpu_set_pixel_constants(first, values, count);
+	v4x_profile_lap(V4X_PROFILE_CONSTANTS);
+	float *const held = &held_values[stage][4 * first];
+	for (uint32_t r = 0; r < count; r++) {
+		vec_st((vector float)register_bits(&values[4 * r]), 0, &held[4 * r]);
+		replay->held.known[stage][first + r] = 1;
+	}
+	uint32_t *const loaded = replay->held.loaded[stage];
+	for (uint32_t g = first / V4X_CONSTANT_GROUP; g <= (first + count - 1) / V4X_CONSTANT_GROUP; g++) {
+		if (loaded[g])
+			loaded[g] = 0;
+	}
+}
+
+// Sets count registers from first unless each holds its value already.
+static inline void write_constants(Replay *replay, bool vertex, uint32_t first, const float *values, uint32_t count)
+{
+	assert(count);
+	const uint32_t stage = vertex ? 0 : 1;
+	if (!holds(replay, stage, first, values, count))
+		set_constants(replay, stage, first, values, count);
+}
+
+// Has the GPU load count registers from first, whole groups, from memory at address, unless each group holds that
+// memory already: nothing the GPU runs writes memory, and what changes it between passes, the passes' begins forget.
+static void load_constants(Replay *replay, bool vertex, uint32_t first, uint32_t address, uint32_t count)
+{
+	const uint32_t stage = vertex ? 0 : 1;
+	uint32_t *const loaded = &replay->held.loaded[stage][first / V4X_CONSTANT_GROUP];
+	const uint32_t groups = count / V4X_CONSTANT_GROUP;
+	uint32_t same = 0;
+	while (same < groups && loaded[same] == ((address + same * LOAD_ALIGNMENT_BYTES) | 1))
+		same++;
+	if (same == groups)
+		return;
+	v4x_profile_count(V4X_PROFILE_BLOCKS_LOADED, 1);
+	v4x_profile_lap(V4X_PROFILE_RESOURCES);
+	if (vertex)
+		xsdk_gpu_load_vertex_constants(first, address, count);
+	else
+		xsdk_gpu_load_pixel_constants(first, address, count);
+	v4x_profile_lap(V4X_PROFILE_CONSTANTS);
+	for (uint32_t g = 0; g < groups; g++)
+		loaded[g] = (address + g * LOAD_ALIGNMENT_BYTES) | 1;
+}
+
+// A register xsdk set itself, an instanced draw's group, holds what the replay doesn't know.
+static void lose_constant(Replay *replay, uint32_t reg)
+{
+	replay->held.known[0][reg] = 0;
+	replay->held.loaded[0][reg / V4X_CONSTANT_GROUP] = 0;
+}
+
+// The layer's own draws set constants of their own, and memory may change between passes.
+static void forget_constants(Replay *replay)
+{
+	memset(&replay->held, 0, sizeof replay->held);
+}
 
 // A shader's literals, each run of them in registers one after another set as one, as xsdk writes whole groups.
-static void write_literals(const V4xShader *shader, bool vertex)
+static void write_literals(Replay *replay, const V4xShader *shader, bool vertex)
 {
 	v4x_profile_count(V4X_PROFILE_LITERALS, shader->literal_count);
 	uint32_t i = 0;
@@ -132,10 +234,7 @@ static void write_literals(const V4xShader *shader, bool vertex)
 			count++;
 			i++;
 		} while (i < shader->literal_count && shader->literals[i].reg == first + count);
-		if (vertex)
-			xsdk_gpu_set_vertex_constants(first, block, count);
-		else
-			xsdk_gpu_set_pixel_constants(first, block, count);
+		write_constants(replay, vertex, first, block, count);
 	}
 }
 
@@ -213,25 +312,15 @@ static __attribute__((noinline)) void apply_pipeline(const Pipeline *pipeline, R
 	applied->pipeline = pipeline;
 	xsdk_gpu_set_shaders(&pipeline->vertex, &pipeline->pixel);
 	if (changed(replay, &applied->vertex_literals, &pipeline->vertex_source, sizeof pipeline->vertex_source))
-		write_literals(pipeline->vertex_source, true);
+		write_literals(replay, pipeline->vertex_source, true);
 	if (changed(replay, &applied->pixel_literals, &pipeline->pixel_source, sizeof pipeline->pixel_source))
-		write_literals(pipeline->pixel_source, false);
+		write_literals(replay, pipeline->pixel_source, false);
 	apply_viewport(pipeline, replay);
 	const uint32_t count = pipeline->blend_count;
 	const bool count_changed = changed(replay, &applied->blend_count, &count, sizeof count);
 	if (changed(replay, applied->blends, pipeline->blends, count * sizeof *pipeline->blends) || count_changed)
 		xsdk_gpu_set_blends(pipeline->blends, count);
 	apply_dynamic(pipeline, replay);
-}
-
-static void write_constants(bool vertex, uint32_t first, const float *values, uint32_t count)
-{
-	v4x_profile_lap(V4X_PROFILE_RESOURCES);
-	if (vertex)
-		xsdk_gpu_set_vertex_constants(first, values, count);
-	else
-		xsdk_gpu_set_pixel_constants(first, values, count);
-	v4x_profile_lap(V4X_PROFILE_CONSTANTS);
 }
 
 // Brings a quad of the push constants into the replay's copy, from where a push recorded it.
@@ -299,18 +388,19 @@ static void read_uniform_buffer(const Replay *replay, const V4xShaderResource *r
 }
 
 // The CPU's copy of a uniform block, read and written into its registers.
-static void read_block(const Replay *replay, const StageResource *stage_resource)
+static void read_block(Replay *replay, const StageResource *stage_resource)
 {
 	v4x_profile_count(V4X_PROFILE_BLOCKS_READ, 1);
 	v4x_profile_count(V4X_PROFILE_QUADS_READ, stage_resource->resource.count);
 	read_uniform_buffer(replay, &stage_resource->resource);
-	write_constants(stage_resource->vertex, stage_resource->resource.first, block, stage_resource->resource.count);
+	write_constants(
+		replay, stage_resource->vertex, stage_resource->resource.first, block, stage_resource->resource.count);
 }
 
 // Each draw writes every block its shaders read into constants, and points their samplers' fetch constants.
 // Has the GPU load a block that starts a group (pipeline.c, plan_group) straight from the buffer, when the buffer is
 // aligned and covers it; the padding past the block takes whatever follows it, which nothing reads.
-static bool load_uniform_buffer(const Replay *replay, const V4xShaderResource *resource, bool vertex)
+static bool load_uniform_buffer(Replay *replay, const V4xShaderResource *resource, bool vertex)
 {
 	assert(resource->first % V4X_CONSTANT_GROUP == 0);
 	const DescriptorSet *const set = replay->sets[resource->set];
@@ -322,13 +412,7 @@ static bool load_uniform_buffer(const Replay *replay, const V4xShaderResource *r
 	if (address % LOAD_ALIGNMENT_BYTES || descriptor->range_bytes < resource->count * 16)
 		return false;
 	const uint32_t count = (resource->count + V4X_CONSTANT_GROUP - 1) / V4X_CONSTANT_GROUP * V4X_CONSTANT_GROUP;
-	v4x_profile_count(V4X_PROFILE_BLOCKS_LOADED, 1);
-	v4x_profile_lap(V4X_PROFILE_RESOURCES);
-	if (vertex)
-		xsdk_gpu_load_vertex_constants(resource->first, address, count);
-	else
-		xsdk_gpu_load_pixel_constants(resource->first, address, count);
-	v4x_profile_lap(V4X_PROFILE_CONSTANTS);
+	load_constants(replay, vertex, resource->first, address, count);
 	return true;
 }
 
@@ -442,8 +526,8 @@ static void apply_resources(const Pipeline *pipeline, Replay *replay)
 	for (uint32_t i = plan[PLAN_PUSH]; i < plan[PLAN_PUSH + 1]; i++) {
 		const StageResource *const r = &resources[i];
 		v4x_profile_count(V4X_PROFILE_QUADS_PUSHED, r->push_count);
-		write_constants(r->vertex, r->resource.first + r->push_first, push_run(replay, r->push_first, r->push_count),
-			r->push_count);
+		write_constants(replay, r->vertex, r->resource.first + r->push_first,
+			push_run(replay, r->push_first, r->push_count), r->push_count);
 	}
 	for (uint32_t i = plan[PLAN_LOAD]; i < plan[PLAN_LOAD + 1]; i++) {
 		const StageResource *const r = &resources[i];
@@ -458,8 +542,8 @@ static void apply_resources(const Pipeline *pipeline, Replay *replay)
 		const V4xShaderResource *const resource = &resources[i].resource;
 		const DescriptorSet *const set = replay->sets[resource->set];
 		if (set)
-			write_constants(
-				resources[i].vertex, resource->first, set->descriptors[resource->binding].sampler->compare_weights, 1);
+			write_constants(replay, resources[i].vertex, resource->first,
+				set->descriptors[resource->binding].sampler->compare_weights, 1);
 	}
 	for (uint32_t i = plan[PLAN_TEXTURE]; i < plan[PLAN_TEXTURE + 1]; i++) {
 		const V4xShaderResource *const resource = &resources[i].resource;
@@ -1071,6 +1155,7 @@ static void begin_render_pass(VkQueue queue, Replay *replay)
 	if (keep_colors(queue, colors, render_pass->color_count, replay->serial))
 		set_target(replay);
 	replay->pipeline_dirty = true;
+	forget_constants(replay);
 	replay->clip_planes_on = false;
 	// Drawing an image back and resolves point streams and slots of their own.
 	memset(replay->pointed_streams, 0, sizeof replay->pointed_streams);
@@ -1499,6 +1584,7 @@ static void begin_tiled_pass(VkQueue queue, Replay *replay)
 	replay->tiling = true;
 	load_tiles(queue, replay);
 	replay->pipeline_dirty = true;
+	forget_constants(replay);
 	replay->clip_planes_on = false;
 	memset(replay->pointed_streams, 0, sizeof replay->pointed_streams);
 	memset(replay->pointed_textures, 0, sizeof replay->pointed_textures);
@@ -1560,6 +1646,7 @@ static void end_tiled_pass(VkQueue queue, Replay *replay, Image *resolved_depth)
 		? holding(depth, replay->depth_tile, whole(framebuffer))
 		: (EdramPart){ .contents = EDRAM_UNKNOWN };
 	replay->pipeline_dirty = true;
+	forget_constants(replay);
 	replay->clip_planes_on = false;
 	memset(replay->pointed_streams, 0, sizeof replay->pointed_streams);
 	memset(replay->pointed_textures, 0, sizeof replay->pointed_textures);
@@ -1628,6 +1715,7 @@ static void draw_blit(VkQueue queue, Replay *replay, const DrawnBlit *blit, cons
 	(void)keep_colors(queue, &part, 1, replay->serial);
 	// The draw and the resolve point streams, slots and shaders of their own, as a pass's begin does.
 	replay->pipeline_dirty = true;
+	forget_constants(replay);
 	memset(replay->pointed_streams, 0, sizeof replay->pointed_streams);
 	memset(replay->pointed_textures, 0, sizeof replay->pointed_textures);
 }
@@ -1665,6 +1753,7 @@ static void draw_depth_copy(VkQueue queue, Replay *replay, const DrawnBlit *blit
 	destination->depth_in_texture = true;
 	destination->clear_pending = false;
 	replay->pipeline_dirty = true;
+	forget_constants(replay);
 	memset(replay->pointed_streams, 0, sizeof replay->pointed_streams);
 	memset(replay->pointed_textures, 0, sizeof replay->pointed_textures);
 }
@@ -1722,7 +1811,7 @@ static void point_streams(Replay *replay, int32_t first_vertex)
 	const Pipeline *const pipeline = replay->pipeline;
 	if (pipeline->reads_vertex_index) {
 		const float base[4] = { (float)first_vertex, 0.0f, 0.0f, 0.0f };
-		xsdk_gpu_set_vertex_constants(pipeline->vertex_base, base, 1);
+		write_constants(replay, true, pipeline->vertex_base, base, 1);
 	}
 	for (uint32_t s = 0; s < pipeline->stream_count; s++) {
 		const VertexStream *const source = &pipeline->streams[s];
@@ -1741,19 +1830,20 @@ static void point_streams(Replay *replay, int32_t first_vertex)
 
 // An instanced vertex shader's group for a draw of one instance: 1/S, 0.5/S and S 0, so its prologue keeps the vertex's
 // index and takes the instance from w (xost:docs/xsc.md, "Interface conventions"); a float holds it exactly up to 2^24.
-static void write_instance(const Pipeline *pipeline, uint32_t instance)
+static void write_instance(Replay *replay, uint32_t instance)
 {
+	const Pipeline *const pipeline = replay->pipeline;
 	if (!pipeline->vertex.instanced)
 		return;
 	const float values[4] = { 0.0f, 0.0f, 0.0f, (float)instance };
-	xsdk_gpu_set_vertex_constants(pipeline->vertex.instance_constant, values, 1);
+	write_constants(replay, true, pipeline->vertex.instance_constant, values, 1);
 }
 
 // One instance, in the pieces its pipeline splits a draw into (Pipeline, piece_vertices).
 static void draw_instance(Replay *replay, uint32_t vertex_count, uint32_t first_vertex, uint32_t instance)
 {
 	const Pipeline *const pipeline = replay->pipeline;
-	write_instance(pipeline, instance);
+	write_instance(replay, instance);
 	for (uint32_t start = 0;; start += pipeline->piece_step) {
 		point_streams(replay, (int32_t)(first_vertex + start));
 		const uint32_t left = vertex_count - start;
@@ -1769,7 +1859,7 @@ static void draw_indexed_instance(
 	Replay *replay, uint32_t count, uint32_t first_index, int32_t vertex_offset, uint32_t instance)
 {
 	const Pipeline *const pipeline = replay->pipeline;
-	write_instance(pipeline, instance);
+	write_instance(replay, instance);
 	point_streams(replay, vertex_offset);
 	const uint32_t index_bytes = replay->index_32_bit ? 4 : 2;
 	for (uint32_t start = 0;; start += pipeline->piece_step) {
@@ -1827,6 +1917,7 @@ static __attribute__((noinline)) void draw_instances(
 		point_streams(replay, (int32_t)first_vertex);
 		v4x_profile_lap(V4X_PROFILE_CHECKS);
 		xsdk_gpu_draw_instanced(pipeline->primitive, whole, first_instance, instance_count);
+		lose_constant(replay, pipeline->vertex.instance_constant);
 		v4x_profile_lap(V4X_PROFILE_DRAWS);
 		return;
 	}
@@ -1869,6 +1960,7 @@ static __attribute__((noinline)) void draw_indexed_instances(Replay *replay, uin
 		point_streams(replay, vertex_offset);
 		v4x_profile_lap(V4X_PROFILE_CHECKS);
 		xsdk_gpu_draw_indexed_instanced(pipeline->primitive, &repeated, first_instance, instance_count);
+		lose_constant(replay, pipeline->vertex.instance_constant);
 		v4x_profile_lap(V4X_PROFILE_DRAWS);
 		return;
 	}
@@ -1990,6 +2082,7 @@ static void clear_attachments(VkQueue queue, Replay *replay, const ClearRect *cl
 	v4x_blit_clear(
 		&queue->blit, clear, replay->render_pass->color_count, replay->framebuffer->width, replay->framebuffer->height);
 	replay->pipeline_dirty = true;
+	forget_constants(replay);
 	replay->pointed_streams[0] = (VertexBinding){ 0 };
 	if (pauses_query)
 		xsdk_gpu_begin_visibility(++replay->visibility_id);
@@ -2134,6 +2227,7 @@ static void replay_command(VkQueue queue, VkCommandBuffer buffer, Replay *replay
 	}
 	case COMMAND_RESOLVE_DEPTH:
 		resolve_depth_to_read(queue, replay, command->depth_to_read);
+		forget_constants(replay);
 		break;
 	case COMMAND_CLEAR_COLOR_IMAGE:
 		v4x_transfer_clear(queue, command);
@@ -2189,8 +2283,10 @@ static void replay_command(VkQueue queue, VkCommandBuffer buffer, Replay *replay
 	case COMMAND_WRITE_EVENT:
 		xsdk_gpu_write_word(command->event.address, command->event.value);
 		break;
+	// What the host wrote before it set an event, uniform buffers among it, may differ from what groups loaded.
 	case COMMAND_WAIT_EVENTS:
 		wait_events(buffer, command);
+		forget_constants(replay);
 		break;
 	case COMMAND_RESET_QUERIES:
 		v4x_transfer_reset_queries(queue, command);
