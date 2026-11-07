@@ -7,13 +7,10 @@
 #include "host.h"
 #include "image.h"
 #include "objects.h"
-#include "record.h"
 #include "xsdk/gpu.h"
 #include "xsdk/log.h"
 
-// Draws and the state they take go into packets as they're recorded (record.c); the commands the submit runs go into
-// a list that grows as a command buffer records, a run of packets between two of them a command too; vkQueueSubmit
-// replays them (queue.c).
+// Commands go into a list that grows as a command buffer records; vkQueueSubmit replays them (queue.c).
 
 enum {
 	// A texture fetch constant holds its address in 4 KB units (xsdk:src/texture.c, FETCH_ADDRESS_ALIGNMENT).
@@ -36,7 +33,6 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateCommandPool(VkDevice device, const VkComm
 static void free_buffer(struct VkCommandBuffer_T *buffer)
 {
 	const VkAllocationCallbacks *const allocator = v4x_host_device_allocator(buffer->device, NULL);
-	v4x_record_delete(buffer->recorder);
 	v4x_host_free(allocator, buffer->data);
 	v4x_host_free(allocator, buffer->commands);
 	v4x_host_free(allocator, buffer);
@@ -65,8 +61,7 @@ static void reset_buffer(struct VkCommandBuffer_T *buffer)
 	buffer->render_pass = NULL;
 	buffer->framebuffer = NULL;
 	buffer->subpass = 0;
-	buffer->bound = (Bound){ .pipeline = NULL };
-	v4x_record_reset(buffer->recorder);
+	buffer->pipeline = NULL;
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL vkResetCommandPool(
@@ -90,9 +85,7 @@ static struct VkCommandBuffer_T *allocate_buffer(VkDevice device, CommandPool *p
 	buffer->commands =
 		v4x_host_alloc(allocator, V4X_FIRST_COMMANDS * sizeof(Command), VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
 	buffer->data = v4x_host_alloc(allocator, V4X_FIRST_COMMAND_DATA_BYTES, VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
-	buffer->recorder = v4x_record_new(allocator);
-	if (!buffer->commands || !buffer->data || !buffer->recorder) {
-		v4x_record_delete(buffer->recorder);
+	if (!buffer->commands || !buffer->data) {
 		v4x_host_free(allocator, buffer->data);
 		v4x_host_free(allocator, buffer->commands);
 		v4x_host_free(allocator, buffer);
@@ -152,24 +145,12 @@ VKAPI_ATTR VkResult VKAPI_CALL vkBeginCommandBuffer(
 	commandBuffer->state = COMMAND_BUFFER_RECORDING;
 	commandBuffer->continues_pass =
 		commandBuffer->secondary && pBeginInfo->flags & VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
-	// A secondary command buffer starts with nothing bound, as Vulkan's do; one continuing a render pass draws at its
-	// subpass's samples.
-	const VkCommandBufferInheritanceInfo *const inheritance = pBeginInfo->pInheritanceInfo;
-	if (commandBuffer->continues_pass && inheritance && inheritance->renderPass) {
-		const RenderPassSubpasses *const render_pass = v4x_object(inheritance->renderPass);
-		commandBuffer->bound.samples = render_pass->subpasses[inheritance->subpass].samples;
-	}
 	return VK_SUCCESS;
 }
 
-static bool close_run(VkCommandBuffer buffer);
-
 VKAPI_ATTR VkResult VKAPI_CALL vkEndCommandBuffer(VkCommandBuffer commandBuffer)
 {
-	(void)close_run(commandBuffer);
 	commandBuffer->state = COMMAND_BUFFER_EXECUTABLE;
-	if (commandBuffer->recorder->result != VK_SUCCESS)
-		commandBuffer->result = commandBuffer->recorder->result;
 	return commandBuffer->result;
 }
 
@@ -212,33 +193,16 @@ static __attribute__((noinline)) bool grow_data(VkCommandBuffer buffer, uint32_t
 	return true;
 }
 
-static inline Command *append(VkCommandBuffer buffer, CommandType type)
+// The next free command, or NULL with the error saved for vkEndCommandBuffer. Inlined with record_aligned, so a vkCmd's
+// arguments stay in registers: storing them around a call and loading them straight back stalls the console's core
+// (xsdk:docs/HARDWARE.md, "The cost of a draw").
+static inline Command *record(VkCommandBuffer buffer, CommandType type)
 {
 	if (buffer->count == buffer->capacity && !grow_commands(buffer))
 		return NULL;
 	Command *const command = &buffer->commands[buffer->count++];
 	command->type = type;
 	return command;
-}
-
-// The run recorded since the last command, a command of its own; false with the error saved where there's no room.
-static bool close_run(VkCommandBuffer buffer)
-{
-	uint32_t run;
-	if (!v4x_record_close(buffer->recorder, &run))
-		return true;
-	Command *const closed = append(buffer, COMMAND_RUN);
-	if (closed)
-		closed->run = run;
-	return closed != NULL;
-}
-
-// The next free command, or NULL with the error saved for vkEndCommandBuffer, after the run recorded since the last
-// command, which ends there. Inlined with record_aligned, so a vkCmd's arguments stay in registers: storing them around
-// a call and loading them straight back stalls the console's core (xsdk:docs/HARDWARE.md, "The cost of a draw").
-static inline Command *record(VkCommandBuffer buffer, CommandType type)
-{
-	return close_run(buffer) ? append(buffer, type) : NULL;
 }
 
 // Copies bytes into the command buffer's data, at an address a multiple of alignment_bytes, and returns where, or
@@ -290,7 +254,6 @@ static void record_subpass(VkCommandBuffer commandBuffer)
 	command->begin.framebuffer = &commandBuffer->framebuffer->subpasses[commandBuffer->subpass];
 	command->begin.clears_at = at;
 	command->begin.area_at = commandBuffer->area_at;
-	commandBuffer->bound.samples = render_pass->samples;
 }
 
 // On the grid a resolve copies by, or reaching the framebuffer's edge, as vkGetRenderAreaGranularity says.
@@ -439,11 +402,9 @@ VKAPI_ATTR void VKAPI_CALL vkCmdEndRenderPass(VkCommandBuffer commandBuffer)
 {
 	record_end(commandBuffer);
 	commandBuffer->render_pass = NULL;
-	commandBuffer->bound.samples = 0;
 }
 
-// Replayed in place, at vkQueueSubmit, as recorded by then. What the GPU holds after one is unknown, and what the
-// command buffer bound stays bound, though Vulkan leaves it undefined.
+// Replayed in place, at vkQueueSubmit, as recorded by then.
 VKAPI_ATTR void VKAPI_CALL vkCmdExecuteCommands(
 	VkCommandBuffer commandBuffer, uint32_t commandBufferCount, const VkCommandBuffer *pCommandBuffers)
 {
@@ -459,13 +420,17 @@ VKAPI_ATTR void VKAPI_CALL vkCmdBindPipeline(
 	VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint, VkPipeline pipeline)
 {
 	(void)pipelineBindPoint;
-	commandBuffer->bound.pipeline = v4x_object(pipeline);
+	Command *const command = record(commandBuffer, COMMAND_BIND_PIPELINE);
+	if (!command)
+		return;
+	command->pipeline = v4x_object(pipeline);
+	commandBuffer->pipeline = command->pipeline;
 }
 
 // A draw past the 65535 vertices a draw packet carries goes in pieces, but a fan can't be split (pipeline_state.c).
 static bool splittable(VkCommandBuffer buffer, uint32_t count)
 {
-	if (count <= V4X_MAX_DRAW_VERTICES || !buffer->bound.pipeline || buffer->bound.pipeline->piece_step)
+	if (count <= V4X_MAX_DRAW_VERTICES || !buffer->pipeline || buffer->pipeline->piece_step)
 		return true;
 	buffer->result = v4x_host_unsupported("triangle fans of more than 65535 vertices");
 	return false;
@@ -475,21 +440,29 @@ VKAPI_ATTR void VKAPI_CALL vkCmdBindVertexBuffers(VkCommandBuffer commandBuffer,
 	uint32_t bindingCount, const VkBuffer *pBuffers, const VkDeviceSize *pOffsets)
 {
 	for (uint32_t i = 0; i < bindingCount; i++) {
+		Command *const command = record(commandBuffer, COMMAND_BIND_VERTEX_BUFFER);
+		if (!command)
+			return;
 		const Buffer *const buffer = v4x_object(pBuffers[i]);
-		commandBuffer->bound.bindings[firstBinding + i] =
-			(VertexBinding){ .address = buffer->memory->address + buffer->offset_bytes + (uint32_t)pOffsets[i],
-				.size_bytes = (uint32_t)(buffer->size - pOffsets[i]) };
+		command->vertex_buffer.binding = firstBinding + i;
+		command->vertex_buffer.address = buffer->memory->address + buffer->offset_bytes + (uint32_t)pOffsets[i];
+		command->vertex_buffer.size_bytes = (uint32_t)(buffer->size - pOffsets[i]);
 	}
 }
 
-// An instanced list's instances are drawn together, others' each as a draw of its own (record.c).
+// An instanced list's instances are replayed together, others' each as a draw of its own (queue.c).
 VKAPI_ATTR void VKAPI_CALL vkCmdDraw(VkCommandBuffer commandBuffer, uint32_t vertexCount, uint32_t instanceCount,
 	uint32_t firstVertex, uint32_t firstInstance)
 {
 	if (!vertexCount || !instanceCount || !splittable(commandBuffer, vertexCount))
 		return;
-	v4x_record_draw(
-		commandBuffer->recorder, &commandBuffer->bound, vertexCount, firstVertex, instanceCount, firstInstance);
+	Command *const command = record(commandBuffer, COMMAND_DRAW);
+	if (!command)
+		return;
+	command->draw.vertex_count = vertexCount;
+	command->draw.first_vertex = firstVertex;
+	command->draw.instance_count = instanceCount;
+	command->draw.first_instance = firstInstance;
 }
 
 // Each set's dynamic offsets follow its layout's dynamic bindings, in binding order.
@@ -501,13 +474,19 @@ VKAPI_ATTR void VKAPI_CALL vkCmdBindDescriptorSets(VkCommandBuffer commandBuffer
 	(void)layout;
 	(void)dynamicOffsetCount;
 	uint32_t used = 0;
-	Bound *const bound = &commandBuffer->bound;
 	for (uint32_t i = 0; i < descriptorSetCount; i++) {
 		const DescriptorSet *const set = v4x_object(pDescriptorSets[i]);
 		const uint32_t count = set->layout->dynamic_count;
-		bound->sets[firstSet + i] = set;
-		memcpy(bound->dynamic_offsets[firstSet + i], pDynamicOffsets + used, count * sizeof(uint32_t));
+		uint32_t at = 0;
+		if (count && !record_data(commandBuffer, pDynamicOffsets + used, count * 4, &at))
+			return;
 		used += count;
+		Command *const command = record(commandBuffer, COMMAND_BIND_DESCRIPTOR_SET);
+		if (!command)
+			return;
+		command->descriptor_set.index = firstSet + i;
+		command->descriptor_set.set = set;
+		command->descriptor_set.offsets_at = at;
 	}
 }
 
@@ -516,7 +495,26 @@ VKAPI_ATTR void VKAPI_CALL vkCmdPushConstants(VkCommandBuffer commandBuffer, VkP
 {
 	(void)layout;
 	(void)stageFlags;
-	memcpy((uint8_t *)commandBuffer->bound.push + offset, pValues, size);
+	uint32_t at = 0;
+	// On 16 bytes, as the replay has xsdk load constants from here (queue.c); data moved as it grows may lose that,
+	// which costs time alone.
+	if (!record_aligned(commandBuffer, pValues, size, 16, &at))
+		return;
+	// A push carrying on from the push just recorded, its bytes right after that one's, joins it: one command to
+	// replay, and the same push constants after it.
+	Command *const last = commandBuffer->count ? &commandBuffer->commands[commandBuffer->count - 1] : NULL;
+	if (last && last->type == COMMAND_PUSH_CONSTANTS &&
+		last->push_constants.offset_bytes + last->push_constants.size_bytes == offset &&
+		last->push_constants.data_at + last->push_constants.size_bytes == at) {
+		last->push_constants.size_bytes += size;
+		return;
+	}
+	Command *const command = record(commandBuffer, COMMAND_PUSH_CONSTANTS);
+	if (!command)
+		return;
+	command->push_constants.offset_bytes = offset;
+	command->push_constants.size_bytes = size;
+	command->push_constants.data_at = at;
 }
 
 static uint32_t level_size(uint32_t size, uint32_t level)
@@ -1253,23 +1251,31 @@ VKAPI_ATTR void VKAPI_CALL vkCmdCopyQueryPoolResults(VkCommandBuffer commandBuff
 VKAPI_ATTR void VKAPI_CALL vkCmdSetViewport(
 	VkCommandBuffer commandBuffer, uint32_t firstViewport, uint32_t viewportCount, const VkViewport *pViewports)
 {
+	uint32_t at = 0;
 	if (firstViewport || viewportCount != 1) {
 		commandBuffer->result = v4x_host_unsupported("viewports other than the first");
 		return;
 	}
-	commandBuffer->bound.viewport = *pViewports;
-	commandBuffer->recorder->viewport_dirty = true;
+	if (!record_data(commandBuffer, pViewports, sizeof *pViewports, &at))
+		return;
+	Command *const command = record(commandBuffer, COMMAND_SET_VIEWPORT);
+	if (command)
+		command->state_at = at;
 }
 
 VKAPI_ATTR void VKAPI_CALL vkCmdSetScissor(
 	VkCommandBuffer commandBuffer, uint32_t firstScissor, uint32_t scissorCount, const VkRect2D *pScissors)
 {
+	uint32_t at = 0;
 	if (firstScissor || scissorCount != 1) {
 		commandBuffer->result = v4x_host_unsupported("scissors other than the first");
 		return;
 	}
-	commandBuffer->bound.scissor = *pScissors;
-	commandBuffer->recorder->viewport_dirty = true;
+	if (!record_data(commandBuffer, pScissors, sizeof *pScissors, &at))
+		return;
+	Command *const command = record(commandBuffer, COMMAND_SET_SCISSOR);
+	if (command)
+		command->state_at = at;
 }
 
 // Without wideLines, 1 is the only width, and lines are drawn 1 pixel wide (docs/SUPPORT.md, Pipelines).
@@ -1279,32 +1285,34 @@ VKAPI_ATTR void VKAPI_CALL vkCmdSetLineWidth(VkCommandBuffer commandBuffer, floa
 		commandBuffer->result = v4x_host_unsupported("line widths other than 1");
 }
 
-// Each face has a setting of its own (docs/SUPPORT.md, Pipelines), which the next draw takes.
-static void set_stencil(VkCommandBuffer commandBuffer, VkStencilFaceFlags faceMask, uint8_t *values, uint32_t value)
+// Each face has a setting of its own (docs/SUPPORT.md, Pipelines).
+static void record_stencil(
+	VkCommandBuffer commandBuffer, VkStencilFaceFlags faceMask, VkDynamicState state, uint32_t value)
 {
-	for (uint32_t face = 0; face < V4X_STENCIL_FACES; face++) {
-		if (faceMask & 1u << face)
-			values[face] = (uint8_t)value;
-	}
-	commandBuffer->recorder->dynamic_dirty = true;
+	Command *const command = record(commandBuffer, COMMAND_SET_STENCIL);
+	if (!command)
+		return;
+	command->stencil.state = (uint32_t)state;
+	command->stencil.faces = faceMask;
+	command->stencil.value = (uint8_t)value;
 }
 
 VKAPI_ATTR void VKAPI_CALL vkCmdSetStencilCompareMask(
 	VkCommandBuffer commandBuffer, VkStencilFaceFlags faceMask, uint32_t compareMask)
 {
-	set_stencil(commandBuffer, faceMask, commandBuffer->bound.dynamic.stencil_compare_mask, compareMask);
+	record_stencil(commandBuffer, faceMask, VK_DYNAMIC_STATE_STENCIL_COMPARE_MASK, compareMask);
 }
 
 VKAPI_ATTR void VKAPI_CALL vkCmdSetStencilWriteMask(
 	VkCommandBuffer commandBuffer, VkStencilFaceFlags faceMask, uint32_t writeMask)
 {
-	set_stencil(commandBuffer, faceMask, commandBuffer->bound.dynamic.stencil_write_mask, writeMask);
+	record_stencil(commandBuffer, faceMask, VK_DYNAMIC_STATE_STENCIL_WRITE_MASK, writeMask);
 }
 
 VKAPI_ATTR void VKAPI_CALL vkCmdSetStencilReference(
 	VkCommandBuffer commandBuffer, VkStencilFaceFlags faceMask, uint32_t reference)
 {
-	set_stencil(commandBuffer, faceMask, commandBuffer->bound.dynamic.stencil_reference, reference);
+	record_stencil(commandBuffer, faceMask, VK_DYNAMIC_STATE_STENCIL_REFERENCE, reference);
 }
 
 // Without depthBiasClamp, the clamp is 0 (docs/SUPPORT.md, Pipelines).
@@ -1315,16 +1323,18 @@ VKAPI_ATTR void VKAPI_CALL vkCmdSetDepthBias(
 		commandBuffer->result = v4x_host_unsupported("depth bias clamps");
 		return;
 	}
-	commandBuffer->bound.dynamic.depth_bias_constant = depthBiasConstantFactor;
-	commandBuffer->bound.dynamic.depth_bias_slope = depthBiasSlopeFactor;
-	commandBuffer->recorder->dynamic_dirty = true;
+	Command *const command = record(commandBuffer, COMMAND_SET_DEPTH_BIAS);
+	if (!command)
+		return;
+	command->depth_bias.constant = depthBiasConstantFactor;
+	command->depth_bias.slope = depthBiasSlopeFactor;
 }
 
 VKAPI_ATTR void VKAPI_CALL vkCmdSetBlendConstants(VkCommandBuffer commandBuffer, const float blendConstants[4])
 {
-	memcpy(commandBuffer->bound.dynamic.blend_constants, blendConstants,
-		sizeof commandBuffer->bound.dynamic.blend_constants);
-	commandBuffer->recorder->dynamic_dirty = true;
+	Command *const command = record(commandBuffer, COMMAND_SET_BLEND_CONSTANTS);
+	if (command)
+		memcpy(command->blend_constants, blendConstants, sizeof command->blend_constants);
 }
 
 VKAPI_ATTR void VKAPI_CALL vkCmdSetDepthBounds(
@@ -1403,66 +1413,53 @@ VKAPI_ATTR void VKAPI_CALL vkCmdResolveImage(VkCommandBuffer commandBuffer, VkIm
 VKAPI_ATTR void VKAPI_CALL vkCmdBindIndexBuffer(
 	VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset, VkIndexType indexType)
 {
+	Command *const command = record(commandBuffer, COMMAND_BIND_INDEX_BUFFER);
+	if (!command)
+		return;
 	const Buffer *const object = v4x_object(buffer);
-	Bound *const bound = &commandBuffer->bound;
-	bound->index_bytes = buffer_bytes(object, offset);
-	bound->index_address = object->memory->address + object->offset_bytes + (uint32_t)offset;
-	bound->index_32_bit = indexType == VK_INDEX_TYPE_UINT32;
+	command->index_buffer.bytes = buffer_bytes(object, offset);
+	command->index_buffer.address = object->memory->address + object->offset_bytes + (uint32_t)offset;
+	command->index_buffer.is_32_bit = indexType == VK_INDEX_TYPE_UINT32;
 }
 
-// A draw drawn at the submit, with what's bound now (queue.c, COMMAND_DRAW_SNAPSHOT).
-static void record_snapshot(VkCommandBuffer commandBuffer, const DrawSnapshot *snapshot)
-{
-	record_with_state(commandBuffer, COMMAND_DRAW_SNAPSHOT, snapshot, sizeof *snapshot);
-}
-
-// A draw whose instances repeat its indices takes them as the submit finds them, and so is drawn then.
 VKAPI_ATTR void VKAPI_CALL vkCmdDrawIndexed(VkCommandBuffer commandBuffer, uint32_t indexCount, uint32_t instanceCount,
 	uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance)
 {
 	if (!indexCount || !instanceCount || !splittable(commandBuffer, indexCount))
 		return;
-	if (!v4x_record_repeats_indices(&commandBuffer->bound, indexCount, instanceCount)) {
-		v4x_record_draw_indexed(commandBuffer->recorder, &commandBuffer->bound, NULL, indexCount, firstIndex,
-			vertexOffset, instanceCount, firstInstance);
+	Command *const command = record(commandBuffer, COMMAND_DRAW_INDEXED);
+	if (!command)
 		return;
-	}
-	const DrawSnapshot snapshot = { .bound = commandBuffer->bound,
-		.indexed = true,
-		.count = indexCount,
-		.first = firstIndex,
-		.vertex_offset = vertexOffset,
-		.instance_count = instanceCount,
-		.first_instance = firstInstance };
-	record_snapshot(commandBuffer, &snapshot);
+	command->draw_indexed.index_count = indexCount;
+	command->draw_indexed.first_index = firstIndex;
+	command->draw_indexed.vertex_offset = vertexOffset;
+	command->draw_indexed.instance_count = instanceCount;
+	command->draw_indexed.first_instance = firstInstance;
 }
 
-// One draw at most, without multiDrawIndirect; its parameters are read at the submit (queue.c).
+// One draw at most, without multiDrawIndirect; its parameters are read at replay (queue.c).
 static void record_indirect(
-	VkCommandBuffer commandBuffer, bool indexed, VkBuffer buffer, VkDeviceSize offset, uint32_t drawCount)
+	VkCommandBuffer commandBuffer, CommandType type, VkBuffer buffer, VkDeviceSize offset, uint32_t drawCount)
 {
 	if (drawCount > 1) {
 		commandBuffer->result = v4x_host_unsupported("indirect draws of more than one draw");
 		return;
 	}
-	if (!drawCount)
-		return;
-	const DrawSnapshot snapshot = { .bound = commandBuffer->bound,
-		.indexed = indexed,
-		.parameters = (volatile const uint32_t *)buffer_bytes(v4x_object(buffer), offset) };
-	record_snapshot(commandBuffer, &snapshot);
+	Command *const command = drawCount ? record(commandBuffer, type) : NULL;
+	if (command)
+		command->parameters = (volatile const uint32_t *)buffer_bytes(v4x_object(buffer), offset);
 }
 
 VKAPI_ATTR void VKAPI_CALL vkCmdDrawIndirect(
 	VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset, uint32_t drawCount, uint32_t stride)
 {
 	(void)stride;
-	record_indirect(commandBuffer, false, buffer, offset, drawCount);
+	record_indirect(commandBuffer, COMMAND_DRAW_INDIRECT, buffer, offset, drawCount);
 }
 
 VKAPI_ATTR void VKAPI_CALL vkCmdDrawIndexedIndirect(
 	VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset, uint32_t drawCount, uint32_t stride)
 {
 	(void)stride;
-	record_indirect(commandBuffer, true, buffer, offset, drawCount);
+	record_indirect(commandBuffer, COMMAND_DRAW_INDEXED_INDIRECT, buffer, offset, drawCount);
 }

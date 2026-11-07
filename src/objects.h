@@ -64,10 +64,6 @@ enum {
 	// shortcut: a tiled pass's commands fit 1 MB of packets, some thousand of the layer's draws; grow it when a port's
 	// pass outgrows it.
 	V4X_TILE_RECORDING_DWORDS = 1 << 18,
-	// maxDescriptorSetUniformBuffersDynamic, Vulkan's minimum (physical_device.c).
-	V4X_MAX_DYNAMIC_OFFSETS = 8,
-	// Room for a command buffer's packets at first, in dwords; it doubles when full (record.c).
-	V4X_FIRST_PACKET_DWORDS = 16384,
 };
 
 struct VkPhysicalDevice_T {
@@ -216,6 +212,9 @@ struct VkQueue_T {
 	// A draw went into the ring since the CPU last waited for the GPU, so a copy into a buffer waits first
 	// (transfer.c).
 	bool drawn;
+	// The loop constants as last written, once one has been: the GPU keeps them from one submission to the next.
+	uint32_t loop_constants[XSDK_LOOP_CONSTANTS];
+	bool loops_written;
 	// The repeated indices' memory, the part being filled and the bytes it holds, and the submission that last wrote
 	// each part, 0 for none (transfer.c).
 	volatile uint32_t *index_copies;
@@ -230,9 +229,6 @@ struct VkQueue_T {
 	TileSpan tile_spans[V4X_TILE_SPANS];
 	uint32_t tile_span_first;
 	uint32_t tile_span_count;
-	// Records the draws known only at the submit, indirect ones and those of repeated indices, as a command buffer
-	// records the rest (record.c).
-	struct Recorder *scratch;
 };
 
 struct VkDevice_T {
@@ -444,8 +440,6 @@ typedef struct {
 	// point_streams).
 	bool reads_vertex_index;
 	uint32_t vertex_base;
-	// The most a draw with it writes of packets before its draw packets, in dwords (record.c).
-	uint32_t draw_dwords;
 } Pipeline;
 
 // One subpass as the replay draws it, a render pass of its own: its colour attachments and its depth if it has one,
@@ -554,11 +548,16 @@ typedef struct {
 typedef enum {
 	COMMAND_BEGIN_RENDER_PASS,
 	COMMAND_END_RENDER_PASS,
-	// Packets recorded between two commands (record.c), copied into the ring at the submit.
-	COMMAND_RUN,
-	// A draw known only at the submit, an indirect one or one of repeated indices, with the state bound for it.
-	COMMAND_DRAW_SNAPSHOT,
+	COMMAND_BIND_PIPELINE,
+	COMMAND_BIND_VERTEX_BUFFER,
+	COMMAND_DRAW,
+	COMMAND_BIND_DESCRIPTOR_SET,
+	COMMAND_PUSH_CONSTANTS,
 	COMMAND_COPY_BUFFER_TO_IMAGE,
+	COMMAND_SET_VIEWPORT,
+	COMMAND_SET_SCISSOR,
+	COMMAND_BIND_INDEX_BUFFER,
+	COMMAND_DRAW_INDEXED,
 	COMMAND_COPY_IMAGE_TO_BUFFER,
 	COMMAND_COPY_IMAGE,
 	COMMAND_BLIT_IMAGE,
@@ -567,6 +566,11 @@ typedef enum {
 	COMMAND_COPY_BUFFER,
 	COMMAND_UPDATE_BUFFER,
 	COMMAND_FILL_BUFFER,
+	COMMAND_DRAW_INDIRECT,
+	COMMAND_DRAW_INDEXED_INDIRECT,
+	COMMAND_SET_STENCIL,
+	COMMAND_SET_DEPTH_BIAS,
+	COMMAND_SET_BLEND_CONSTANTS,
 	COMMAND_CLEAR_ATTACHMENTS,
 	COMMAND_CLEAR_DEPTH_IMAGE,
 	COMMAND_EXECUTE_COMMANDS,
@@ -596,7 +600,8 @@ enum {
 	V4X_STENCIL_FACES = 2,
 };
 
-// The dynamic state a command buffer sets past the viewport and scissor; the stencil masks and references a face each.
+// The dynamic state a command buffer sets past the viewport and scissor, as it last set it in a replay; the stencil
+// masks and references a face each.
 typedef struct {
 	uint8_t stencil_compare_mask[V4X_STENCIL_FACES];
 	uint8_t stencil_write_mask[V4X_STENCIL_FACES];
@@ -605,168 +610,6 @@ typedef struct {
 	float depth_bias_slope;
 	float blend_constants[4];
 } DynamicState;
-
-typedef struct {
-	uint32_t address;
-	uint32_t size_bytes;
-} VertexBinding;
-
-// What a command buffer has bound, which Vulkan keeps through the command buffer, its render passes among it
-// (record.c).
-typedef struct {
-	// Read as registers wherever they lie (record.c, register_bits).
-	float push[V4X_MAX_PUSH_CONSTANT_BYTES / 4];
-	const Pipeline *pipeline;
-	const DescriptorSet *sets[V4X_MAX_DESCRIPTOR_SETS];
-	uint32_t dynamic_offsets[V4X_MAX_DESCRIPTOR_SETS][V4X_MAX_DYNAMIC_OFFSETS];
-	VertexBinding bindings[V4X_MAX_VERTEX_BINDINGS];
-	// The index buffer's bytes at its offset, and their GPU address.
-	volatile const uint8_t *index_bytes;
-	uint32_t index_address;
-	bool index_32_bit;
-	VkViewport viewport;
-	VkRect2D scissor;
-	DynamicState dynamic;
-	// The subpass's samples, which the raster state takes; 0 outside a render pass.
-	uint32_t samples;
-} Bound;
-
-// A draw COMMAND_DRAW_SNAPSHOT holds in the command buffer's data: the state bound, and vkCmdDraw's or
-// vkCmdDrawIndexed's arguments, or where an indirect one's are.
-typedef struct {
-	Bound bound;
-	bool indexed;
-	volatile const uint32_t *parameters;
-	uint32_t count;
-	uint32_t first;
-	int32_t vertex_offset;
-	uint32_t instance_count;
-	uint32_t first_instance;
-} DrawSnapshot;
-
-// What a run holds, from the first of each of its recorder's lists to the end (record.c): its packets, in dwords, where
-// they're cut into pieces, its hierarchical depth controls, its reads of uniform buffers, the images it samples, and
-// its draws.
-typedef struct {
-	uint32_t first;
-	uint32_t end;
-	uint32_t first_cut;
-	uint32_t end_cut;
-	uint32_t first_site;
-	uint32_t end_site;
-	uint32_t first_patch;
-	uint32_t end_patch;
-	uint32_t first_image;
-	uint32_t end_image;
-	uint32_t draws;
-} Run;
-
-// A dword of RB_HIZCONTROL, worked out at the submit from what the hierarchical buffer holds then: a depth and stencil
-// set's, with its depth control, or a shader set's, with whether its pixel shader writes depth.
-typedef struct {
-	uint32_t offset;
-	uint32_t depth_control;
-	bool depth;
-	bool pixel_writes_depth;
-} HizSite;
-
-typedef enum {
-	// count words of a uniform buffer, 0 past present of them.
-	PATCH_WORDS,
-	// A loop constant counted by the int there, 0 if not present, from start by step.
-	PATCH_LOOP,
-} PatchKind;
-
-// Words a uniform buffer gives packets at the submit, as the buffer holds them then: a block the GPU can't load, a clip
-// plane, a loop's count (record.c).
-typedef struct {
-	uint32_t offset;
-	volatile const uint32_t *words;
-	uint32_t present;
-	uint32_t count;
-	PatchKind kind;
-	int32_t start;
-	int32_t step;
-} ReadPatch;
-
-typedef struct {
-	const XsdkTexture *texture;
-	const Sampler *sampler;
-} PointedTexture;
-
-// The pipeline state a run last wrote, so a draw writes only what differs: whose shaders, whose literals, and the
-// values the rest were worked out from or are.
-typedef struct {
-	const Pipeline *pipeline;
-	const V4xShader *vertex_literals;
-	const V4xShader *pixel_literals;
-	VkViewport viewport;
-	VkRect2D scissor;
-	XsdkBlendState blends[V4X_MAX_COLOR_ATTACHMENTS];
-	uint32_t blend_count;
-	XsdkRasterState raster;
-	XsdkDepthStencilState depth_stencil;
-} AppliedState;
-
-// A command buffer's packets as its draws record them, the runs and lists the submit takes them by, and what the GPU
-// holds since the run began (record.c).
-typedef struct Recorder {
-	// Its own allocation, which it starts 16 bytes into, for its VMX loads and stores.
-	void *memory;
-	const VkAllocationCallbacks *allocator;
-	VkResult result;
-	XsdkPackets packets;
-	void *packet_memory;
-	Run *runs;
-	uint32_t run_count;
-	uint32_t run_capacity;
-	uint32_t *cuts;
-	uint32_t cut_count;
-	uint32_t cut_capacity;
-	HizSite *sites;
-	uint32_t site_count;
-	uint32_t site_capacity;
-	ReadPatch *patches;
-	uint32_t patch_count;
-	uint32_t patch_capacity;
-	Image **images;
-	uint32_t image_count;
-	uint32_t image_capacity;
-	// The run being recorded, from its firsts, and where its piece began.
-	Run run;
-	uint32_t piece_first;
-	// What the GPU holds since the run began. The pipeline state to write again, all of it, or the viewport and
-	// scissor, or the state dynamic state changes, and what was written.
-	bool pipeline_dirty;
-	bool viewport_dirty;
-	bool dynamic_dirty;
-	AppliedState applied;
-	// Each stage's float constants: the values written, the registers known to hold them, each group's memory loaded
-	// into it, its address with bit 0 set, and the registers holding a uniform buffer's words that the submit reads, a
-	// bit each in their group's, with where from and how many of their 4 words are there.
-	float kept[2][V4X_FLOAT_CONSTANTS * 4] __attribute__((aligned(16)));
-	uint8_t known[2][V4X_FLOAT_CONSTANTS];
-	uint32_t loaded[2][V4X_FLOAT_CONSTANTS / V4X_CONSTANT_GROUP];
-	uint8_t read_groups[2][V4X_FLOAT_CONSTANTS / V4X_CONSTANT_GROUP];
-	volatile const uint32_t *read_words[2][V4X_FLOAT_CONSTANTS];
-	uint8_t read_present[2][V4X_FLOAT_CONSTANTS];
-	// The boolean and loop words, the loops known once set; the streams' fetch groups, and the streams and texture
-	// slots pointed, zero where unknown.
-	uint32_t integer[XSDK_GPU_INTEGER_CONSTANT_WORDS];
-	bool loops_known;
-	uint32_t groups[XSDK_GPU_VERTEX_FETCH_GROUPS][XSDK_GPU_FETCH_GROUP_DWORDS];
-	VertexBinding pointed_streams[XSDK_VERTEX_STREAMS];
-	PointedTexture pointed_textures[V4X_TEXTURE_SLOTS];
-	// The clip control, and whether clip planes may be on; the shaders loaded, by address, 0 for unknown, and whether
-	// the pixel shader writes depth, which an unknown one counts as.
-	XsdkClipControl clip;
-	bool clip_planes_on;
-	uint32_t loaded_vertex;
-	uint32_t loaded_pixel;
-	bool pixel_writes_depth;
-	// A block's registers on their way into a packet.
-	float block[V4X_FLOAT_CONSTANTS * 4] __attribute__((aligned(16)));
-} Recorder;
 
 typedef struct {
 	CommandType type;
@@ -784,8 +627,29 @@ typedef struct {
 		Image *resolved_depth;
 		// A barrier's: the sampled depth image it moves from an attachment to be read.
 		Image *depth_to_read;
-		// The command buffer's recorder's run.
-		uint32_t run;
+		const Pipeline *pipeline;
+		struct {
+			uint32_t binding;
+			uint32_t address;
+			uint32_t size_bytes;
+		} vertex_buffer;
+		struct {
+			uint32_t vertex_count;
+			uint32_t first_vertex;
+			uint32_t instance_count;
+			uint32_t first_instance;
+		} draw;
+		struct {
+			uint32_t index;
+			const DescriptorSet *set;
+			// The set's dynamic offsets, in the command buffer's data.
+			uint32_t offsets_at;
+		} descriptor_set;
+		struct {
+			uint32_t offset_bytes;
+			uint32_t size_bytes;
+			uint32_t data_at;
+		} push_constants;
 		// The whole of a level into the whole of another, copied, or blitted to its size, in as many of each one's
 		// layers or 3D slices from the first given; small, so a command stays 24 bytes.
 		struct {
@@ -817,6 +681,19 @@ typedef struct {
 			// A texel's bytes as the image holds them.
 			uint8_t texel[V4X_MAX_TEXEL_BYTES];
 		} clear;
+		// An indirect draw's parameters, read at replay.
+		volatile const uint32_t *parameters;
+		// A stencil mask or reference: its VK_DYNAMIC_STATE_STENCIL_*, the faces it's for and its value.
+		struct {
+			uint32_t state;
+			VkStencilFaceFlags faces;
+			uint8_t value;
+		} stencil;
+		struct {
+			float constant;
+			float slope;
+		} depth_bias;
+		float blend_constants[4];
 		struct {
 			Image *image;
 			float depth;
@@ -846,9 +723,22 @@ typedef struct {
 			uint32_t query;
 			bool after_work;
 		} timestamp;
-		// A ClearRect, QueryCopy, LevelCopy, PartCopy, DrawnBlit, DrawnUpload or DrawSnapshot in the command buffer's
+		// A VkViewport, VkRect2D, ClearRect, QueryCopy, LevelCopy, DrawnBlit or DrawnUpload in the command buffer's
 		// data.
 		uint32_t state_at;
+		// The index buffer's bytes at its offset, and their GPU address.
+		struct {
+			volatile const uint8_t *bytes;
+			uint32_t address;
+			bool is_32_bit;
+		} index_buffer;
+		struct {
+			uint32_t index_count;
+			uint32_t first_index;
+			int32_t vertex_offset;
+			uint32_t instance_count;
+			uint32_t first_instance;
+		} draw_indexed;
 	};
 } Command;
 
@@ -864,15 +754,12 @@ struct VkCommandBuffer_T {
 	struct VkCommandBuffer_T *next;
 	CommandBufferState state;
 	VkResult result;
-	// The commands the submit replays in order, a run of the recorder's packets among them.
 	Command *commands;
 	uint32_t count;
 	uint32_t capacity;
 	uint8_t *data;
 	uint32_t data_bytes;
 	uint32_t data_capacity_bytes;
-	Bound bound;
-	Recorder *recorder;
 	// The render pass being recorded, its framebuffer, the subpass it's in and the clear values and render area it
 	// began with, for vkCmdNextSubpass to begin the next subpass as a pass of its own.
 	const RenderPassSubpasses *render_pass;
@@ -884,6 +771,8 @@ struct VkCommandBuffer_T {
 	// inner_area, the area itself, is cleared where the subpass clears (command_buffer.c, clear_inner).
 	bool off_grid;
 	VkRect2D inner_area;
+	// The pipeline bound last while recording, to check draws against its topology.
+	const Pipeline *pipeline;
 	// Allocated as a secondary command buffer, which vkCmdExecuteCommands replays in place.
 	bool secondary;
 	// A secondary command buffer recorded to continue a render pass, so its queries begin inside one.

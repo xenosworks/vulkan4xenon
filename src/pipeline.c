@@ -6,7 +6,6 @@
 #include "host.h"
 #include "objects.h"
 #include "pipeline_state.h"
-#include "record.h"
 #include "shader.h"
 #include "xsdk/gpu.h"
 #include "xsdk/log.h"
@@ -405,11 +404,6 @@ static VkResult create_pipeline(
 		result = lay_out_vertices(info->pVertexInputState, pipeline);
 	if (result == VK_SUCCESS)
 		result = share_fetch_constants(pipeline);
-	if (result == VK_SUCCESS) {
-		pipeline->draw_dwords = v4x_record_pipeline_dwords(pipeline);
-		if (!pipeline->draw_dwords)
-			result = v4x_host_unsupported("pipelines whose draws write more than 8,189 dwords of packets");
-	}
 	if (result != VK_SUCCESS) {
 		free_pipeline(allocator, pipeline);
 		return result;

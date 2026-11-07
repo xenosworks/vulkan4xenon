@@ -6,7 +6,6 @@
 #include "host.h"
 #include "objects.h"
 #include "physical_device.h"
-#include "record.h"
 #include "shader.h"
 #include "xsdk/gpu.h"
 #include "xsdk/log.h"
@@ -88,12 +87,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(VkPhysicalDevice physicalDevice, c
 	const NTSTATUS splash = xsdk_splash_begin();
 	if (!NT_SUCCESS(splash))
 		xsdk_log_write("vulkan4xenon: no boot logo: 0x%08X", (unsigned)splash);
-	VkResult blit = v4x_blit_create(&device->queue.blit);
-	device->queue.scratch = blit == VK_SUCCESS ? v4x_record_new(allocator) : NULL;
-	if (blit == VK_SUCCESS && !device->queue.scratch) {
-		v4x_blit_destroy(&device->queue.blit);
-		blit = VK_ERROR_OUT_OF_HOST_MEMORY;
-	}
+	const VkResult blit = v4x_blit_create(&device->queue.blit);
 	if (blit != VK_SUCCESS) {
 		xsdk_splash_end();
 		const NTSTATUS closed = xsdk_gpu_close();
@@ -125,7 +119,6 @@ VKAPI_ATTR void VKAPI_CALL vkDestroyDevice(VkDevice device, const VkAllocationCa
 		return;
 	xsdk_gpu_free(device->queue.index_copies);
 	xsdk_gpu_free(device->queue.tile_space);
-	v4x_record_delete(device->queue.scratch);
 	v4x_blit_destroy(&device->queue.blit);
 	xsdk_splash_end();
 	const NTSTATUS status = xsdk_gpu_close();

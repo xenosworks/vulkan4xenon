@@ -115,13 +115,23 @@ typedef struct {
 
 V4xEdramCounts v4x_edram_counts(void);
 
-// The parts of vkQueueSubmit a profile build times, made with make V4X_PROFILE=1 (docs/ROADMAP.md, milestone 29). The
-// draws' own work is done as they're recorded since milestone 35 (docs/COMMAND_BUFFERS.md).
+// The parts of vkQueueSubmit a profile build times, made with make V4X_PROFILE=1 (docs/ROADMAP.md, milestone 29).
 typedef enum {
-	// The runs of recorded packets copied into the ring, with their hierarchical depth and uniform buffers' reads, and
-	// the draws recorded at the submit.
-	V4X_PROFILE_RUNS,
-	// The other commands: render passes, clears, copies, events and queries.
+	// The replay's loop and switch, from one command to the next push or draw.
+	V4X_PROFILE_DISPATCH,
+	// vkCmdPushConstants at replay: where its bytes were recorded, or their copy into the replay.
+	V4X_PROFILE_PUSH,
+	// A draw's pipeline state: comparing it with what the replay last set, and setting what differs.
+	V4X_PROFILE_PIPELINE,
+	// A draw's float constants through xsdk: the blocks it sets and the uniform blocks it has the GPU load.
+	V4X_PROFILE_CONSTANTS,
+	// The rest of a draw's resources: going through its plan, loops, uniform blocks read on the CPU, and textures.
+	V4X_PROFILE_RESOURCES,
+	// A draw's checks: drawable, clip planes, instances, pieces and streams.
+	V4X_PROFILE_CHECKS,
+	// xsdk's draw calls.
+	V4X_PROFILE_DRAWS,
+	// The other commands: binds, dynamic state, render passes, clears, copies, events and queries.
 	V4X_PROFILE_COMMANDS,
 	// The submit's own: draining the CPU's writes, the invalidate, and the fence that kicks the ring.
 	V4X_PROFILE_SUBMIT,
