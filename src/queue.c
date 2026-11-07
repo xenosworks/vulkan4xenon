@@ -1,6 +1,4 @@
-#include <altivec.h>
 #include <assert.h>
-#include <math.h>
 #include <string.h>
 
 #include <vulkan/vulkan.h>
@@ -8,81 +6,33 @@
 #include "blit.h"
 #include "host.h"
 #include "objects.h"
-#include "pipeline_state.h"
 #include "profile.h"
+#include "record.h"
 #include "sync.h"
 #include "transfer.h"
 #include "xsdk/gpu.h"
 #include "xsdk/log.h"
 #include "xsdk/texture.h"
-#include "xsdk/xsc.h"
+
+// The submit: each command buffer's commands replayed in order, render passes and copies on the CPU and through xsdk as
+// eDRAM and the GPU stand then, and the runs of packets its draws recorded copied in between (record.c).
 
 enum {
 	IDLE_TIMEOUT_MS = 10000,
 	// All of physical memory, as libxenon invalidates it (libxenon:drivers/xenos/xe.c:992).
 	ALL_MEMORY_BYTES = 0x20000000,
-	// The GPU loads constants from 64-byte aligned memory (xsdk:include/xsdk/gpu.h), in groups (V4X_CONSTANT_GROUP).
-	LOAD_ALIGNMENT_BYTES = 64,
 	// The visibility ids one status word holds (xsdk:include/xsdk/gpu.h).
 	VISIBILITY_WORD_IDS = XSDK_VISIBILITY_IDS / 2,
-	// The push constants in quads of 16 bytes, a float constant register each.
-	PUSH_QUADS = V4X_MAX_PUSH_CONSTANT_BYTES / 16,
 	// The commands after a pass's end looked through for what reads its image before its next pass (resolve_can_wait).
 	RESOLVE_SCAN_COMMANDS = 256,
 };
 
-typedef struct {
-	uint32_t address;
-	uint32_t size_bytes;
-} VertexBinding;
-
-typedef struct {
-	const XsdkTexture *texture;
-	const Sampler *sampler;
-} PointedTexture;
-
-// The pipeline state the replay last gave xsdk, so a draw sets only what differs: whose shaders, whose literals, and
-// the values the rest were worked out from or are.
-typedef struct {
-	const Pipeline *pipeline;
-	const V4xShader *vertex_literals;
-	const V4xShader *pixel_literals;
-	VkViewport viewport;
-	VkRect2D scissor;
-	XsdkBlendState blends[V4X_MAX_COLOR_ATTACHMENTS];
-	uint32_t blend_count;
-	XsdkRasterState raster;
-	XsdkDepthStencilState depth_stencil;
-} AppliedState;
-
-// What a replay has written into each stage's float constants, stage 0 the vertex shader's and 1 the pixel shader's, so
-// a write of what registers already hold, or a load of memory a group already holds, is left out. A group loaded from
-// memory holds its address, bit 0 set, in loaded, and 0 stands for none, as a load's address is 64-byte aligned. A
-// register in a group holding no load holds its value in held_values while known is set: setting any register of a
-// group rewrites the rest from xsdk's own copy of what was set (xsdk:include/xsdk/gpu.h), which holds the same.
-typedef struct {
-	uint8_t known[2][V4X_FLOAT_CONSTANTS];
-	uint32_t loaded[2][V4X_FLOAT_CONSTANTS / V4X_CONSTANT_GROUP];
-} HeldConstants;
-
-// What one replay has bound so far.
+// What one replay has begun so far.
 typedef struct {
 	VkQueue queue;
 	// The submission it belongs to (VkQueue_T's serial).
 	uint32_t serial;
-	const Pipeline *pipeline;
-	// The pipeline's registers must be set again, whatever applied holds: a resolve replaces the vertex shader, the
-	// viewport and the state, and the layer's own draws set theirs.
-	bool pipeline_dirty;
-	AppliedState applied;
-	// Only the viewport and scissor may have changed, after vkCmdSetViewport or vkCmdSetScissor.
-	bool viewport_dirty;
-	VkViewport viewport;
-	VkRect2D scissor;
-	// And the raster, depth and stencil, and blend constants, after a command set the state they may take.
-	bool dynamic_dirty;
-	DynamicState dynamic;
-	// User clip planes are on, as the last draw's pipeline set them; a target set turns them off.
+	// User clip planes may be on: a run may have left them so, and a target set turns them off.
 	bool clip_planes_on;
 	const RenderPass *render_pass;
 	const Framebuffer *framebuffer;
@@ -102,456 +52,16 @@ typedef struct {
 	bool clears_depth;
 	float clear_depth;
 	uint32_t clear_stencil;
-	VertexBinding bindings[V4X_MAX_VERTEX_BINDINGS];
-	volatile const uint8_t *index_bytes;
-	uint32_t index_address;
-	bool index_32_bit;
-	const DescriptorSet *sets[V4X_MAX_DESCRIPTOR_SETS];
-	const uint32_t *dynamic_offsets[V4X_MAX_DESCRIPTOR_SETS];
-	// Where each quad of the push constants is now: in a command buffer's data, where a push recorded it, or in push,
-	// which takes pushes of part of a quad and a stage's quads from several pushes.
-	const float *push_quads[PUSH_QUADS];
-	float push[V4X_MAX_PUSH_CONSTANT_BYTES / 4];
-	// What each stream and texture slot points at, so a draw points only what changed; zero where it isn't known.
-	VertexBinding pointed_streams[XSDK_VERTEX_STREAMS];
-	PointedTexture pointed_textures[V4X_TEXTURE_SLOTS];
 	// The occlusion query open, Vulkan's one at a time: its slot's GPU address, 0 for none, and the visibility id its
 	// draws go to now, from 0 (begin_query).
 	uint32_t query_address;
 	uint32_t visibility_id;
 	// In a tiled pass, whose commands go into its recording (begin_tiled_pass).
 	bool tiling;
-	HeldConstants held;
 } Replay;
 
 // What render passes' begins did to eDRAM, for the tests; the queue's external synchronization guards it.
 static V4xEdramCounts edram_counts;
-
-// A block's registers on their way into the constants; the queue is externally synchronized, so one copy will do.
-static float block[V4X_FLOAT_CONSTANTS * 4] __attribute__((aligned(16)));
-// The values HeldConstants knows, by the same synchronization.
-static float held_values[2][V4X_FLOAT_CONSTANTS * 4] __attribute__((aligned(16)));
-
-// A register's four floats from anywhere 4-byte aligned, as bits, so values compare equal only when they're the same.
-static inline vector unsigned int register_bits(const float *values)
-{
-	return (vector unsigned int)vec_perm(vec_ld(0, values), vec_ld(15, values), vec_lvsl(0, values));
-}
-
-// Whether count registers from first each hold their value already.
-static inline bool holds(const Replay *replay, uint32_t stage, uint32_t first, const float *values, uint32_t count)
-{
-	for (uint32_t g = first / V4X_CONSTANT_GROUP; g <= (first + count - 1) / V4X_CONSTANT_GROUP; g++) {
-		if (replay->held.loaded[stage][g])
-			return false;
-	}
-	const uint8_t *const known = &replay->held.known[stage][first];
-	const float *const held = &held_values[stage][4 * first];
-	for (uint32_t r = 0; r < count; r++) {
-		if (!known[r] || !vec_all_eq(register_bits(&values[4 * r]), (vector unsigned int)vec_ld(0, &held[4 * r])))
-			return false;
-	}
-	return true;
-}
-
-// No group it touches holds what it loaded any more.
-static __attribute__((noinline)) void set_constants(
-	Replay *replay, uint32_t stage, uint32_t first, const float *values, uint32_t count)
-{
-	v4x_profile_lap(V4X_PROFILE_RESOURCES);
-	if (stage == 0)
-		xsdk_gpu_set_vertex_constants(first, values, count);
-	else
-		xsdk_gpu_set_pixel_constants(first, values, count);
-	v4x_profile_lap(V4X_PROFILE_CONSTANTS);
-	float *const held = &held_values[stage][4 * first];
-	for (uint32_t r = 0; r < count; r++) {
-		vec_st((vector float)register_bits(&values[4 * r]), 0, &held[4 * r]);
-		replay->held.known[stage][first + r] = 1;
-	}
-	uint32_t *const loaded = replay->held.loaded[stage];
-	for (uint32_t g = first / V4X_CONSTANT_GROUP; g <= (first + count - 1) / V4X_CONSTANT_GROUP; g++) {
-		if (loaded[g])
-			loaded[g] = 0;
-	}
-}
-
-// Sets count registers from first unless each holds its value already.
-static inline void write_constants(Replay *replay, bool vertex, uint32_t first, const float *values, uint32_t count)
-{
-	assert(count);
-	const uint32_t stage = vertex ? 0 : 1;
-	if (!holds(replay, stage, first, values, count))
-		set_constants(replay, stage, first, values, count);
-}
-
-// Has the GPU load count registers from first, whole groups, from memory at address, unless each group holds that
-// memory already: nothing the GPU runs writes memory, and what changes it between passes, the passes' begins forget.
-static void load_constants(Replay *replay, bool vertex, uint32_t first, uint32_t address, uint32_t count)
-{
-	const uint32_t stage = vertex ? 0 : 1;
-	uint32_t *const loaded = &replay->held.loaded[stage][first / V4X_CONSTANT_GROUP];
-	const uint32_t groups = count / V4X_CONSTANT_GROUP;
-	uint32_t same = 0;
-	while (same < groups && loaded[same] == ((address + same * LOAD_ALIGNMENT_BYTES) | 1))
-		same++;
-	if (same == groups)
-		return;
-	v4x_profile_count(V4X_PROFILE_BLOCKS_LOADED, 1);
-	v4x_profile_lap(V4X_PROFILE_RESOURCES);
-	if (vertex)
-		xsdk_gpu_load_vertex_constants(first, address, count);
-	else
-		xsdk_gpu_load_pixel_constants(first, address, count);
-	v4x_profile_lap(V4X_PROFILE_CONSTANTS);
-	for (uint32_t g = 0; g < groups; g++)
-		loaded[g] = (address + g * LOAD_ALIGNMENT_BYTES) | 1;
-}
-
-// A register xsdk set itself, an instanced draw's group, holds what the replay doesn't know.
-static void lose_constant(Replay *replay, uint32_t reg)
-{
-	replay->held.known[0][reg] = 0;
-	replay->held.loaded[0][reg / V4X_CONSTANT_GROUP] = 0;
-}
-
-// The layer's own draws set constants of their own, and memory may change between passes.
-static void forget_constants(Replay *replay)
-{
-	memset(&replay->held, 0, sizeof replay->held);
-}
-
-// A shader's literals, each run of them in registers one after another set as one, as xsdk writes whole groups.
-static void write_literals(Replay *replay, const V4xShader *shader, bool vertex)
-{
-	v4x_profile_count(V4X_PROFILE_LITERALS, shader->literal_count);
-	uint32_t i = 0;
-	while (i < shader->literal_count) {
-		const uint32_t first = shader->literals[i].reg;
-		uint32_t count = 0;
-		do {
-			memcpy(&block[4 * count], shader->literals[i].values, sizeof shader->literals[i].values);
-			count++;
-			i++;
-		} while (i < shader->literal_count && shader->literals[i].reg == first + count);
-		write_constants(replay, vertex, first, block, count);
-	}
-}
-
-// The first pixel whose centre a viewport edge at coordinate covers, or the one past the last.
-static int32_t first_pixel(float coordinate)
-{
-	return (int32_t)ceilf(coordinate - 0.5f);
-}
-
-static int32_t larger(int32_t a, int32_t b)
-{
-	return a > b ? a : b;
-}
-
-static int32_t smaller(int32_t a, int32_t b)
-{
-	return a < b ? a : b;
-}
-
-// Whether a draw sets a state: xsdk's is unknown, or the value differs from what the replay last set, which then takes
-// it. Values the same bit for bit set the same registers.
-static bool changed(Replay *replay, void *applied, const void *value, size_t size_bytes)
-{
-	if (!replay->pipeline_dirty && !memcmp(applied, value, size_bytes))
-		return false;
-	memcpy(applied, value, size_bytes);
-	return true;
-}
-
-// Vulkan's y points down and its pixel centres sit on halves; xsdk's viewport is y-up with centres on whole numbers.
-// Vulkan clips to the viewport, and Xenos draws past it as far as the scissor (docs/SUPPORT.md, Pipelines), so the
-// scissor stops at the viewport's pixels too.
-static void apply_viewport(const Pipeline *pipeline, Replay *replay)
-{
-	const VkViewport *const v = pipeline->dynamic_viewport ? &replay->viewport : &pipeline->viewport;
-	const VkRect2D *const s = pipeline->dynamic_scissor ? &replay->scissor : &pipeline->scissor;
-	const bool viewport_changed = changed(replay, &replay->applied.viewport, v, sizeof *v);
-	if (viewport_changed)
-		xsdk_gpu_set_viewport(v->x - 0.5f, v->y + v->height - 0.5f, v->width, -v->height, v->minDepth, v->maxDepth);
-	if (!changed(replay, &replay->applied.scissor, s, sizeof *s) && !viewport_changed)
-		return;
-	const int32_t left = larger(s->offset.x, first_pixel(v->x));
-	const int32_t top = larger(s->offset.y, first_pixel(v->y));
-	const int32_t right = smaller(s->offset.x + (int32_t)s->extent.width, first_pixel(v->x + v->width));
-	const int32_t bottom = smaller(s->offset.y + (int32_t)s->extent.height, first_pixel(v->y + v->height));
-	xsdk_gpu_set_scissor((uint32_t)left, (uint32_t)top, right > left ? (uint32_t)(right - left) : 0,
-		bottom > top ? (uint32_t)(bottom - top) : 0);
-}
-
-// The state blocks dynamic state may change: the pipeline's own, or worked out with what the commands set. The blend
-// constants aren't compared, as few pipelines take them.
-static void apply_dynamic(const Pipeline *pipeline, Replay *replay)
-{
-	XsdkRasterState raster_scratch;
-	XsdkDepthStencilState depth_stencil_scratch;
-	const XsdkRasterState *const raster = v4x_pipeline_raster(pipeline, &replay->dynamic, &raster_scratch);
-	if (changed(replay, &replay->applied.raster, raster, sizeof *raster))
-		xsdk_gpu_set_raster(raster);
-	const XsdkDepthStencilState *const depth_stencil =
-		v4x_pipeline_depth_stencil(pipeline, &replay->dynamic, &depth_stencil_scratch);
-	if (changed(replay, &replay->applied.depth_stencil, depth_stencil, sizeof *depth_stencil))
-		xsdk_gpu_set_depth_stencil(depth_stencil);
-	const float *const constants = v4x_pipeline_blend_constants(pipeline, &replay->dynamic);
-	if (constants)
-		xsdk_gpu_set_blend_constants(constants);
-}
-
-// Each pipeline has shaders of its own. A shader's literals stay in their registers while the pipelines drawing share
-// that shader, as its blocks never reach them; another shader's may.
-static __attribute__((noinline)) void apply_pipeline(const Pipeline *pipeline, Replay *replay)
-{
-	AppliedState *const applied = &replay->applied;
-	v4x_profile_count(V4X_PROFILE_PIPELINES, 1);
-	v4x_profile_count(V4X_PROFILE_PIPELINES_AGAIN, applied->pipeline == pipeline);
-	applied->pipeline = pipeline;
-	xsdk_gpu_set_shaders(&pipeline->vertex, &pipeline->pixel);
-	if (changed(replay, &applied->vertex_literals, &pipeline->vertex_source, sizeof pipeline->vertex_source))
-		write_literals(replay, pipeline->vertex_source, true);
-	if (changed(replay, &applied->pixel_literals, &pipeline->pixel_source, sizeof pipeline->pixel_source))
-		write_literals(replay, pipeline->pixel_source, false);
-	apply_viewport(pipeline, replay);
-	const uint32_t count = pipeline->blend_count;
-	const bool count_changed = changed(replay, &applied->blend_count, &count, sizeof count);
-	if (changed(replay, applied->blends, pipeline->blends, count * sizeof *pipeline->blends) || count_changed)
-		xsdk_gpu_set_blends(pipeline->blends, count);
-	apply_dynamic(pipeline, replay);
-}
-
-// Brings a quad of the push constants into the replay's copy, from where a push recorded it.
-static void copy_push_quad(Replay *replay, uint32_t quad)
-{
-	float *const copy = &replay->push[4 * quad];
-	if (replay->push_quads[quad] == copy)
-		return;
-	memcpy(copy, replay->push_quads[quad], 4 * sizeof(float));
-	replay->push_quads[quad] = copy;
-}
-
-// A push of whole quads is read where it was recorded, so xsdk's loads don't wait on stores just made; any other is
-// copied in over the quads it touches.
-static void push_constants(Replay *replay, const uint8_t *bytes, uint32_t offset_bytes, uint32_t size_bytes)
-{
-	const uint32_t first = offset_bytes / 16;
-	const uint32_t end = (offset_bytes + size_bytes + 15) / 16;
-	if (offset_bytes % 16 == 0 && size_bytes % 16 == 0) {
-		for (uint32_t q = first; q < end; q++)
-			replay->push_quads[q] = (const float *)(bytes + (q - first) * 16);
-		return;
-	}
-	for (uint32_t q = first; q < end; q++)
-		copy_push_quad(replay, q);
-	memcpy((uint8_t *)replay->push + offset_bytes, bytes, size_bytes);
-}
-
-// count quads of the push constants from first as one run: where they lie one after another, as one push recorded
-// them, or else copied together.
-static const float *push_run(Replay *replay, uint32_t first, uint32_t count)
-{
-	const uintptr_t run = (uintptr_t)replay->push_quads[first];
-	uint32_t q = 1;
-	while (q < count && (uintptr_t)replay->push_quads[first + q] == run + 16 * q)
-		q++;
-	if (q == count)
-		return replay->push_quads[first];
-	for (q = first; q < first + count; q++)
-		copy_push_quad(replay, q);
-	return &replay->push[4 * first];
-}
-
-// A uniform buffer's bytes as the block's registers, zero past the descriptor's range.
-static void read_uniform_buffer(const Replay *replay, const V4xShaderResource *resource)
-{
-	const DescriptorSet *const set = replay->sets[resource->set];
-	const Descriptor *const descriptor = &set->descriptors[resource->binding];
-	const LayoutBinding *const binding = &set->layout->bindings[resource->binding];
-	volatile const uint32_t *words = descriptor->buffer;
-	if (binding->type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC)
-		words += replay->dynamic_offsets[resource->set][binding->dynamic_index] / 4;
-	const uint32_t wanted = resource->count * 4;
-	const uint32_t present = descriptor->range_bytes / 4 < wanted ? descriptor->range_bytes / 4 : wanted;
-	uint32_t i = 0;
-	// Mapped memory is write-combined, so each read goes to memory: a quad at a time is a quarter of the reads.
-	if (((uintptr_t)words & 15) == 0) {
-		for (; i + 4 <= present; i += 4)
-			vec_st(vec_ld(0, (const vector unsigned int *)(uintptr_t)(words + i)), 0, (vector unsigned int *)&block[i]);
-	}
-	for (; i < wanted; i++) {
-		const uint32_t word = i < present ? words[i] : 0;
-		memcpy(&block[i], &word, sizeof word);
-	}
-}
-
-// The CPU's copy of a uniform block, read and written into its registers.
-static void read_block(Replay *replay, const StageResource *stage_resource)
-{
-	v4x_profile_count(V4X_PROFILE_BLOCKS_READ, 1);
-	v4x_profile_count(V4X_PROFILE_QUADS_READ, stage_resource->resource.count);
-	read_uniform_buffer(replay, &stage_resource->resource);
-	write_constants(
-		replay, stage_resource->vertex, stage_resource->resource.first, block, stage_resource->resource.count);
-}
-
-// Each draw writes every block its shaders read into constants, and points their samplers' fetch constants.
-// Has the GPU load a block that starts a group (pipeline.c, plan_group) straight from the buffer, when the buffer is
-// aligned and covers it; the padding past the block takes whatever follows it, which nothing reads.
-static bool load_uniform_buffer(Replay *replay, const V4xShaderResource *resource, bool vertex)
-{
-	assert(resource->first % V4X_CONSTANT_GROUP == 0);
-	const DescriptorSet *const set = replay->sets[resource->set];
-	const Descriptor *const descriptor = &set->descriptors[resource->binding];
-	const LayoutBinding *const binding = &set->layout->bindings[resource->binding];
-	uint32_t address = descriptor->buffer_address;
-	if (binding->type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC)
-		address += replay->dynamic_offsets[resource->set][binding->dynamic_index];
-	if (address % LOAD_ALIGNMENT_BYTES || descriptor->range_bytes < resource->count * 16)
-		return false;
-	const uint32_t count = (resource->count + V4X_CONSTANT_GROUP - 1) / V4X_CONSTANT_GROUP * V4X_CONSTANT_GROUP;
-	load_constants(replay, vertex, resource->first, address, count);
-	return true;
-}
-
-// A clip plane's four floats from the push constants or uniform buffer the vertex shader reads it from, as bound now;
-// past the descriptor's range they read 0, as the block's registers do.
-static void read_plane(const Replay *replay, const V4xShaderResource *resource, uint32_t offset_bytes, float plane[4])
-{
-	if (resource->kind == V4X_RESOURCE_PUSH_CONSTANTS) {
-		memcpy(plane, replay->push_quads[offset_bytes / 16], 4 * sizeof(float));
-		return;
-	}
-	const DescriptorSet *const set = replay->sets[resource->set];
-	const Descriptor *const descriptor = set ? &set->descriptors[resource->binding] : NULL;
-	volatile const uint32_t *words = descriptor ? descriptor->buffer : NULL;
-	const uint32_t present = descriptor ? descriptor->range_bytes / 4 : 0;
-	if (descriptor && set->layout->bindings[resource->binding].type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC)
-		words += replay->dynamic_offsets[resource->set][set->layout->bindings[resource->binding].dynamic_index] / 4;
-	for (uint32_t c = 0; c < 4; c++) {
-		const uint32_t at = offset_bytes / 4 + c;
-		const uint32_t word = at < present ? words[at] : 0;
-		memcpy(&plane[c], &word, sizeof word);
-	}
-}
-
-// Xenos clips against the planes itself, so each draw of a pipeline with clip distances sets them from the values
-// bound, which may have changed since; one without turns off what the last left on.
-static void apply_clip_planes(const Pipeline *pipeline, Replay *replay)
-{
-	if (!pipeline->clip_plane_count && !replay->clip_planes_on)
-		return;
-	float planes[XSDK_CLIP_PLANES][4];
-	for (uint32_t i = 0; i < pipeline->clip_plane_count; i++) {
-		const ClipPlane *const clip = &pipeline->clip_planes[i];
-		read_plane(replay, &pipeline->resources[clip->resource].resource, clip->offset_bytes, planes[clip->plane]);
-	}
-	xsdk_gpu_set_clip_planes(pipeline->clip_plane_mask, planes);
-	replay->clip_planes_on = pipeline->clip_plane_count != 0;
-}
-
-// Points a slot at the texture and sampler unless it already is. A replay points every slot afresh, so each submission
-// that samples an image marks it.
-static void point_texture(Replay *replay, uint32_t slot, const Descriptor *descriptor)
-{
-	assert(slot < V4X_TEXTURE_SLOTS);
-	PointedTexture *const pointed = &replay->pointed_textures[slot];
-	if (pointed->texture == descriptor->texture && pointed->sampler == descriptor->sampler)
-		return;
-	v4x_profile_count(V4X_PROFILE_TEXTURES, 1);
-	v4x_profile_pass_texture(descriptor->texture->address);
-	xsdk_gpu_set_texture(slot, descriptor->texture, &descriptor->sampler->state);
-	descriptor->image->used_serial = replay->serial;
-	*pointed = (PointedTexture){ .texture = descriptor->texture, .sampler = descriptor->sampler };
-}
-
-// A loop's passes as the draw has its block: from the loop's start to the int at the resource's byte offset by its
-// step, as xsdk works them out, 0 to 255; none where the block isn't bound or its range doesn't reach it.
-static uint32_t loop_count(const Replay *replay, const V4xShaderResource *resource)
-{
-	int32_t count = 0;
-	if (resource->kind == V4X_RESOURCE_PUSH_LOOP) {
-		// An int's offset is a multiple of 4, so it lies in one quad.
-		const uint8_t *const quad = (const uint8_t *)replay->push_quads[resource->first / 16];
-		memcpy(&count, quad + resource->first % 16, sizeof count);
-	} else {
-		const DescriptorSet *const set = replay->sets[resource->set];
-		const Descriptor *const descriptor = set ? &set->descriptors[resource->binding] : NULL;
-		if (!descriptor || resource->first + sizeof count > descriptor->range_bytes)
-			return 0;
-		const LayoutBinding *const binding = &set->layout->bindings[resource->binding];
-		uint32_t offset = resource->first;
-		if (binding->type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC)
-			offset += replay->dynamic_offsets[resource->set][binding->dynamic_index];
-		count = (int32_t)descriptor->buffer[offset / 4];
-	}
-	return xsdk_xsc_loop_passes(resource->start, resource->step, count);
-}
-
-// xsdk rewrites every boolean and loop word together (xsdk:include/xsdk/gpu.h), so they're written only when one of
-// the loop constants changes.
-static void write_loops(VkQueue queue, const uint32_t *values)
-{
-	if (queue->loops_written && !memcmp(values, queue->loop_constants, sizeof queue->loop_constants))
-		return;
-	xsdk_gpu_set_loop_constants(0, values, XSDK_LOOP_CONSTANTS);
-	memcpy(queue->loop_constants, values, sizeof queue->loop_constants);
-	queue->loops_written = true;
-}
-
-// The loop constants a pipeline's hardware loops read, each from its count, or its fixed passes for loops whose count
-// is data.
-static __attribute__((noinline)) void apply_loops(const Pipeline *pipeline, const Replay *replay)
-{
-	uint32_t values[XSDK_LOOP_CONSTANTS];
-	memcpy(values, replay->queue->loop_constants, sizeof values);
-	for (uint32_t i = pipeline->plan[PLAN_LOOP]; i < pipeline->plan[PLAN_LOOP + 1]; i++) {
-		const V4xShaderResource *const resource = &pipeline->resources[i].resource;
-		const uint32_t passes =
-			resource->kind == V4X_RESOURCE_FIXED_LOOP ? resource->first : loop_count(replay, resource);
-		values[resource->count] = xsdk_gpu_loop_constant(passes, 0, 1);
-	}
-	write_loops(replay->queue, values);
-}
-
-// The draw plan's groups in turn (Pipeline, plan); what a set that isn't bound holds is left as it was.
-static void apply_resources(const Pipeline *pipeline, Replay *replay)
-{
-	const StageResource *const resources = pipeline->resources;
-	const uint16_t *const plan = pipeline->plan;
-	if (plan[PLAN_LOOP] < plan[PLAN_LOOP + 1])
-		apply_loops(pipeline, replay);
-	for (uint32_t i = plan[PLAN_PUSH]; i < plan[PLAN_PUSH + 1]; i++) {
-		const StageResource *const r = &resources[i];
-		v4x_profile_count(V4X_PROFILE_QUADS_PUSHED, r->push_count);
-		write_constants(replay, r->vertex, r->resource.first + r->push_first,
-			push_run(replay, r->push_first, r->push_count), r->push_count);
-	}
-	for (uint32_t i = plan[PLAN_LOAD]; i < plan[PLAN_LOAD + 1]; i++) {
-		const StageResource *const r = &resources[i];
-		if (replay->sets[r->resource.set] && !load_uniform_buffer(replay, &r->resource, r->vertex))
-			read_block(replay, r);
-	}
-	for (uint32_t i = plan[PLAN_READ]; i < plan[PLAN_READ + 1]; i++) {
-		if (replay->sets[resources[i].resource.set])
-			read_block(replay, &resources[i]);
-	}
-	for (uint32_t i = plan[PLAN_COMPARISON]; i < plan[PLAN_COMPARISON + 1]; i++) {
-		const V4xShaderResource *const resource = &resources[i].resource;
-		const DescriptorSet *const set = replay->sets[resource->set];
-		if (set)
-			write_constants(replay, resources[i].vertex, resource->first,
-				set->descriptors[resource->binding].sampler->compare_weights, 1);
-	}
-	for (uint32_t i = plan[PLAN_TEXTURE]; i < plan[PLAN_TEXTURE + 1]; i++) {
-		const V4xShaderResource *const resource = &resources[i].resource;
-		const DescriptorSet *const set = replay->sets[resource->set];
-		if (set)
-			point_texture(replay, resource->first, &set->descriptors[resource->binding]);
-	}
-}
 
 // Resolves clear eDRAM's depth and stencil to what xsdk_gpu_set_depth_clear last took.
 static void set_depth_clear(VkQueue queue, float depth, uint32_t stencil)
@@ -1154,12 +664,7 @@ static void begin_render_pass(VkQueue queue, Replay *replay)
 	v4x_profile_pass_lap(V4X_PROFILE_PASS_FILL);
 	if (keep_colors(queue, colors, render_pass->color_count, replay->serial))
 		set_target(replay);
-	replay->pipeline_dirty = true;
-	forget_constants(replay);
 	replay->clip_planes_on = false;
-	// Drawing an image back and resolves point streams and slots of their own.
-	memset(replay->pointed_streams, 0, sizeof replay->pointed_streams);
-	memset(replay->pointed_textures, 0, sizeof replay->pointed_textures);
 	v4x_profile_pass_lap(V4X_PROFILE_PASS_KEEP);
 }
 
@@ -1283,13 +788,22 @@ static bool sets_view(const DescriptorSet *const *sets, const Image *image)
 	return false;
 }
 
+// Whether a run's draws sample the image.
+static bool run_samples(const Recorder *recorder, uint32_t index, const Image *image)
+{
+	const Run *const run = &recorder->runs[index];
+	for (uint32_t i = run->first_image; i < run->end_image; i++) {
+		if (recorder->images[i] == image)
+			return true;
+	}
+	return false;
+}
+
 // Whether an image a whole pass stored can stay in eDRAM unresolved: within the scan's reach after the pass's end, a
 // pass draws into it again before any draw may sample it or a command but those below runs; replay is in order, as
 // vkCmdPipelineBarrier records nothing. The rest of the command buffer may read it, so its end resolves what's left.
-static bool resolve_can_wait(VkCommandBuffer buffer, uint32_t end, const Replay *replay, const Image *image)
+static bool resolve_can_wait(VkCommandBuffer buffer, uint32_t end, const Image *image)
 {
-	const DescriptorSet *sets[V4X_MAX_DESCRIPTOR_SETS];
-	memcpy(sets, replay->sets, sizeof sets);
 	const uint32_t last = buffer->count - end > RESOLVE_SCAN_COMMANDS ? end + RESOLVE_SCAN_COMMANDS : buffer->count;
 	for (uint32_t c = end + 1; c < last; c++) {
 		const Command *const command = &buffer->commands[c];
@@ -1301,26 +815,15 @@ static bool resolve_can_wait(VkCommandBuffer buffer, uint32_t end, const Replay 
 			if (touches)
 				return false;
 			break;
-		case COMMAND_BIND_DESCRIPTOR_SET:
-			sets[command->descriptor_set.index] = command->descriptor_set.set;
+		case COMMAND_RUN:
+			if (run_samples(buffer->recorder, command->run, image))
+				return false;
 			break;
-		case COMMAND_DRAW:
-		case COMMAND_DRAW_INDEXED:
-		case COMMAND_DRAW_INDIRECT:
-		case COMMAND_DRAW_INDEXED_INDIRECT:
-			if (sets_view(sets, image))
+		case COMMAND_DRAW_SNAPSHOT:
+			if (sets_view(((const DrawSnapshot *)(buffer->data + command->state_at))->bound.sets, image))
 				return false;
 			break;
 		case COMMAND_END_RENDER_PASS:
-		case COMMAND_BIND_PIPELINE:
-		case COMMAND_BIND_VERTEX_BUFFER:
-		case COMMAND_BIND_INDEX_BUFFER:
-		case COMMAND_PUSH_CONSTANTS:
-		case COMMAND_SET_VIEWPORT:
-		case COMMAND_SET_SCISSOR:
-		case COMMAND_SET_STENCIL:
-		case COMMAND_SET_DEPTH_BIAS:
-		case COMMAND_SET_BLEND_CONSTANTS:
 		case COMMAND_CLEAR_ATTACHMENTS:
 		case COMMAND_COPY_BUFFER:
 		case COMMAND_UPDATE_BUFFER:
@@ -1346,8 +849,7 @@ static bool put_off(VkCommandBuffer buffer, uint32_t index, const Replay *replay
 	const Framebuffer *const framebuffer = replay->framebuffer;
 	const Image *const image = framebuffer->attachments[i];
 	return whole_area(replay) && framebuffer->samples == 1 && image->width == framebuffer->width &&
-		image->height == framebuffer->height && !framebuffer->resolves[i] &&
-		resolve_can_wait(buffer, index, replay, image);
+		image->height == framebuffer->height && !framebuffer->resolves[i] && resolve_can_wait(buffer, index, image);
 }
 
 // Each stored target's area is resolved into its attachment, the first of them clearing depth for the next pass too, or
@@ -1583,13 +1085,7 @@ static void begin_tiled_pass(VkQueue queue, Replay *replay)
 		xsdk_log_write("vulkan4xenon: xsdk_gpu_begin_tiles failed: 0x%08X", (unsigned)status);
 	replay->tiling = true;
 	load_tiles(queue, replay);
-	replay->pipeline_dirty = true;
-	forget_constants(replay);
 	replay->clip_planes_on = false;
-	memset(replay->pointed_streams, 0, sizeof replay->pointed_streams);
-	memset(replay->pointed_textures, 0, sizeof replay->pointed_textures);
-	// A band begins with the loop constants the last band left, so the recording writes its own.
-	queue->loops_written = false;
 	v4x_profile_tiles_begun();
 }
 
@@ -1645,11 +1141,7 @@ static void end_tiled_pass(VkQueue queue, Replay *replay, Image *resolved_depth)
 	queue->depths[0] = render_pass->has_depth && framebuffer->tiling.depth_whole
 		? holding(depth, replay->depth_tile, whole(framebuffer))
 		: (EdramPart){ .contents = EDRAM_UNKNOWN };
-	replay->pipeline_dirty = true;
-	forget_constants(replay);
 	replay->clip_planes_on = false;
-	memset(replay->pointed_streams, 0, sizeof replay->pointed_streams);
-	memset(replay->pointed_textures, 0, sizeof replay->pointed_textures);
 	v4x_profile_tiles_ended(queue->tile_recording.count);
 }
 
@@ -1713,11 +1205,6 @@ static void draw_blit(VkQueue queue, Replay *replay, const DrawnBlit *blit, cons
 	EdramPart part = holding(destination, 0, stored);
 	part.format = XSDK_TARGET_8_8_8_8;
 	(void)keep_colors(queue, &part, 1, replay->serial);
-	// The draw and the resolve point streams, slots and shaders of their own, as a pass's begin does.
-	replay->pipeline_dirty = true;
-	forget_constants(replay);
-	memset(replay->pointed_streams, 0, sizeof replay->pointed_streams);
-	memset(replay->pointed_textures, 0, sizeof replay->pointed_textures);
 }
 
 // A sampled depth image's depth copied on the GPU, with no wait: drawn from the source's texture into eDRAM's bottom
@@ -1752,10 +1239,6 @@ static void draw_depth_copy(VkQueue queue, Replay *replay, const DrawnBlit *blit
 	blit->source->used_serial = replay->serial;
 	destination->depth_in_texture = true;
 	destination->clear_pending = false;
-	replay->pipeline_dirty = true;
-	forget_constants(replay);
-	memset(replay->pointed_streams, 0, sizeof replay->pointed_streams);
-	memset(replay->pointed_textures, 0, sizeof replay->pointed_textures);
 }
 
 // A render pass's area, in its command buffer's data.
@@ -1778,252 +1261,6 @@ static void end_pass_command(VkQueue queue, VkCommandBuffer buffer, Replay *repl
 			queue, buffer, index, replay, resolved_depth, next, next_clears, next ? area_of(buffer, next) : NULL);
 	}
 	v4x_profile_pass_ended();
-}
-
-static void prepare_draw(Replay *replay)
-{
-	const Pipeline *const pipeline = replay->pipeline;
-	v4x_profile_draw();
-	replay->queue->drawn = true;
-	if (replay->pipeline_dirty || pipeline != replay->applied.pipeline) {
-		apply_pipeline(pipeline, replay);
-	} else {
-		if (replay->viewport_dirty)
-			apply_viewport(pipeline, replay);
-		if (replay->dynamic_dirty)
-			apply_dynamic(pipeline, replay);
-	}
-	replay->pipeline_dirty = false;
-	replay->viewport_dirty = false;
-	replay->dynamic_dirty = false;
-	v4x_profile_lap(V4X_PROFILE_PIPELINE);
-	apply_resources(pipeline, replay);
-	v4x_profile_lap(V4X_PROFILE_RESOURCES);
-	apply_clip_planes(pipeline, replay);
-}
-
-// xsdk draws from vertex 0, so each stream at the vertex's rate starts at the draw's first vertex, which may come
-// before the binding's; one at the instance's rate stays at the binding's start, the shader fetching each instance's
-// element (pipeline.c). A vertex shader reading gl_VertexIndex adds the first vertex back to the GPU's index as its
-// vertex base (xost:docs/xsc.md, "Interface conventions"); a float holds it exactly up to 2^24.
-static void point_streams(Replay *replay, int32_t first_vertex)
-{
-	const Pipeline *const pipeline = replay->pipeline;
-	if (pipeline->reads_vertex_index) {
-		const float base[4] = { (float)first_vertex, 0.0f, 0.0f, 0.0f };
-		write_constants(replay, true, pipeline->vertex_base, base, 1);
-	}
-	for (uint32_t s = 0; s < pipeline->stream_count; s++) {
-		const VertexStream *const source = &pipeline->streams[s];
-		const VertexBinding *const binding = &replay->bindings[source->binding];
-		const uint32_t skipped = source->per_instance ? 0 : (uint32_t)(first_vertex * (int32_t)source->stride_bytes);
-		const VertexBinding stream = { .address = binding->address + skipped,
-			.size_bytes = binding->size_bytes - skipped };
-		if (replay->pointed_streams[s].address == stream.address &&
-			replay->pointed_streams[s].size_bytes == stream.size_bytes)
-			continue;
-		v4x_profile_count(V4X_PROFILE_STREAMS, 1);
-		xsdk_gpu_set_vertices(s, stream.address, stream.size_bytes);
-		replay->pointed_streams[s] = stream;
-	}
-}
-
-// An instanced vertex shader's group for a draw of one instance: 1/S, 0.5/S and S 0, so its prologue keeps the vertex's
-// index and takes the instance from w (xost:docs/xsc.md, "Interface conventions"); a float holds it exactly up to 2^24.
-static void write_instance(Replay *replay, uint32_t instance)
-{
-	const Pipeline *const pipeline = replay->pipeline;
-	if (!pipeline->vertex.instanced)
-		return;
-	const float values[4] = { 0.0f, 0.0f, 0.0f, (float)instance };
-	write_constants(replay, true, pipeline->vertex.instance_constant, values, 1);
-}
-
-// One instance, in the pieces its pipeline splits a draw into (Pipeline, piece_vertices).
-static void draw_instance(Replay *replay, uint32_t vertex_count, uint32_t first_vertex, uint32_t instance)
-{
-	const Pipeline *const pipeline = replay->pipeline;
-	write_instance(replay, instance);
-	for (uint32_t start = 0;; start += pipeline->piece_step) {
-		point_streams(replay, (int32_t)(first_vertex + start));
-		const uint32_t left = vertex_count - start;
-		v4x_profile_lap(V4X_PROFILE_CHECKS);
-		xsdk_gpu_draw(pipeline->primitive, left < pipeline->piece_vertices ? left : pipeline->piece_vertices);
-		v4x_profile_lap(V4X_PROFILE_DRAWS);
-		if (left <= pipeline->piece_vertices)
-			break;
-	}
-}
-
-static void draw_indexed_instance(
-	Replay *replay, uint32_t count, uint32_t first_index, int32_t vertex_offset, uint32_t instance)
-{
-	const Pipeline *const pipeline = replay->pipeline;
-	write_instance(replay, instance);
-	point_streams(replay, vertex_offset);
-	const uint32_t index_bytes = replay->index_32_bit ? 4 : 2;
-	for (uint32_t start = 0;; start += pipeline->piece_step) {
-		const uint32_t address = replay->index_address + (first_index + start) * index_bytes;
-		const uint32_t left = count - start;
-		const uint32_t indices = left < pipeline->piece_vertices ? left : pipeline->piece_vertices;
-		v4x_profile_lap(V4X_PROFILE_CHECKS);
-		xsdk_gpu_draw_indexed(pipeline->primitive, address, indices, replay->index_32_bit);
-		v4x_profile_lap(V4X_PROFILE_DRAWS);
-		if (left <= pipeline->piece_vertices)
-			break;
-	}
-}
-
-// What a draw refuses as it's recorded, one recorded where its pipeline wasn't bound, or an indirect one, refuses as
-// it's replayed, drawing nothing.
-static bool drawable(const Replay *replay, uint32_t count, uint32_t instances)
-{
-	if (!count || !instances)
-		return false;
-	if (count > V4X_MAX_DRAW_VERTICES && !replay->pipeline->piece_step) {
-		(void)v4x_host_unsupported("triangle fans of more than 65535 vertices");
-		return false;
-	}
-	return true;
-}
-
-// An instanced pipeline's list draws its instances together, each count vertices or indices taken down to whole
-// primitives, as Vulkan draws no partial one; 0 where they go an instance at a time: a pipeline that isn't instanced, a
-// strip, a fan, or an instance past what a draw packet holds (docs/SUPPORT.md, Commands).
-static uint32_t instanced_list(const Pipeline *pipeline, uint32_t count)
-{
-	if (!pipeline->vertex.instanced || !pipeline->list_vertices || count > V4X_MAX_DRAW_VERTICES)
-		return 0;
-	return count - count % pipeline->list_vertices;
-}
-
-// A draw of one instance in one piece under a vertex shader that isn't instanced: drawable, and drawn as it is, with no
-// instance group, copies or pieces.
-static bool plain(const Pipeline *pipeline, uint32_t count, uint32_t instances)
-{
-	return instances == 1 && count && count <= pipeline->piece_vertices && !pipeline->vertex.instanced;
-}
-
-// Instances or pieces, kept out of draw so a plain draw saves no more registers than it uses.
-static __attribute__((noinline)) void draw_instances(
-	Replay *replay, uint32_t vertex_count, uint32_t first_vertex, uint32_t instance_count, uint32_t first_instance)
-{
-	const Pipeline *const pipeline = replay->pipeline;
-	if (!drawable(replay, vertex_count, instance_count))
-		return;
-	prepare_draw(replay);
-	const uint32_t whole = instanced_list(pipeline, vertex_count);
-	if (whole) {
-		point_streams(replay, (int32_t)first_vertex);
-		v4x_profile_lap(V4X_PROFILE_CHECKS);
-		xsdk_gpu_draw_instanced(pipeline->primitive, whole, first_instance, instance_count);
-		lose_constant(replay, pipeline->vertex.instance_constant);
-		v4x_profile_lap(V4X_PROFILE_DRAWS);
-		return;
-	}
-	for (uint32_t i = 0; i < instance_count; i++)
-		draw_instance(replay, vertex_count, first_vertex, first_instance + i);
-}
-
-static void draw(
-	Replay *replay, uint32_t vertex_count, uint32_t first_vertex, uint32_t instance_count, uint32_t first_instance)
-{
-	v4x_profile_lap(V4X_PROFILE_DISPATCH);
-	const Pipeline *const pipeline = replay->pipeline;
-	if (!plain(pipeline, vertex_count, instance_count)) {
-		draw_instances(replay, vertex_count, first_vertex, instance_count, first_instance);
-		return;
-	}
-	prepare_draw(replay);
-	point_streams(replay, (int32_t)first_vertex);
-	v4x_profile_lap(V4X_PROFILE_CHECKS);
-	xsdk_gpu_draw(pipeline->primitive, vertex_count);
-	v4x_profile_lap(V4X_PROFILE_DRAWS);
-}
-
-// A list's indices are repeated, a copy an instance, unless the copies' memory is full (transfer.c); one instance draws
-// from the app's own, which a copy would only read back first, from write-combined memory at 80 MB/s
-// (xsdk:docs/HARDWARE.md, "Instancing on the console, milestone 47 step 1").
-static __attribute__((noinline)) void draw_indexed_instances(Replay *replay, uint32_t count, uint32_t first_index,
-	int32_t vertex_offset, uint32_t instance_count, uint32_t first_instance)
-{
-	const Pipeline *const pipeline = replay->pipeline;
-	const uint32_t index_bytes = replay->index_32_bit ? 4 : 2;
-	if (!drawable(replay, count, instance_count))
-		return;
-	prepare_draw(replay);
-	const uint32_t whole = instanced_list(pipeline, count);
-	XsdkRepeatedIndices repeated;
-	if (whole && instance_count > 1 &&
-		v4x_transfer_repeat_indices(replay->queue, replay->index_bytes + first_index * index_bytes,
-			replay->index_32_bit, whole, instance_count, &repeated)) {
-		point_streams(replay, vertex_offset);
-		v4x_profile_lap(V4X_PROFILE_CHECKS);
-		xsdk_gpu_draw_indexed_instanced(pipeline->primitive, &repeated, first_instance, instance_count);
-		lose_constant(replay, pipeline->vertex.instance_constant);
-		v4x_profile_lap(V4X_PROFILE_DRAWS);
-		return;
-	}
-	for (uint32_t i = 0; i < instance_count; i++)
-		draw_indexed_instance(replay, count, first_index, vertex_offset, first_instance + i);
-}
-
-static void draw_indexed(Replay *replay, uint32_t count, uint32_t first_index, int32_t vertex_offset,
-	uint32_t instance_count, uint32_t first_instance)
-{
-	v4x_profile_lap(V4X_PROFILE_DISPATCH);
-	const Pipeline *const pipeline = replay->pipeline;
-	if (!plain(pipeline, count, instance_count)) {
-		draw_indexed_instances(replay, count, first_index, vertex_offset, instance_count, first_instance);
-		return;
-	}
-	prepare_draw(replay);
-	point_streams(replay, vertex_offset);
-	const uint32_t address = replay->index_address + first_index * (replay->index_32_bit ? 4 : 2);
-	v4x_profile_lap(V4X_PROFILE_CHECKS);
-	xsdk_gpu_draw_indexed(pipeline->primitive, address, count, replay->index_32_bit);
-	v4x_profile_lap(V4X_PROFILE_DRAWS);
-}
-
-// Its parameters are read now, in order with the replay: the host wrote them before the submit, or a copy in it did.
-// They're a VkDrawIndirectCommand: vertexCount, instanceCount, firstVertex, firstInstance.
-static void draw_indirect(Replay *replay, volatile const uint32_t *parameters)
-{
-	draw(replay, parameters[0], parameters[2], parameters[1], parameters[3]);
-}
-
-// The same with a VkDrawIndexedIndirectCommand: indexCount, instanceCount, firstIndex, vertexOffset, firstInstance.
-static void draw_indexed_indirect(Replay *replay, volatile const uint32_t *parameters)
-{
-	draw_indexed(replay, parameters[0], parameters[2], (int32_t)parameters[3], parameters[1], parameters[4]);
-}
-
-// A stencil mask or reference, for each face the command names.
-static void set_stencil(DynamicState *dynamic, const Command *command)
-{
-	uint8_t *values = dynamic->stencil_reference;
-	if (command->stencil.state == VK_DYNAMIC_STATE_STENCIL_COMPARE_MASK)
-		values = dynamic->stencil_compare_mask;
-	else if (command->stencil.state == VK_DYNAMIC_STATE_STENCIL_WRITE_MASK)
-		values = dynamic->stencil_write_mask;
-	for (uint32_t face = 0; face < V4X_STENCIL_FACES; face++) {
-		if (command->stencil.faces & 1u << face)
-			values[face] = command->stencil.value;
-	}
-}
-
-static void set_dynamic(Replay *replay, const Command *command)
-{
-	DynamicState *const dynamic = &replay->dynamic;
-	if (command->type == COMMAND_SET_DEPTH_BIAS) {
-		dynamic->depth_bias_constant = command->depth_bias.constant;
-		dynamic->depth_bias_slope = command->depth_bias.slope;
-	} else if (command->type == COMMAND_SET_BLEND_CONSTANTS) {
-		memcpy(dynamic->blend_constants, command->blend_constants, sizeof dynamic->blend_constants);
-	} else {
-		set_stencil(dynamic, command);
-	}
-	replay->dynamic_dirty = true;
 }
 
 // A pass over the whole framebuffer clears to its depth image's own clear unless it clears to its own; a smaller one
@@ -2081,9 +1318,6 @@ static void clear_attachments(VkQueue queue, Replay *replay, const ClearRect *cl
 	replay->clip_planes_on = false;
 	v4x_blit_clear(
 		&queue->blit, clear, replay->render_pass->color_count, replay->framebuffer->width, replay->framebuffer->height);
-	replay->pipeline_dirty = true;
-	forget_constants(replay);
-	replay->pointed_streams[0] = (VertexBinding){ 0 };
 	if (pauses_query)
 		xsdk_gpu_begin_visibility(++replay->visibility_id);
 }
@@ -2146,6 +1380,35 @@ static void end_query(Replay *replay)
 	replay->query_address = 0;
 }
 
+// A run of the command buffer's packets into the ring, as eDRAM and xsdk stand now.
+static void copy_run(VkQueue queue, Replay *replay, const Recorder *recorder, uint32_t run)
+{
+	queue->drawn |= v4x_record_copy(recorder, &recorder->runs[run], replay->serial) != 0;
+	replay->clip_planes_on = true;
+}
+
+// A draw known at the submit alone, recorded now with the state bound for it and copied as a run: an indirect one's
+// parameters are read now, in order with the replay, as the host wrote them before the submit or a copy in it did, a
+// VkDrawIndirectCommand (vertexCount, instanceCount, firstVertex, firstInstance) or a VkDrawIndexedIndirectCommand
+// (indexCount, instanceCount, firstIndex, vertexOffset, firstInstance); one of repeated indices copies them now.
+static void draw_snapshot(VkQueue queue, Replay *replay, const DrawSnapshot *snapshot)
+{
+	Recorder *const scratch = queue->scratch;
+	const Bound *const bound = &snapshot->bound;
+	volatile const uint32_t *const p = snapshot->parameters;
+	v4x_record_reset(scratch);
+	if (p && !snapshot->indexed)
+		v4x_record_draw(scratch, bound, p[0], p[2], p[1], p[3]);
+	else if (p)
+		v4x_record_draw_indexed(scratch, bound, queue, p[0], p[2], (int32_t)p[3], p[1], p[4]);
+	else
+		v4x_record_draw_indexed(scratch, bound, queue, snapshot->count, snapshot->first, snapshot->vertex_offset,
+			snapshot->instance_count, snapshot->first_instance);
+	uint32_t run;
+	if (v4x_record_close(scratch, &run))
+		copy_run(queue, replay, scratch, run);
+}
+
 // The command after index in its command buffer, or NULL.
 static const Command *next_command(VkCommandBuffer buffer, uint32_t index)
 {
@@ -2164,29 +1427,16 @@ static void replay_command(VkQueue queue, VkCommandBuffer buffer, Replay *replay
 	case COMMAND_END_RENDER_PASS:
 		end_pass_command(queue, buffer, replay, index);
 		break;
-	// The next draw sets what differs from the pipeline it last set.
-	case COMMAND_BIND_PIPELINE:
-		replay->pipeline = command->pipeline;
-		break;
-	case COMMAND_BIND_VERTEX_BUFFER:
-		replay->bindings[command->vertex_buffer.binding] = (VertexBinding){ .address = command->vertex_buffer.address,
-			.size_bytes = command->vertex_buffer.size_bytes };
-		break;
-	case COMMAND_DRAW:
-		draw(replay, command->draw.vertex_count, command->draw.first_vertex, command->draw.instance_count,
-			command->draw.first_instance);
-		break;
-	case COMMAND_BIND_DESCRIPTOR_SET:
-		replay->sets[command->descriptor_set.index] = command->descriptor_set.set;
-		replay->dynamic_offsets[command->descriptor_set.index] =
-			(const uint32_t *)(buffer->data + command->descriptor_set.offsets_at);
-		break;
-	case COMMAND_PUSH_CONSTANTS:
-		v4x_profile_lap(V4X_PROFILE_DISPATCH);
-		push_constants(replay, buffer->data + command->push_constants.data_at, command->push_constants.offset_bytes,
-			command->push_constants.size_bytes);
-		v4x_profile_lap(V4X_PROFILE_PUSH);
-		break;
+	case COMMAND_RUN:
+		v4x_profile_lap(V4X_PROFILE_COMMANDS);
+		copy_run(queue, replay, buffer->recorder, command->run);
+		v4x_profile_lap(V4X_PROFILE_RUNS);
+		return;
+	case COMMAND_DRAW_SNAPSHOT:
+		v4x_profile_lap(V4X_PROFILE_COMMANDS);
+		draw_snapshot(queue, replay, (const DrawSnapshot *)(buffer->data + command->state_at));
+		v4x_profile_lap(V4X_PROFILE_RUNS);
+		return;
 	case COMMAND_COPY_BUFFER_TO_IMAGE:
 		v4x_transfer_buffer_to_image(
 			queue, (const LevelCopy *)(buffer->data + command->state_at), next_command(buffer, index));
@@ -2227,7 +1477,6 @@ static void replay_command(VkQueue queue, VkCommandBuffer buffer, Replay *replay
 	}
 	case COMMAND_RESOLVE_DEPTH:
 		resolve_depth_to_read(queue, replay, command->depth_to_read);
-		forget_constants(replay);
 		break;
 	case COMMAND_CLEAR_COLOR_IMAGE:
 		v4x_transfer_clear(queue, command);
@@ -2241,52 +1490,23 @@ static void replay_command(VkQueue queue, VkCommandBuffer buffer, Replay *replay
 	case COMMAND_FILL_BUFFER:
 		v4x_transfer_fill_buffer(queue, command);
 		break;
-	case COMMAND_SET_VIEWPORT:
-		memcpy(&replay->viewport, buffer->data + command->state_at, sizeof replay->viewport);
-		replay->viewport_dirty = true;
-		break;
-	case COMMAND_SET_SCISSOR:
-		memcpy(&replay->scissor, buffer->data + command->state_at, sizeof replay->scissor);
-		replay->viewport_dirty = true;
-		break;
-	case COMMAND_SET_STENCIL:
-	case COMMAND_SET_DEPTH_BIAS:
-	case COMMAND_SET_BLEND_CONSTANTS:
-		set_dynamic(replay, command);
-		break;
 	case COMMAND_CLEAR_ATTACHMENTS:
 		clear_attachments(queue, replay, (const ClearRect *)(buffer->data + command->state_at));
 		break;
 	case COMMAND_CLEAR_DEPTH_IMAGE:
 		clear_depth_image(queue, command);
 		break;
-	// In place, with the state the replay has bound; a secondary command buffer begins and ends no render pass.
+	// In place; a secondary command buffer begins and ends no render pass.
 	case COMMAND_EXECUTE_COMMANDS:
 		replay_commands(queue, command->secondary, replay);
-		break;
-	case COMMAND_BIND_INDEX_BUFFER:
-		replay->index_bytes = command->index_buffer.bytes;
-		replay->index_address = command->index_buffer.address;
-		replay->index_32_bit = command->index_buffer.is_32_bit;
-		break;
-	case COMMAND_DRAW_INDEXED:
-		draw_indexed(replay, command->draw_indexed.index_count, command->draw_indexed.first_index,
-			command->draw_indexed.vertex_offset, command->draw_indexed.instance_count,
-			command->draw_indexed.first_instance);
-		break;
-	case COMMAND_DRAW_INDIRECT:
-		draw_indirect(replay, command->parameters);
-		break;
-	case COMMAND_DRAW_INDEXED_INDIRECT:
-		draw_indexed_indirect(replay, command->parameters);
 		break;
 	case COMMAND_WRITE_EVENT:
 		xsdk_gpu_write_word(command->event.address, command->event.value);
 		break;
-	// What the host wrote before it set an event, uniform buffers among it, may differ from what groups loaded.
+	// What the host wrote before it set an event, uniform buffers among it, may differ from what groups loaded, which
+	// the run after it knows nothing of.
 	case COMMAND_WAIT_EVENTS:
 		wait_events(buffer, command);
-		forget_constants(replay);
 		break;
 	case COMMAND_RESET_QUERIES:
 		v4x_transfer_reset_queries(queue, command);
@@ -2304,7 +1524,7 @@ static void replay_command(VkQueue queue, VkCommandBuffer buffer, Replay *replay
 		end_query(replay);
 		break;
 	}
-	// What the pushes and draws didn't charge to their own stages: the other commands, and their dispatch.
+	// What the runs didn't charge to their own stage: the other commands, and their dispatch.
 	v4x_profile_command(command->type);
 }
 
@@ -2338,9 +1558,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit(
 	for (uint32_t i = 0; i < submitCount; i++) {
 		for (uint32_t j = 0; j < pSubmits[i].commandBufferCount; j++) {
 			const VkCommandBuffer buffer = pSubmits[i].pCommandBuffers[j];
-			Replay replay = { .queue = queue, .serial = queue->serial, .pipeline_dirty = true };
-			for (uint32_t q = 0; q < PUSH_QUADS; q++)
-				replay.push_quads[q] = &replay.push[4 * q];
+			Replay replay = { .queue = queue, .serial = queue->serial, .clip_planes_on = true };
 			replay_commands(queue, buffer, &replay);
 			// Whatever comes after may read what's left unresolved (resolve_can_wait).
 			for (uint32_t c = 0; c < V4X_EDRAM_COLORS; c++) {

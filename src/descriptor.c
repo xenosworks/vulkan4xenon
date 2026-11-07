@@ -39,6 +39,11 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDescriptorSetLayout(VkDevice device,
 		if (binding->used && binding->type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC)
 			binding->dynamic_index = layout->dynamic_count++;
 	}
+	// A command buffer keeps a set's dynamic offsets, maxDescriptorSetUniformBuffersDynamic of them (record.c, Bound).
+	if (layout->dynamic_count > V4X_MAX_DYNAMIC_OFFSETS) {
+		v4x_host_free(v4x_host_device_allocator(device, pAllocator), layout);
+		return v4x_host_unsupported("more than 8 dynamic uniform buffers a set");
+	}
 	*pSetLayout = v4x_handle(layout);
 	return VK_SUCCESS;
 }

@@ -7,7 +7,8 @@ the console through it.
 **Status.** Agreed on 2026-10-11. Milestones 1 to 7, 9 to 15 and 17 to 31 are done, 18 with its fourth step put off
 and 29 closed short of its targets; milestone 8 was tried and reverted. Milestone 34, the FIFO worker, closed short of
 its target, and milestone 16, Dusklight's menus, shipped in Dusklight's beta 1 without being closed; both are pushed.
-Milestone 33, graphics options, is agreed.
+Milestone 33, graphics options, is agreed, and milestone 35, command buffers that hold the GPU's packets, is agreed and
+under way.
 Section 5 has the Dusklight track's order, agreed the same day; section 7 lists what's still open.
 
 **Constraints.** xsdk's, unchanged:
@@ -87,14 +88,14 @@ Section 5 has the Dusklight track's order, agreed the same day; section 7 lists 
 | Instance, physical device, device, queue | One each. The queue is the ring. |
 | Memory | One heap of physical memory, write-combined, from `xsdk_gpu_alloc`. Device-local, host-visible and coherent. Mapping returns the pointer. `vkQueueSubmit` drains the CPU's write-combining. |
 | Buffers | Vertex buffers are streams (`xsdk_gpu_set_vertices`, 16 of them). Index buffers go to `xsdk_gpu_draw_indexed`. |
-| Uniform buffers, dynamic uniform buffers | Copied into float constants at replay, at their dynamic offsets. |
-| Push constants | Float constants, set at replay. |
+| Uniform buffers, dynamic uniform buffers | Loaded into float constants by the GPU, or read by the CPU at the submit where it can't load them (milestones 7 and 35). |
+| Push constants | Float constants, set as the draws are recorded (milestone 35). |
 | Images | `XsdkTexture`: optimal tiling is Xenos's tiled layout; linear tiling is linear with one level. Formats and mips as xsdk milestones 15 and 16 settled. |
 | Image views, samplers | The texture's and the sampler state's halves of a fetch constant (`xsdk_gpu_set_texture`). |
 | Descriptor sets | Combined image samplers fill fetch-constant slots 0 up, the fragment shader's, then the vertex shader's (milestone 22); uniform buffers fill constant blocks. Bindings are numbered in order across the pipeline layout. |
 | Graphics pipelines | Built once at creation from xsdk's depth and stencil, blend and raster state blocks. The vertex input state gives a patched copy of the vertex shader (xsdk milestone 17). |
 | Render passes, framebuffers | One subpass. A render pass instance draws into eDRAM, and each attachment's store op is a resolve into its image. A clear load op is the resolve's clear; a load op draws the image back in. 1280x720 colour and depth fit eDRAM (xsdk:SCOPE.md 3.4). |
-| Command buffers | Recorded into the layer's own list and replayed into the ring at `vkQueueSubmit`. xsdk's recorded command buffers (milestone 18) can take over where a buffer's state is all known when it's recorded. |
+| Command buffers | Draws recorded as the GPU's packets through xsdk's builders, into the command buffer's memory; the commands that depend on the submit kept in a list that `vkQueueSubmit` replays into the ring, copying the packets in between (milestone 35). |
 | Fences | xsdk's fences. |
 | Semaphores, barriers | One queue, so semaphores do nothing. Barriers order copies against draws. |
 | Swapchain | `VK_KHR_surface` and `VK_KHR_display` over `xsdk_present`: 2 or 3 images at 1280x720. |
@@ -4447,6 +4448,33 @@ outside the repository):
   With it on, the game draws up to 60 frames a second, about twice the worker's time at 30, and the frame rate fell
   into the teens on Epona. The beta's release notes tell testers to leave it off.
 - Pushed: aurora-xenon `fbaf27f`, SDL-xenon `adb87a744`, dusklight-xenon `c366f1156c`.
+
+### Milestone 35: command buffers that hold the GPU's packets
+
+Agreed on 2026-11-06, with xsdk's part and the copy into the stream (decision 1) as docs/COMMAND_BUFFERS.md
+recommends; that document is the design.
+
+**Why.** After the percall branch, a cube in vkbench's `draws_4000` cost the CPU 849 ns through the layer, recording
+248 and the submit 601, against 285 to 290 through xsdk (results/console/after, uncommitted). The goal is 1.3 to 1.5
+times xsdk's cost.
+
+**Step 0, xsdk** (branch `v35`, `03edf7a` and `b640e45`): the per-draw setters split into builders that write into a
+title's `XsdkPackets` from state passed in, and the hierarchical buffer's state calls. On the console, xsdk_test passed
+684 of 686, the two failing its controller checks with no pad in, both packet checks passing; its break, the public
+scissor builder off by one, failed the builders' check alone, 683 of 686. vkbench relinked against it ran xsdk's own
+scenes 2.4 to 3.8% slower than percall's run (`draws_4000` 1,162 to 1,201 us, `states_1000` 478 to 493,
+`uniforms_1000` 296 to 306), at the 3% bar and inside milestone 67's band for code placement, and accepted so; the
+layer's scenes were within noise. One leftover is known: `set_floats` now saves LR and r29 as it starts, which 3960a1d's
+left to its slow path, its fast path otherwise the same.
+
+**Step 1, the recorder** (src/record.c): the replay's draw code moved to recording, on xsdk's builders. Binds, pushes and
+dynamic state go into the command buffer's bound state, and draws into packets; the commands that depend on the submit
+stay a list, a run of packets between two of them a command, `COMMAND_RUN`. The submit copies each run into xsdk's
+stream in pieces of up to 8,189 dwords at their 16-byte phase, writes each `RB_HIZCONTROL` from xsdk's hierarchical
+buffer state then, reads the uniform buffers the GPU can't load into the packets, and hands xsdk the state the run
+left. Indirect draws and indexed draws of repeated indices keep the state bound and are recorded at the submit by the
+queue's own recorder. vulkan4xenon_test's uniform buffers check gains a quad whose block the GPU can't load, written
+after the command buffers are recorded.
 
 ## 5. The Dusklight track
 

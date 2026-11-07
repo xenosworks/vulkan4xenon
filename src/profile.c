@@ -74,13 +74,7 @@ typedef enum {
 } TraceState;
 
 static const char *const stage_names[V4X_PROFILE_STAGES] = {
-	"dispatch",
-	"push",
-	"pipeline",
-	"constants",
-	"resources",
-	"checks",
-	"draws",
+	"runs",
 	"commands",
 	"submit",
 };
@@ -231,7 +225,7 @@ static void calibrate(void)
 	last_lap = time_base();
 	const uint32_t start = last_lap;
 	for (uint32_t i = 0; i < CALIBRATION_LAPS; i++)
-		v4x_profile_lap(V4X_PROFILE_DISPATCH);
+		v4x_profile_lap(V4X_PROFILE_RUNS);
 	calibration_ticks = last_lap - start;
 	totals = (V4xProfile){ 0 };
 	logged_at = seconds();
@@ -260,10 +254,9 @@ void v4x_profile_command(uint32_t type)
 	command_laps[type]++;
 }
 
-void v4x_profile_draw(void)
+void v4x_profile_draws(uint32_t count)
 {
-	totals.draws++;
-	charge(V4X_PROFILE_CHECKS);
+	totals.draws += count;
 }
 
 void v4x_profile_present(void)

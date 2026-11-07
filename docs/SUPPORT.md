@@ -346,8 +346,9 @@ Some are there to refuse, as the features they need aren't reported. Each logs w
   `xsdk_gpu_begin_tiles`). At 1280x720 and one sample, one 32-bit colour attachment and depth fit, or one 64-bit one
   without, or two 32-bit ones without; more tiles. At 2 samples one 32-bit colour attachment fits alone, and with depth
   takes 3 bands, its depth whole; at 4 samples it takes 3 bands with depth in bands. Past eDRAM, at 1, 2 or 4 samples:
-  - **Its commands are replayed once,** at `vkQueueSubmit`, into a recording that each band of rows runs, as few bands
-    as fit, each moved to eDRAM's top (xsdk:docs/HARDWARE.md, "Tiled passes at one sample, milestone 44 step 2").
+  - **Its commands are replayed once,** at `vkQueueSubmit`, their runs of packets copied into a recording that each
+    band of rows runs, as few bands as fit, each moved to eDRAM's top (xsdk:docs/HARDWARE.md, "Tiled passes at one
+    sample, milestone 44 step 2").
   - **Stores:** each colour attachment is resolved a band at a time into its image, whatever its store op, which clears
     it to its clear value for the next band; and into its resolve attachment, if it has one. A multisampled attachment
     that isn't stored, with a resolve attachment, is resolved into that alone. xsdk clears a target resolved twice in a
@@ -578,7 +579,7 @@ Some are there to refuse, as the features they need aren't reported. Each logs w
 
 ## Descriptor sets
 
-- Host memory: a descriptor a binding, read when a draw replays. Bindings run from 0 to 31, one descriptor each.
+- Host memory: a descriptor a binding, read when a draw is recorded. Bindings run from 0 to 31, one descriptor each.
 - Types: uniform buffers, dynamic uniform buffers and combined image samplers. Anything else, arrays and immutable
   samplers return `VK_ERROR_FEATURE_NOT_PRESENT`.
 - A write of several descriptors fills consecutive bindings.
@@ -587,23 +588,36 @@ Some are there to refuse, as the features they need aren't reported. Each logs w
   buffer at the descriptor's offset plus any dynamic offset, as section 2 of the roadmap decided.
   - The GPU loads a block straight from the buffer when its address is 64-byte aligned and the descriptor's range
     covers it, which buffers and offsets of 256 make the usual case (milestone 7).
-  - Otherwise the CPU reads it, 16 bytes at a time where it can, and bytes past the descriptor's range read as 0.
-    Mapped memory isn't cached, so each read goes to memory.
-- Push constants are written in the same way, from where `vkCmdPushConstants` recorded them, on 16 bytes in the
-  command buffer's data. A push whose offset or size isn't a multiple of 16 is copied into the replay first, and so are
-  a stage's push constants that several pushes recorded apart. A stage's push block writes only the registers its
-  stage's ranges cover, from the lowest range's offset to the highest's end, as a stage may read only the push
-  constants in its own ranges (milestone 29).
+  - Otherwise the CPU reads it at `vkQueueSubmit`, into the packets the draw recorded, 16 bytes at a time where it
+    can, and bytes past the descriptor's range read as 0 (milestone 35). Mapped memory isn't cached, so each read goes
+    to memory. A loop's count and a clip plane in a uniform buffer are read the same way.
+- A descriptor set is read as it's bound, when the draws after it are recorded, as Vulkan has a set updated after it's
+  bound invalidate the command buffer. A set layout takes up to 8 dynamic uniform buffers,
+  `maxDescriptorSetUniformBuffersDynamic`; more return `VK_ERROR_FEATURE_NOT_PRESENT`.
+- Push constants are written in the same way, from the command buffer's copy of what `vkCmdPushConstants` pushed. A
+  stage's push block writes only the registers its stage's ranges cover, from the lowest range's offset to the highest's
+  end, as a stage may read only the push constants in its own ranges (milestone 29).
 
 ## Commands
 
-- Each command buffer starts with room for 4096 commands, and 16 KB of data for push constants, dynamic offsets and
-  copy regions; each doubles when it fills, and keeps its size through resets. If host memory runs out,
-  `vkEndCommandBuffer` returns `VK_ERROR_OUT_OF_HOST_MEMORY`.
-- `vkQueueSubmit` replays them on the caller's thread into xsdk's ring.
-- Secondary command buffers record the same commands; `vkCmdExecuteCommands` replays each in place, at the submit, with
-  the state the replay has bound, which is more than Vulkan promises a secondary command buffer, as it begins with
-  none (milestone 19).
+- **Draws are the GPU's packets as they're recorded** (milestone 35, docs/COMMAND_BUFFERS.md): each draw writes the
+  state it needs and the draw through xsdk's builders into the command buffer's host memory, leaving out what the
+  packets since the last command already set. The commands that depend on the submit stay a list replayed then, in
+  order: render passes' begins and ends, copies, blits, uploads and image clears, depth resolves at barriers, queries,
+  time stamps, events, `vkCmdClearAttachments`, secondary command buffers, and the draws known only at the submit. The
+  packets between two commands are a run, which knows nothing of what the GPU holds as it starts.
+- Each command buffer starts with room for 64 KB of packets, 4096 commands, and 16 KB of data for clears, copy regions
+  and the like; each doubles when it fills, and keeps its size through resets. If host memory runs out,
+  `vkEndCommandBuffer` returns `VK_ERROR_OUT_OF_HOST_MEMORY`. Recording on several threads at once, a command buffer
+  each, needs nothing of the layer's shared.
+- `vkQueueSubmit`, on the caller's thread, replays the commands into xsdk's ring and copies each run there, working out
+  as it does the hierarchical depth buffer's control from what eDRAM holds then, and reading the uniform buffers the GPU
+  can't load (Descriptor sets). A command buffer submitted again copies its runs again, so it never waits for its last
+  submission.
+- A draw needs a pipeline bound inside a render pass: one recorded without either logs that once and draws nothing.
+- Secondary command buffers record the same way; `vkCmdExecuteCommands` replays each in place, at the submit. A
+  secondary command buffer begins with nothing bound, as Vulkan has it, and draws at the samples of the subpass it
+  continues; after one, the primary keeps what it had bound, though Vulkan leaves that undefined.
 - **Copies and blits the GPU doesn't draw, and clears, run on the CPU at replay** (src/transfer.c), in order with the
   draws around them, each waiting first for the GPU to be done with what it reads or writes:
   - an image: the submission that last sampled it, resolved into it or drew it back into eDRAM, for the fence that
@@ -734,13 +748,13 @@ Some are there to refuse, as the features they need aren't reported. Each logs w
     `VK_ERROR_FEATURE_NOT_PRESENT`: each piece would need the fan's first vertex again before its own, which only
     indices made at replay could give it.
 - `vkCmdDrawIndirect` and `vkCmdDrawIndexedIndirect`: one draw each, as there's no `multiDrawIndirect` and
-  `maxDrawIndirectCount` is 1; more fail the command buffer. The parameters are read at replay, in order with it:
-  the host wrote them before the submit, or a copy earlier in the replay did, as nothing else writes buffers. They
-  take any instance count and first instance, as `drawIndirectFirstInstance` promises, and draw as a direct draw of
-  what they read does, an instanced list in one draw too. **Deviation:** what a direct draw refuses as it's recorded,
-  an indirect one can only refuse as it's replayed, after the command buffer ended: a triangle fan past 65535. It logs
-  that and draws nothing, as does a direct draw recorded where its pipeline wasn't bound, in a secondary command
-  buffer.
+  `maxDrawIndirectCount` is 1; more fail the command buffer. Each keeps the state bound as it's recorded, and its
+  parameters are read at the submit, in order with the replay: the host wrote them before the submit, or a copy earlier
+  in the replay did, as nothing else writes buffers. They take any instance count and first instance, as
+  `drawIndirectFirstInstance` promises, and draw as a direct draw of what they read does, an instanced list in one draw
+  too. An indexed draw of an instanced list repeats its indices for its instances at the submit too, from the indices
+  then. **Deviation:** what a direct draw refuses as it's recorded, an indirect one can only refuse at the submit, after
+  the command buffer ended: a triangle fan past 65535. It logs that and draws nothing.
 
 ## Sync
 
