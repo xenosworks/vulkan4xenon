@@ -274,3 +274,38 @@ name.
 - Deduplication across runs or command buffers.
 - Pass begins and ends built at recording.
 - Command buffers kept across submissions as GPU packets.
+
+## What step 1 measured, and why it isn't shipped
+
+Step 1 was built as designed and reverted on 2026-11-06, having missed its gate twice on the console; the user had
+allowed one round past the first miss. Its commits stay in percall's history (`9616dce`, `e2cc1f8`, `912eeec`) with
+their reverts after them. Step 0 stays on xsdk's branch `v35` (`03edf7a`, `b640e45`, `74ffae9`), unmerged: the builders
+and the hierarchical buffer's calls, with xsdk_test's packet checks, and `set_floats` back on 3960a1d's fast path.
+
+- **Round 1** (results/console/v35s1*): the recorder, runs, the copy, hierarchical depth at the copy, uniform reads,
+  snapshots and secondaries. vulkan4xenon_test passed 570 of 570; its read break failed its three named checks alone,
+  and its hierarchical depth break 20 depth checks. `draws_4000` took 3,396 us through the layer against 1,170 through
+  xsdk, 2.90 times, recording 3,160 and the submit 234: a submit cost 57 ns a draw, but a `vkCmdDrawIndexed` that
+  changed nothing cost 396 ns and a 64-byte push 80. The replay's work had moved into the draw without shrinking.
+- **Round 2** (results/console/v35r2*): a draw wrote only what changed since the last one, pushes compared as they
+  were made, and the profile build timed the recording's parts. vulkan4xenon_test passed 570 of 570 and vkbench 17 of
+  17. `draws_4000` took 2,701 us against 1,157, 2.33 times; `draws_1000` 659 us, 2.23 times. `states_1000` took 1,323
+  us and `uniforms_1000` 774, 2.51 and 2.63 times, worse than percall's 1,275 and 684; `states_250` 345 against 328.
+  The recording probe put a `draws_4000` draw, two pushes and the draw, at 298 ns, the draw alone at 128. The profile
+  put `draws_4000`'s recording at 469 ns a draw: push constants written 241, pushes compared 126, the draw packet 36,
+  streams 21, state 20, checks 18, resources 7; the submit 57. A pipeline change in `states_1000` cost 401 ns of
+  resources and 255 of state, and a set bound in `uniforms_1000` 286 of resources.
+
+So the copy and the submit did what the design said, 57 ns a draw against the replay's 601, but recording cost more
+than the replay saved, and the scenes that change pipelines or sets every draw got slower. The gate wanted 1.5 times
+xsdk's cost.
+
+Leads, should this be tried again:
+- **The push write:** 241 ns for one 4-register write through xsdk's builder, where xsdk's own setters write a whole
+  draw into its stream in about 290. Most likely the packets' fresh lines: each draw stores into cached lines the core
+  hasn't touched, and each store's line is fetched first. Zeroing a line ahead with `dcbz` before the builders write
+  it would show.
+- **A pipeline or set change:** 255 to 401 ns working out state and resources at each change. Their packets could be
+  built once, when a pipeline is made or a set is written or bound, and copied at the draw.
+- **The scene against the probe:** the scene's recording took about twice the warm probe's, so the cache, more than
+  the instructions, may be the cost: the packets, the recorder and the pipeline's spread-out fields.
