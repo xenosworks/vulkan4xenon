@@ -162,7 +162,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkResetCommandBuffer(VkCommandBuffer commandBuffe
 }
 
 // Doubles the commands' room, or saves the error for vkEndCommandBuffer when there's no memory for it.
-static bool grow_commands(VkCommandBuffer buffer)
+static __attribute__((noinline)) bool grow_commands(VkCommandBuffer buffer)
 {
 	const VkAllocationCallbacks *const allocator = v4x_host_device_allocator(buffer->device, NULL);
 	Command *const grown = v4x_host_realloc(
@@ -176,23 +176,27 @@ static bool grow_commands(VkCommandBuffer buffer)
 	return true;
 }
 
-// The same for the data.
-static bool grow_data(VkCommandBuffer buffer)
+// The same for the data, till it has room for needed_bytes.
+static __attribute__((noinline)) bool grow_data(VkCommandBuffer buffer, uint32_t needed_bytes)
 {
 	const VkAllocationCallbacks *const allocator = v4x_host_device_allocator(buffer->device, NULL);
-	uint8_t *const grown =
-		v4x_host_realloc(allocator, buffer->data, 2 * buffer->data_capacity_bytes, VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
-	if (!grown) {
-		buffer->result = VK_ERROR_OUT_OF_HOST_MEMORY;
-		return false;
+	while (buffer->data_capacity_bytes < needed_bytes) {
+		uint8_t *const grown = v4x_host_realloc(
+			allocator, buffer->data, 2 * buffer->data_capacity_bytes, VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
+		if (!grown) {
+			buffer->result = VK_ERROR_OUT_OF_HOST_MEMORY;
+			return false;
+		}
+		buffer->data = grown;
+		buffer->data_capacity_bytes *= 2;
 	}
-	buffer->data = grown;
-	buffer->data_capacity_bytes *= 2;
 	return true;
 }
 
-// The next free command, or NULL with the error saved for vkEndCommandBuffer.
-static Command *record(VkCommandBuffer buffer, CommandType type)
+// The next free command, or NULL with the error saved for vkEndCommandBuffer. Inlined with record_aligned, so a vkCmd's
+// arguments stay in registers: storing them around a call and loading them straight back stalls the console's core
+// (xsdk:docs/HARDWARE.md, "The cost of a draw").
+static inline Command *record(VkCommandBuffer buffer, CommandType type)
 {
 	if (buffer->count == buffer->capacity && !grow_commands(buffer))
 		return NULL;
@@ -203,18 +207,18 @@ static Command *record(VkCommandBuffer buffer, CommandType type)
 
 // Copies bytes into the command buffer's data, at an address a multiple of alignment_bytes, and returns where, or
 // saves the error. The data's words are 4-byte aligned, so the padding is at most alignment_bytes - 4.
-static bool record_aligned(
+static inline bool record_aligned(
 	VkCommandBuffer buffer, const void *bytes, uint32_t size_bytes, uint32_t alignment_bytes, uint32_t *at)
 {
 	const uint32_t aligned = (size_bytes + 3) & ~3u;
-	while (buffer->data_bytes + alignment_bytes - 4 + aligned > buffer->data_capacity_bytes) {
-		if (!grow_data(buffer))
-			return false;
-	}
+	const uint32_t needed_bytes = buffer->data_bytes + alignment_bytes - 4 + aligned;
+	if (needed_bytes > buffer->data_capacity_bytes && !grow_data(buffer, needed_bytes))
+		return false;
 	const uint32_t padding = -(uint32_t)(uintptr_t)(buffer->data + buffer->data_bytes) & (alignment_bytes - 1);
-	*at = buffer->data_bytes + padding;
-	memcpy(buffer->data + *at, bytes, size_bytes);
-	buffer->data_bytes = *at + aligned;
+	const uint32_t start = buffer->data_bytes + padding;
+	memcpy(buffer->data + start, bytes, size_bytes);
+	buffer->data_bytes = start + aligned;
+	*at = start;
 	return true;
 }
 
